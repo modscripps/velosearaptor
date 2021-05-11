@@ -1,0 +1,11 @@
+*.pyc
+.DS_Store
+gadcp.egg-info
+build/
+dist/
+.cache
+**.ipynb_checkpoints
+.vscode
+html
+docs
+notebooks
