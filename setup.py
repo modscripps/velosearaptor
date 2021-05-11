@@ -24,7 +24,6 @@ setup(
         "scipy",
         "xarray",
         "matplotlib",
-        "pycurrents",
     ],
     # Packaging
     packages=find_packages(include=["gadcp", "gadcp.*"], exclude=["*.tests"]),
