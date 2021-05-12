@@ -62,13 +62,13 @@ def proc(infile, lon, lat, end_pc, end_adcp, n_ensembles=None):
     raw.pressure = raw.VL["Pressure"] / 1000.0
     raw.temperature = raw.VL["Temperature"] / 100.0
     fig, ax = gv.plot.quickfig(fgs=(6, 2.5))
-    ax.plot(raw.dday, raw.pressure)
+    ax.plot(raw.dday, raw.pressure, label='all')
     ax.invert_yaxis()
     ax.set(xlabel='julian day', ylabel='pressure [dbar]')
     # find time away from surface
     ii = np.argwhere(raw.pressure > 50).squeeze()
     # raw.pressure.isel(time=ii).plot(ax=ax, color="r")
-    ax.plot(raw.dday[ii], raw.pressure[ii], color="r")
+    ax.plot(raw.dday[ii], raw.pressure[ii], color="r", label='subsurface')
 
     print("extract subsurface ping range")
     i0, i1 = ii[0], ii[-1]
@@ -107,7 +107,7 @@ def proc(infile, lon, lat, end_pc, end_adcp, n_ensembles=None):
 
     print("time averaging and depth gridding")
     for key in fnamesdict.keys():
-        mcm = MCM(fnamesdict[key], driftparamsdict[key], datadir=datadir)
+        mcm = MCM(fnamesdict[key], driftparamsdict[key], datadir=datadir, lat=lat)
         pa = Pingavg(
             mcm,
             lonlat=positionsdict[key],
@@ -118,6 +118,10 @@ def proc(infile, lon, lat, end_pc, end_adcp, n_ensembles=None):
         pa.average_ensembles()
         npzname = key + "_hourly.npz"
         pa.save_npz(npzname, outdir=outdir)
+
+    if n_ensembles is not None:
+        ax.plot(mcm.tsdat.dday, mcm.tsdat.pressure, color='orange', label='n_ensembles')
+    ax.legend()
 
     # load the generated file
     data = npz2nc(npzname)
