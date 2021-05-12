@@ -140,6 +140,11 @@ class MCM:
         return self.t0 + self.rate * (orig_dday - self.t0)
 
     def make_start_ddays(self, dday_start, dday_end, dt_hours):
+        """
+        GV: This generates the time stamps for time averaging in Pingavg. Depends
+        on a few properties that are only defined there, as for example
+        dt_hours.
+        """
         self.dday_start = dday_start
         self.dday_end = dday_end
         self.dt = dt_hours / 24.0
@@ -149,10 +154,11 @@ class MCM:
         if iens > len(self.start_ddays) - 1:
             raise ValueError("ens num %d is out of range" % iens)
 
+        # get indices within dday
         sl = rangeslice(
             self.dday, self.start_ddays[iens], self.start_ddays[iens] + self.dt
         )
-
+        # use the indices to extract data
         dat = self.m.read(start=sl.start, stop=sl.stop)
         if dat is None:
             return None
@@ -242,6 +248,8 @@ class Pingavg:
     def to_enu(self, ens):
         """
         add enu
+        GV: enu is east, north, up, errvel (optional) whereas xyz are
+        instrument coordinates.
         """
         ens.enu = rdi_xyz_enu(
             ens.xyze,
@@ -320,7 +328,7 @@ class Pingavg:
             ens = self.mcm.read_ensemble(iens)
             if ens is not None:
                 self.edit(ens)  # modifies xyze
-                self.to_enu(ens)
+                self.to_enu(ens) # transform to earth coords (east, north, up)
                 self.regrid_enu(ens)
                 self.regrid_amp(ens)
 
