@@ -108,6 +108,26 @@ class MCM:
     def __init__(
         self, fnames, driftparams, datadir="./", sonar="wh", ibad=None, lat=30
     ):  # latitude in degrees, for depth2 function
+        """
+        Generate MCM object for moored ADCP data.
+
+        Parameters
+        ----------
+        fnames :
+
+        driftparams :
+
+        datadir : str
+
+        sonar : str, optional
+            ADCP type. Defaults to 'wh'. See Multiread docs for more info.
+        ibad : int, optional
+            The index of a beam to be excluded from the beam_to_xyz
+            calculation. This is the zero-based index. Defaults to None.
+        lat : float, optional
+            Latitude in degrees for calculating depth from pressure. Defaults
+            to 30.
+        """
         self.fnames = [os.path.join(datadir, f) for f in fnames]
         self.driftparams = driftparams
         self.lat = lat
