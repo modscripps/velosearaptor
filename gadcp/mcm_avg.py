@@ -107,18 +107,18 @@ class MCM:
 
     def __init__(
         self, fnames, driftparams, datadir="./", sonar="wh", ibad=None, lat=30
-    ):  # latitude in degrees, for depth2 function
+    ):
         """
         Generate MCM object for moored ADCP data.
 
         Parameters
         ----------
-        fnames :
-
-        driftparams :
-
+        fnames : list
+            List with raw file names.
+        driftparams : dict
+            Time drift information.
         datadir : str
-
+            Raw data directory.
         sonar : str, optional
             ADCP type. Defaults to 'wh'. See Multiread docs for more info.
         ibad : int, optional
@@ -153,7 +153,9 @@ class MCM:
         # a time when the instrument was in the water, so we
         # use the middle of the deployment.
         imid = len(tsdat.dday) // 2
-        middle = self.m.read(varlist=["VariableLeader"], start=imid, stop=imid + 1)
+        middle = self.m.read(
+            varlist=["VariableLeader"], start=imid, stop=imid + 1
+        )
         self.orientation = "up" if middle.sysconfig.up else "down"
 
     def correct_dday(self, orig_dday):
@@ -203,7 +205,12 @@ class Pingavg:
     )
 
     def __init__(
-        self, mcm, lonlat=None, editparams=None, tgridparams=None, dgridparams=None
+        self,
+        mcm,
+        lonlat=None,
+        editparams=None,
+        tgridparams=None,
+        dgridparams=None,
     ):
 
         self.mcm = mcm
@@ -216,7 +223,9 @@ class Pingavg:
             self.editparams.update_values(editparams, strict=True)
 
         self.p_median = np.median(mcm.tsdat.pressure)
-        default_dgridparams = dict(dbot=int(self.p_median), dtop=10, d_interval=1)
+        default_dgridparams = dict(
+            dbot=int(self.p_median), dtop=10, d_interval=1
+        )
         self.dgridparams = Bunch(default_dgridparams)
         if dgridparams is not None:
             self.dgridparams.update_values(dgridparams, strict=True)
@@ -257,7 +266,14 @@ class Pingavg:
                 dday_mid = self.start_ddays[n // 2]
                 y, m, d = to_date(self.yearbase, dday_mid)[:3]
                 output = Popen(
-                    ["magdec", str(lonlat[0]), str(lonlat[1]), str(y), str(m), str(d)],
+                    [
+                        "magdec",
+                        str(lonlat[0]),
+                        str(lonlat[1]),
+                        str(y),
+                        str(m),
+                        str(d),
+                    ],
                     stdout=PIPE,
                 ).communicate()[0]
                 output = output.strip()
@@ -341,14 +357,15 @@ class Pingavg:
 
         npings = np.zeros((nens,), dtype=np.int16)
 
-        # midpoints of averaging intervals:
+        # midpoints of averaging intervals (dividing by 48 because of midpoint,
+        # so half the value):
         dday = self.start_ddays[start:stop] + self.tgridparams.dt_hours / 48.0
 
         for i, iens in enumerate(indices):
             ens = self.mcm.read_ensemble(iens)
             if ens is not None:
                 self.edit(ens)  # modifies xyze
-                self.to_enu(ens) # transform to earth coords (east, north, up)
+                self.to_enu(ens)  # transform to earth coords (east, north, up)
                 self.regrid_enu(ens)
                 self.regrid_amp(ens)
 

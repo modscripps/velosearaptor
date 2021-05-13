@@ -49,6 +49,7 @@ def proc(infile, lon, lat, end_pc, end_adcp, n_ensembles=None):
     -----
     - make time and depth grid parameters input parameters
     - allow for single ping processing/output, i.e. no time gridding
+    - allow for burst averaging
     - allow for external pressure time series input
 
     """
