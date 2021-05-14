@@ -63,13 +63,13 @@ def proc(infile, lon, lat, end_pc, end_adcp, n_ensembles=None):
     raw.pressure = raw.VL["Pressure"] / 1000.0
     raw.temperature = raw.VL["Temperature"] / 100.0
     fig, ax = gv.plot.quickfig(fgs=(6, 2.5))
-    ax.plot(raw.dday, raw.pressure, label='all')
+    ax.plot(raw.dday, raw.pressure, label="all")
     ax.invert_yaxis()
-    ax.set(xlabel='julian day', ylabel='pressure [dbar]')
+    ax.set(xlabel="julian day", ylabel="pressure [dbar]")
     # find time away from surface
     ii = np.argwhere(raw.pressure > 50).squeeze()
     # raw.pressure.isel(time=ii).plot(ax=ax, color="r")
-    ax.plot(raw.dday[ii], raw.pressure[ii], color="r", label='subsurface')
+    ax.plot(raw.dday[ii], raw.pressure[ii], color="r", label="subsurface")
 
     print("extract subsurface ping range")
     i0, i1 = ii[0], ii[-1]
@@ -91,7 +91,9 @@ def proc(infile, lon, lat, end_pc, end_adcp, n_ensembles=None):
     outdir = "./"
     datadir = "./"
     fnamesdict = dict(adcp=[outfile])
-    driftparamsdict = dict(adcp=dict(end_pc=end_pc, end_adcp=end_adcp, start_dday=t0))
+    driftparamsdict = dict(
+        adcp=dict(end_pc=end_pc, end_adcp=end_adcp, start_dday=t0)
+    )
     positionsdict = dict(adcp=(lon, lat))
 
     editparams = dict(
@@ -99,7 +101,9 @@ def proc(infile, lon, lat, end_pc, end_adcp, n_ensembles=None):
         max_e_deviation=2,  # max in terms of sigma
         min_correlation=64,
     )  # 64 is RDI standard
-    dgridparams = dict(dbot=1500, dtop=100, d_interval=16)  # int(self.p_median),  # 50,
+    dgridparams = dict(
+        dbot=1500, dtop=100, d_interval=16
+    )  # int(self.p_median),  # 50,
     tgridparams = dict(
         dt_hours=1.0,  #  1.0/4,
         t0=132,
@@ -108,7 +112,9 @@ def proc(infile, lon, lat, end_pc, end_adcp, n_ensembles=None):
 
     print("time averaging and depth gridding")
     for key in fnamesdict.keys():
-        mcm = MCM(fnamesdict[key], driftparamsdict[key], datadir=datadir, lat=lat)
+        mcm = MCM(
+            fnamesdict[key], driftparamsdict[key], datadir=datadir, lat=lat
+        )
         pa = Pingavg(
             mcm,
             lonlat=positionsdict[key],
@@ -121,7 +127,12 @@ def proc(infile, lon, lat, end_pc, end_adcp, n_ensembles=None):
         pa.save_npz(npzname, outdir=outdir)
 
     if n_ensembles is not None:
-        ax.plot(mcm.tsdat.dday, mcm.tsdat.pressure, color='orange', label='n_ensembles')
+        ax.plot(
+            mcm.tsdat.dday,
+            mcm.tsdat.pressure,
+            color="orange",
+            label="n_ensembles",
+        )
     ax.legend()
 
     # load the generated file
