@@ -161,16 +161,73 @@ class MCM:
     def correct_dday(self, orig_dday):
         return self.t0 + self.rate * (orig_dday - self.t0)
 
-    def make_start_ddays(self, dday_start, dday_end, dt_hours):
+    def make_start_ddays(
+        self, dday_start, dday_end, dt_hours, burst_average=False
+    ):
         """
-        GV: This generates the time stamps for time averaging in Pingavg. Depends
-        on a few properties that are only defined there, as for example
+        Generate time stamps for time averagind in Pingavg.average_ensembles().
+
+        Parameters
+        ----------
+        dday_start : float
+
+        dday_end : float
+
+        dt_hours :
+
+        burst_average : bool, optional
+            Average over bursts. Defaults to False.
+
+        Notes
+        -----
+        GV: This generates the time stamps for time averaging in Pingavg.
+        Depends on a few properties that are only defined there, as for example
         dt_hours.
+        How can we incorporate burst averaging here? There could be a switch
+        that if set to true will render the other input parameters invalid. The
+        routine will then determine the start time stamps and a new dt, based
+        on the length of the burst. Then the rest of the routines should work
+        as with the regular input parameters.
+
+        To Do
+        -----
         """
-        self.dday_start = dday_start
-        self.dday_end = dday_end
-        self.dt = dt_hours / 24.0
-        self.start_ddays = np.arange(dday_start, dday_end, dt_hours / 24.0)
+        if not burst_average:
+            print('no burst average')
+            self.dday_start = dday_start
+            self.dday_end = dday_end
+            self.dt = dt_hours / 24.0
+            self.start_ddays = np.arange(dday_start, dday_end, dt_hours / 24.0)
+        else:
+            # determine burst length and time between bursts
+            dday_diff = np.diff(self.tsdat.dday)
+            burst_dt = np.median(dday_diff)
+            print(burst_dt * 24 * 60)
+            # It seems safe to assume that the time between bursts is at least
+            # four times as long as the time between individual bursts within a
+            # burst.
+            inter_burst_dt = np.median(dday_diff[dday_diff > burst_dt * 4])
+            print(inter_burst_dt * 24 * 60)
+            # find starting points of all bursts
+            start_indices = np.flatnonzero(dday_diff > burst_dt * 4)
+            start_indices += 1
+            start_indices = np.insert(start_indices, 0, 0)
+            self.start_ddays = self.tsdat.dday[start_indices]
+            self.dday_start = self.start_ddays[0]
+            # generate a dt that is inclusive of one burst
+            # we know the number of pings in a burst from the difference
+            # between the start_indices:
+            pings_per_burst = np.int32(np.median(np.diff(start_indices)))
+            print(f'{pings_per_burst} pings per burst')
+            print(f'{start_indices.shape[0]} bursts')
+            self.dt = burst_dt * pings_per_burst + burst_dt * 3
+
+            # keeping this in here for now to run a test, need to delete when
+            # above fully works.
+            # self.dday_start = dday_start
+            self.dday_end = dday_end
+            # self.dt = dt_hours / 24.0
+            # self.start_ddays = np.arange(dday_start, dday_end, dt_hours / 24.0)
 
     def read_ensemble(self, iens):
         if iens > len(self.start_ddays) - 1:
@@ -242,14 +299,19 @@ class Pingavg:
         in_water = np.nonzero(p > self.p_median / 2)[0][-1]
         t1 = (np.floor(mcm.dday[in_water] * 24) - 2) / 24.0
 
-        default_tgridparams = dict(dt_hours=0.5, t0=t0, t1=t1)
+        default_tgridparams = dict(
+            dt_hours=0.5, t0=t0, t1=t1, burst_average=False
+        )
 
         self.tgridparams = Bunch(default_tgridparams)
         if tgridparams is not None:
             self.tgridparams.update_values(tgridparams, strict=True)
 
         self.mcm.make_start_ddays(
-            self.tgridparams.t0, self.tgridparams.t1, self.tgridparams.dt_hours
+            self.tgridparams.t0,
+            self.tgridparams.t1,
+            self.tgridparams.dt_hours,
+            self.tgridparams.burst_average,
         )
         self.start_ddays = self.mcm.start_ddays
 

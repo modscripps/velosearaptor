@@ -108,6 +108,7 @@ def proc(infile, lon, lat, end_pc, end_adcp, n_ensembles=None):
         dt_hours=1.0,  #  1.0/4,
         t0=132,
         # t1 = t1,
+        burst_average=True,
     )
 
     print("time averaging and depth gridding")
