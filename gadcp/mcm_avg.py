@@ -180,17 +180,7 @@ class MCM:
 
         Notes
         -----
-        GV: This generates the time stamps for time averaging in Pingavg.
-        Depends on a few properties that are only defined there, as for example
-        dt_hours.
-        How can we incorporate burst averaging here? There could be a switch
-        that if set to true will render the other input parameters invalid. The
-        routine will then determine the start time stamps and a new dt, based
-        on the length of the burst. Then the rest of the routines should work
-        as with the regular input parameters.
-
-        To Do
-        -----
+        If turning on burst averaging, other input values will be ignored.
         """
         if not burst_average:
             print('no burst average')
