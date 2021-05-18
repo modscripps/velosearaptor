@@ -140,13 +140,17 @@ class MCM:
         self.tsdat = tsdat
 
         self.yearbase = self.m.yearbase
-        t1_pc = to_day(self.m.yearbase, *driftparams["end_pc"])
-        t1_adcp = to_day(self.m.yearbase, *driftparams["end_adcp"])
 
         t0 = driftparams.get("start_dday", None)
+        t1_adcp = driftparams.get("end_adcp", None)
         if t0 is None:
             t0 = tsdat.dday[0]
-        self.rate = (t1_pc - t0) / (t1_adcp - t0)
+        if t1_adcp is not None:
+            t1_pc = to_day(self.m.yearbase, *driftparams["end_pc"])
+            t1_adcp = to_day(self.m.yearbase, *driftparams["end_adcp"])
+            self.rate = (t1_pc - t0) / (t1_adcp - t0)
+        else:
+            self.rate = 1
         self.t0 = t0
         self.dday = self.correct_dday(tsdat.dday)
 
@@ -166,7 +170,7 @@ class MCM:
         self, dday_start, dday_end, dt_hours, burst_average=False
     ):
         """
-        Generate time stamps for time averagind in Pingavg.average_ensembles().
+        Generate time stamps for time averaging in Pingavg.average_ensembles().
 
         Parameters
         ----------

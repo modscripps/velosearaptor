@@ -21,7 +21,18 @@ import gvpy as gv
 from . import io
 
 
-def proc(infile, lon, lat, end_pc, end_adcp, n_ensembles=None):
+def proc(
+    infile,
+    lon,
+    lat,
+    editparams,
+    tgridparams,
+    dgridparams,
+    end_pc=None,
+    end_adcp=None,
+    n_ensembles=None,
+    ibad=None,
+):
     """Temporary function for processing ADCP raw data.
 
     Parameters
@@ -32,13 +43,24 @@ def proc(infile, lon, lat, end_pc, end_adcp, n_ensembles=None):
         Mooring longitude
     lat : float
         Mooring latitude
-    end_pc : tuple (int, int, int, int, int, int)
+    editparams : dict
+        Raw data editing parameters.
+    tgridparams : dict
+        Time gridding parameters.
+    dgridparams : dict
+        Depth gridding parameters.
+    end_pc : tuple (int, int, int, int, int, int), optional
         Time at data download (UTC) as six element
-        tuple (year, month, day, hour, minute, second).
-    end_adcp : tuple (int, int, int, int, int, int)
+        tuple (year, month, day, hour, minute, second). Can be omitted if no
+        time drift was recorded (not recommended).
+    end_adcp : tuple (int, int, int, int, int, int), optional
         Time at data download (instrument).
     n_ensembles : None or int, optional
-        Extract only this number of ensembles (after the instrument is in the water). Mostly for testing purposes. Defaults to None.
+        Extract only this number of ensembles (after the instrument is in the
+        water). Mostly for testing purposes. Defaults to None.
+    ibad : int, optional
+        The index of a beam to be excluded from the beam_to_xyz
+        calculation. This is the zero-based index. Defaults to None.
 
     Returns
     -------
@@ -46,7 +68,7 @@ def proc(infile, lon, lat, end_pc, end_adcp, n_ensembles=None):
 
     To Do
     -----
-    - make time and depth grid parameters input parameters
+    x make time and depth grid parameters input parameters
     - allow for single ping processing/output, i.e. no time gridding
     x allow for burst averaging
     - allow for external pressure time series input
@@ -100,24 +122,28 @@ def proc(infile, lon, lat, end_pc, end_adcp, n_ensembles=None):
     driftparams = dict(end_pc=end_pc, end_adcp=end_adcp, start_dday=t0)
     positions = (lon, lat)
 
-    editparams = dict(
-        max_e=0.2,  # absolute max e
-        max_e_deviation=2,  # max in terms of sigma
-        min_correlation=64,
-    )  # 64 is RDI standard
-    dgridparams = dict(
-        dbot=1500, dtop=100, d_interval=16
-    )  # int(self.p_median),  # 50,
-    tgridparams = dict(
-        # dt_hours=1.0,  #  1.0/4,
-        # t0=132,
-        # t1 = t1,
-        burst_average=True,
-    )
+    # editparams = dict(
+    #     max_e=0.2,  # absolute max e
+    #     max_e_deviation=2,  # max in terms of sigma
+    #     min_correlation=64,
+    # )  # 64 is RDI standard
+    # dgridparams = dict(
+    #     dbot=1500, dtop=100, d_interval=16
+    # )  # int(self.p_median),  # 50,
+    # tgridparams = dict(
+    #     # dt_hours=1.0,  #  1.0/4,
+    #     # t0=132,
+    #     # t1 = t1,
+    #     burst_average=True,
+    # )
 
     print("time averaging and depth gridding")
     mcm = MCM(
-        fnames, driftparams, datadir=datadir, lat=lat
+        fnames,
+        driftparams,
+        datadir=datadir,
+        lat=lat,
+        ibad=ibad,
     )
     pa = Pingavg(
         mcm,
