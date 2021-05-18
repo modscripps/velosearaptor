@@ -14,7 +14,6 @@ from pathlib import Path
 from pycurrents.adcp.rdiraw import extract_raw, Multiread
 from pycurrents.system import Bunch
 
-# from pycurrents.adcp.mcm_avg import MCM, Pingavg
 from gadcp.mcm_avg import MCM, Pingavg
 
 import gvpy as gv
@@ -49,7 +48,7 @@ def proc(infile, lon, lat, end_pc, end_adcp, n_ensembles=None):
     -----
     - make time and depth grid parameters input parameters
     - allow for single ping processing/output, i.e. no time gridding
-    - allow for burst averaging
+    x allow for burst averaging
     - allow for external pressure time series input
 
     """
@@ -70,31 +69,36 @@ def proc(infile, lon, lat, end_pc, end_adcp, n_ensembles=None):
     ii = np.argwhere(raw.pressure > 50).squeeze()
     # raw.pressure.isel(time=ii).plot(ax=ax, color="r")
     ax.plot(raw.dday[ii], raw.pressure[ii], color="r", label="subsurface")
+    # find start time in julian days in the raw time series
+    t0 = raw.dday[0]
 
+    # Wondering if we really need to extract the subsurface range here? MCM
+    # also looks for data in the water and discards the rest unless specified
+    # otherwise. Currently, if we want to process less than the full time
+    # series, we depend on the subset that is extracted here. This should be
+    # easy to change in the future if desired. Writing a subset of the data to
+    # disk does not seem to slow down the process very much.
     print("extract subsurface ping range")
     i0, i1 = ii[0], ii[-1]
     if n_ensembles is not None:
         i1 = i0 + n_ensembles
-    outfile = "adcp_cut.dat"
+    cut_file = "adcp_cut.dat"
     inst = "wh"
     print("Extracting ping range %d to %d" % (i0, i1))
-    _ = extract_raw(infile, inst, i0, i1, outfile=outfile)
-    # find start time in julian days in the raw time series
-    t0 = raw.dday[0]
+    _ = extract_raw(infile, inst, i0, i1, outfile=cut_file)
 
-    # read the cut time series
-    mc = Multiread(outfile, inst)
-    orientation = "up" if mc.sysconfig["up"] else "down"
-    print("instrument orientation: ", orientation)
+    # # read the cut time series
+    # mc = Multiread(cut_file, inst)
+    # orientation = "up" if mc.sysconfig["up"] else "down"
+    # print("instrument orientation: ", orientation)
 
     # Parameters for time averaging and depth gridding
     outdir = "./"
     datadir = "./"
-    fnamesdict = dict(adcp=[outfile])
-    driftparamsdict = dict(
-        adcp=dict(end_pc=end_pc, end_adcp=end_adcp, start_dday=t0)
-    )
-    positionsdict = dict(adcp=(lon, lat))
+    fnames = [cut_file]
+    # fnames = [infile]
+    driftparams = dict(end_pc=end_pc, end_adcp=end_adcp, start_dday=t0)
+    positions = (lon, lat)
 
     editparams = dict(
         max_e=0.2,  # absolute max e
@@ -105,27 +109,26 @@ def proc(infile, lon, lat, end_pc, end_adcp, n_ensembles=None):
         dbot=1500, dtop=100, d_interval=16
     )  # int(self.p_median),  # 50,
     tgridparams = dict(
-        dt_hours=1.0,  #  1.0/4,
-        t0=132,
+        # dt_hours=1.0,  #  1.0/4,
+        # t0=132,
         # t1 = t1,
         burst_average=True,
     )
 
     print("time averaging and depth gridding")
-    for key in fnamesdict.keys():
-        mcm = MCM(
-            fnamesdict[key], driftparamsdict[key], datadir=datadir, lat=lat
-        )
-        pa = Pingavg(
-            mcm,
-            lonlat=positionsdict[key],
-            dgridparams=dgridparams,
-            tgridparams=tgridparams,
-            editparams=editparams,
-        )
-        pa.average_ensembles()
-        npzname = key + "_hourly.npz"
-        pa.save_npz(npzname, outdir=outdir)
+    mcm = MCM(
+        fnames, driftparams, datadir=datadir, lat=lat
+    )
+    pa = Pingavg(
+        mcm,
+        lonlat=positions,
+        dgridparams=dgridparams,
+        tgridparams=tgridparams,
+        editparams=editparams,
+    )
+    pa.average_ensembles()
+    npzname = "adcp_proc.npz"
+    pa.save_npz(npzname, outdir=outdir)
 
     if n_ensembles is not None:
         ax.plot(
@@ -136,13 +139,20 @@ def proc(infile, lon, lat, end_pc, end_adcp, n_ensembles=None):
         )
     ax.legend()
 
-    # load the generated file
+    # load the generated file as netcdf / xarray.Dataset
     data = npz2nc(npzname)
+    # add some more info
+    data.attrs["magdec"] = pa.ave.magdec
+    for att in ["max_e", "max_e_deviation", "min_correlation"]:
+        data.attrs[att] = pa.ave.editparams[att]
 
-    return m, mcm, data
+    # remove npz file
+    os.remove(npzname)
+
+    return m, mcm, pa, data
 
 
-def tmpload(file):
+def npzload(file):
     mfd_prefix = "__mfd__"
     mfm_prefix = "__mfm__"
     fz = open(file, "rb")
@@ -180,7 +190,7 @@ def npz2nc(npzfile):
         ADCP data ready for saving to netcdf.
     """
     # load npz file
-    dat = tmpload(npzfile)
+    dat = npzload(npzfile)
     # identify variables
     k = dat.keys()
     varsint = []

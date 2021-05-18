@@ -114,7 +114,7 @@ class MCM:
         Parameters
         ----------
         fnames : list
-            List with raw file names.
+            List with paths to raw data files.
         driftparams : dict
             Time drift information.
         datadir : str
@@ -128,7 +128,8 @@ class MCM:
             Latitude in degrees for calculating depth from pressure. Defaults
             to 30.
         """
-        self.fnames = [os.path.join(datadir, f) for f in fnames]
+        # self.fnames = [os.path.join(datadir, f) for f in fnames]
+        self.fnames = fnames
         self.driftparams = driftparams
         self.lat = lat
 
@@ -190,7 +191,7 @@ class MCM:
             self.start_ddays = np.arange(dday_start, dday_end, dt_hours / 24.0)
         else:
             # determine burst length and time between bursts
-            dday_diff = np.diff(self.tsdat.dday)
+            dday_diff = np.diff(self.dday)
             burst_dt = np.median(dday_diff)
             print(burst_dt * 24 * 60)
             # It seems safe to assume that the time between bursts is at least
@@ -202,7 +203,7 @@ class MCM:
             start_indices = np.flatnonzero(dday_diff > burst_dt * 4)
             start_indices += 1
             start_indices = np.insert(start_indices, 0, 0)
-            self.start_ddays = self.tsdat.dday[start_indices]
+            self.start_ddays = self.dday[start_indices]
             self.dday_start = self.start_ddays[0]
             # generate a dt that is inclusive of one burst
             # we know the number of pings in a burst from the difference
