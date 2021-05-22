@@ -94,20 +94,30 @@ def proc(
     # find start time in julian days in the raw time series
     t0 = raw.dday[0]
 
-    # Wondering if we really need to extract the subsurface range here? MCM
-    # also looks for data in the water and discards the rest unless specified
-    # otherwise. Currently, if we want to process less than the full time
-    # series, we depend on the subset that is extracted here. This should be
-    # easy to change in the future if desired. Writing a subset of the data to
-    # disk does not seem to slow down the process very much.
-    print("extract subsurface ping range")
-    i0, i1 = ii[0], ii[-1]
     if n_ensembles is not None:
-        i1 = i0 + n_ensembles
-    cut_file = "adcp_cut.dat"
-    inst = "wh"
-    print("Extracting ping range %d to %d" % (i0, i1))
-    _ = extract_raw(infile, inst, i0, i1, outfile=cut_file)
+        if isinstance(infile, list):
+            if len(infile) == 1:
+                infile = infile[0]
+            else:
+                 raise Exception("Can't have more than one file if using n_ensembles.")
+
+        # Wondering if we really need to extract the subsurface range here? MCM
+        # also looks for data in the water and discards the rest unless specified
+        # otherwise. Currently, if we want to process less than the full time
+        # series, we depend on the subset that is extracted here. This should be
+        # easy to change in the future if desired. Writing a subset of the data to
+        # disk does not seem to slow down the process very much.
+        print("extract subsurface ping range")
+        i0, i1 = ii[0], ii[-1]
+        if n_ensembles is not None:
+            i1 = i0 + n_ensembles
+        cut_file = "adcp_cut.dat"
+        inst = "wh"
+        print("Extracting ping range %d to %d" % (i0, i1))
+        _ = extract_raw(infile, inst, i0, i1, outfile=cut_file)
+        fnames = [cut_file]
+    else:
+        fnames = infile
 
     # # read the cut time series
     # mc = Multiread(cut_file, inst)
@@ -117,8 +127,6 @@ def proc(
     # Parameters for time averaging and depth gridding
     outdir = "./"
     datadir = "./"
-    fnames = [cut_file]
-    # fnames = [infile]
     driftparams = dict(end_pc=end_pc, end_adcp=end_adcp, start_dday=t0)
     positions = (lon, lat)
 
