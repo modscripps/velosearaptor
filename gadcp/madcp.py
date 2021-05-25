@@ -32,6 +32,7 @@ def proc(
     end_adcp=None,
     n_ensembles=None,
     ibad=None,
+    pressure_scale_factor = 1,
 ):
     """Temporary function for processing ADCP raw data.
 
@@ -61,6 +62,8 @@ def proc(
     ibad : int, optional
         The index of a beam to be excluded from the beam_to_xyz
         calculation. This is the zero-based index. Defaults to None.
+    pressure_scale_factor : float, optional
+        Scale factor for pressure time series. Defaults to 1 (no scaling).
 
     Returns
     -------
@@ -81,7 +84,7 @@ def proc(
     print("reading raw data...")
     # raw = io.read_raw_rdi(infile)
     raw = m.read(varlist=["VariableLeader"])
-    raw.pressure = raw.VL["Pressure"] / 1000.0
+    raw.pressure = raw.VL["Pressure"] / 1000.0 * pressure_scale_factor
     raw.temperature = raw.VL["Temperature"] / 100.0
     fig, ax = gv.plot.quickfig(fgs=(6, 2.5))
     ax.plot(raw.dday, raw.pressure, label="all")
@@ -152,6 +155,7 @@ def proc(
         datadir=datadir,
         lat=lat,
         ibad=ibad,
+        pressure_scale_factor=pressure_scale_factor,
     )
     pa = Pingavg(
         mcm,

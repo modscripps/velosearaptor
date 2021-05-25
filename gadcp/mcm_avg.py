@@ -106,7 +106,14 @@ class MCM:
     """
 
     def __init__(
-        self, fnames, driftparams, datadir="./", sonar="wh", ibad=None, lat=30
+        self,
+        fnames,
+        driftparams,
+        datadir="./",
+        sonar="wh",
+        ibad=None,
+        lat=30,
+        pressure_scale_factor=1,
     ):
         """
         Generate MCM object for moored ADCP data.
@@ -127,16 +134,19 @@ class MCM:
         lat : float, optional
             Latitude in degrees for calculating depth from pressure. Defaults
             to 30.
+        pressure_scale_factor : float, optional
+            Scale factor for pressure time series. Defaults to 1 (no scaling).
         """
         # self.fnames = [os.path.join(datadir, f) for f in fnames]
         self.fnames = fnames
         self.driftparams = driftparams
         self.lat = lat
+        self.pressure_scale_factor = pressure_scale_factor
 
         self.m = Multiread(self.fnames, sonar, ibad=ibad)
         tsdat = self.m.read(varlist=["VariableLeader"])
         # initial units: 10 Pa (about 1 mm or 0.001 decibar)
-        tsdat.pressure = tsdat.VL["Pressure"] / 1000.0  # in decibars
+        tsdat.pressure = tsdat.VL["Pressure"] / 1000.0 * pressure_scale_factor  # in decibars
         self.tsdat = tsdat
 
         self.yearbase = self.m.yearbase
@@ -188,7 +198,7 @@ class MCM:
         If turning on burst averaging, other input values will be ignored.
         """
         if not burst_average:
-            print('no burst average')
+            print("no burst average")
             self.dday_start = dday_start
             self.dday_end = dday_end
             self.dt = dt_hours / 24.0
@@ -213,8 +223,8 @@ class MCM:
             # we know the number of pings in a burst from the difference
             # between the start_indices:
             pings_per_burst = np.int32(np.median(np.diff(start_indices)))
-            print(f'{pings_per_burst} pings per burst')
-            print(f'{start_indices.shape[0]} bursts')
+            print(f"{pings_per_burst} pings per burst")
+            print(f"{start_indices.shape[0]} bursts")
             self.dt = burst_dt * pings_per_burst + burst_dt * 3
 
             # keeping this in here for now to run a test, need to delete when
@@ -238,7 +248,7 @@ class MCM:
             return None
         dat.dday_orig = dat.dday
         dat.dday = self.correct_dday(dat.dday_orig)
-        dat.pressure = dat.VL["Pressure"] / 1000.0
+        dat.pressure = dat.VL["Pressure"] / 1000.0 * self.pressure_scale_factor
         sign = -1 if self.orientation == "up" else 1
         pdepth = seawater.depth2(dat.pressure, self.lat)
         dat.depth = pdepth[:, np.newaxis] + sign * dat.dep
