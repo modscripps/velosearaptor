@@ -1,9 +1,7 @@
 gadcp
 =====
 
-Library of python modules for dealing with RDI ADCP data. Heavily based on pycurrents which take a couple extra steps to install, therefore these libraries were moved from `gvpy` to their own module.
-
-Follow [pycurrents installation instructions](https://currents.soest.hawaii.edu/ocn_data_analysis/installation.html)
+Library of python modules for dealing with RDI ADCP data. Heavily based on pycurrents which take a couple extra steps to install, therefore these libraries were moved from `gvpy` to their own module. Follow [pycurrents installation instructions](https://currents.soest.hawaii.edu/ocn_data_analysis/installation.html).
 
 Import as
 ```
