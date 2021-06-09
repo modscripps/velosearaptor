@@ -261,4 +261,18 @@ def npz2nc(npzfile):
         if vari not in ["dep", "dday"]:
             out[vari] = (["time"], dat[vari])
 
+    # add variable names and units for plotting
+    out = add_meta_data(out)
+
     return out
+
+
+def add_meta_data(ds):
+    ds.u.attrs = dict(long_name="u", units="m/s")
+    ds.v.attrs = dict(long_name="v", units="m/s")
+    ds.w.attrs = dict(long_name="w", units="m/s")
+    ds.e.attrs = dict(long_name="error velocity", units="m/s")
+    ds.z.attrs = dict(long_name="depth", units="m")
+    ds.temperature.attrs = dict(long_name="temperature", units="°C")
+    ds.pressure.attrs = dict(long_name="pressure", units="dbar")
+    return ds
