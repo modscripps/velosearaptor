@@ -73,8 +73,11 @@ def read_raw_rdi(file, auxillary_only=False):
 
     # get 2d variables
     if auxillary_only is False:
-        for v in ["vel", "cor", "amp", "pg"]:
+        for v in ["vel", "cor", "amp"]:
             out[v] = (["beam", "z", "time"], np.transpose(radcp[v]))
+        if "pg" in radcp:
+            out["pg"] = (["beam", "z", "time"], np.transpose(radcp["pg"]))
+
 
     out.coords["time"] = (["time"], adcptime)
     out.coords["z"] = (["z"], radcp.dep)
