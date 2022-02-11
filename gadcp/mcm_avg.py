@@ -1,75 +1,5 @@
 """
 Edit and average the data from moored ADCPs.
-
-This was developed initially for the wh300 upward-looking
-instruments at the top of the MIXET moorings.
-
-To use it, one must provide information and a small script
-like this (taken from MIXET):
-
-#####################
-
-
-from pycurrents.adcp.mcm_avg import MCM, Pingavg
-
-outdir = "./output"
-datadir = "../wh300_data"
-
-fnamesdict = dict(M45N=["mcm_4_5N.dat"],
-                  M15N=['_RDI_000_16470.000', '_RDI_512_16470.000'],
-                  M05N=['_RDI_000_16678.000', '_RDI_512_16678.000'],
-                 )
-
-driftparamsdict = dict(M45N=dict(end_pc=(2012, 11, 16, 1, 21, 48),
-                                 end_adcp=(2012, 11, 16, 1, 27, 12),
-                                 start_dday=None,
-                                 ),
-                       M15N=dict(end_pc=(2012, 11, 14, 13, 54, 15),
-                                 end_adcp=(2012, 11, 14, 13, 52, 54)),
-                       M05N=dict(end_pc=(2012, 11, 13, 21, 00, 22),
-                                 end_adcp=(2012, 11, 13, 21, 00, 19)),
-                      )
-
-#positions from Scott:
-#M1    4.5N    04  30.09 N       156  00.70 E
-#M2    3N       03  13.082 N     155  59.956 E
-#M3    1.5N    01  30.128 N     156  00.424 E
-#M4     .5N     00  33.847 N     156  00.009 E
-#M5    .5S      00   34.495 S     156  00.06 E
-
-
-positionsdict = dict(M45N=(156.0117, 4.5015),
-                     M15N=(156.0071, 1.5021),
-                     M05N=(156.0002, 0.5651),
-                     )
-
-
-editparams = dict(max_e=0.2,          # absolute max e
-                  max_e_deviation=2,  # max in terms of sigma
-                  )
-
-dgridparams = dict(#dbot=int(self.p_median),
-                   dtop=10,
-                   d_interval=1,
-                   )
-
-tgridparams = dict(dt_hours = 1.0,
-                   #t0 = t0,
-                   #t1 = t1,
-                   )
-
-
-for key in fnamesdict.keys():
-    mcm = MCM(fnamesdict[key], driftparamsdict[key], datadir=datadir)
-    pa = Pingavg(mcm, lonlat=positionsdict[key],
-                 dgridparams=dgridparams,
-                 tgridparams=tgridparams,
-                 )
-    pa.average_ensembles()
-    fname = key + '_hourly.npz'
-    pa.save_npz(fname, outdir=outdir)
-
-### end MIXET example
 """
 
 import os
@@ -86,6 +16,10 @@ from pycurrents.codas import to_date, to_day
 from pycurrents.adcp.transform import rdi_xyz_enu
 from pycurrents.file import npzfile
 from pycurrents.data import seawater
+# for the xyz_to_enu hotfix
+from pycurrents.adcp._transform import _heading_rotate, _heading_rotate_m
+from pycurrents.adcp._transform import _hpr_rotate, _hpr_rotate_m
+from pycurrents.adcp.transform import _process_vel, _process_attitude
 
 # Standard logging
 L = logging.getLogger(__name__)
@@ -264,6 +198,7 @@ class Pingavg:
         max_e=0.2,  # absolute max e
         max_e_deviation=2,  # max in terms of sigma
         min_correlation=64,  # 64 is RDI default
+        maskbins=None # do not mask any bins
     )
 
     def __init__(
@@ -374,6 +309,8 @@ class Pingavg:
         ens.max_e_applied = max_e
         cond = np.abs(e) > max_e
         ens.xyze[cond] = np.ma.masked
+        if ep.maskbins is not None:
+            ens.xyze[:, ep.maskbins, :] = np.ma.masked
 
     def regrid_enu(self, ens, method="linear"):
         """
@@ -494,3 +431,72 @@ class Pingavg:
     def save_npz(self, fname, outdir="./"):
         fpath = os.path.join(outdir, fname)
         npzfile.savez(fpath, **self.ave)
+
+
+def rdi_xyz_enu_tmp(vel, heading, pitch, roll, orientation='down', gimbal=False):
+    """
+    GV: I used this as a hotfix for a bug in the pycurrents package.
+    The bug should be fixed now and this should not be needed anymore.
+    I am leaving this in here for now but go back to using rdi_xyz_enu()
+    above in Pingavg.
+    Also leaving the imports at the top needed for this function.
+
+    Transform a velocity or sequence from xyz to enu.
+
+    vel is a sequence or array of entries, [u, v, w, ...],
+    where u, v and w are optionally followed by e; that is, vel
+    can have 3, or 4 entries, and only the first three will
+    be modified on output.  vel may be 1, 2, or 3-D.
+
+    heading is a single value in compass degrees, or a 1-D sequence
+    that must match the first dimension of vel if vel is 2-D or 3-D.
+
+    pitch and roll have the same constraints as heading.
+    pitch is tilt1; roll is tilt2;
+
+    gimbal = False (default) adjusts the raw pitch (tilt1) for the
+    roll (tilt2), as appropriate for the internal sensor.
+
+    The data ordering convention is that if vel is 3-D, the indices
+    are time, depth, component; heading is assumed to be a
+    constant or a time series, but not varying with depth.
+
+    This is a wrapper around a cython function.
+    """
+    vel, velshape = _process_vel(vel, min_comps=3)
+    heading = _process_attitude(heading, "heading", vel, velshape)
+    pitch = _process_attitude(pitch, "pitch", vel, velshape)
+    roll = _process_attitude(roll, "roll", vel, velshape)
+
+    if (np.ma.is_masked(vel) or np.ma.is_masked(heading)
+            or np.ma.is_masked(pitch) or np.ma.is_masked(roll)):
+        # If any input has masked values, use the fully masked function.
+        velmask = np.ma.getmaskarray(vel).astype(np.int8)
+        hmask = np.ma.mask_or(np.ma.getmaskarray(roll),
+                                np.ma.getmaskarray(pitch),
+                                shrink=False)
+        hmask = np.ma.mask_or(hmask, np.ma.getmaskarray(heading),
+                                shrink=False)
+        hmask = hmask.astype(np.int8) # cython 11.2 can't handle bool
+        velr, outmask = _hpr_rotate_m(vel, heading, pitch, roll,
+                                        velmask, hmask,
+                                        orientation, gimbal)
+        velr = np.ma.array(velr, mask=outmask, copy=False)
+    else:
+        # If either input is a masked array with mask False,
+        # strip off the mask, do the calculation,
+        # and convert the output back into a masked array.
+        maskout = np.ma.isMaskedArray(vel)
+        if maskout:
+            vel = vel.view(np.ndarray)
+        if np.ma.isMaskedArray(heading):
+            heading = heading.view(np.ndarray)  # or heading.data?
+        if np.ma.isMaskedArray(pitch):
+            pitch = pitch.view(np.ndarray)
+        if np.ma.isMaskedArray(roll):
+            roll = roll.view(np.ndarray)
+        velr = _hpr_rotate(vel, heading, pitch, roll, orientation, gimbal)
+        if maskout:
+            velr = np.ma.asarray(velr)
+
+    return velr.reshape(velshape)
