@@ -70,6 +70,8 @@ class MCM:
             to 30.
         pressure_scale_factor : float, optional
             Scale factor for pressure time series. Defaults to 1 (no scaling).
+            This was introduced for a malfunctioning pressure sensor and should
+            not be necessary in most cases.
         """
         # self.fnames = [os.path.join(datadir, f) for f in fnames]
         self.fnames = fnames
@@ -119,17 +121,19 @@ class MCM:
         Parameters
         ----------
         dday_start : float
-
+            Start time stamp.
         dday_end : float
-
-        dt_hours :
-
+            End time stamp.
+        dt_hours : float
+            Averaging interval in hours.
         burst_average : bool, optional
-            Average over bursts. Defaults to False.
+            Average over bursts. Defaults to False. If True, other parameters will be ignored.
 
         Notes
         -----
-        If turning on burst averaging, other input values will be ignored.
+        If turning on burst averaging, other input values will be ignored and
+        the averaging interval will be determined from the burst sampling
+        scheme apparent in the ping pattern.
         """
         if not burst_average:
             print("no burst average")
@@ -137,36 +141,38 @@ class MCM:
             self.dday_end = dday_end
             self.dt = dt_hours / 24.0
             self.start_ddays = np.arange(dday_start, dday_end, dt_hours / 24.0)
+            # Time stamps for the averages. Midpoints of averaging intervals
+            self.dday_mid = self.start_ddays + self.dt / 2
         else:
-            # determine burst length and time between bursts
             dday_diff = np.diff(self.dday)
+            # determine ping interval within burst and time between bursts
             burst_dt = np.median(dday_diff)
-            print(burst_dt * 24 * 60)
+            print(f'time between pings within burst: {burst_dt * 24 * 60 * 60:1.1f} s')
             # It seems safe to assume that the time between bursts is at least
-            # four times as long as the time between individual bursts within a
+            # four times as long as the time between individual pings within a
             # burst.
             inter_burst_dt = np.median(dday_diff[dday_diff > burst_dt * 4])
-            print(inter_burst_dt * 24 * 60)
+            print(f'time between bursts: {inter_burst_dt * 24 * 60:1.1f} min')
             # find starting points of all bursts
             start_indices = np.flatnonzero(dday_diff > burst_dt * 4)
             start_indices += 1
             start_indices = np.insert(start_indices, 0, 0)
             self.start_ddays = self.dday[start_indices]
             self.dday_start = self.start_ddays[0]
-            # generate a dt that is inclusive of one burst
-            # we know the number of pings in a burst from the difference
-            # between the start_indices:
+            # Generate a dt that is inclusive of one burst.  We know the number
+            # of pings in a burst from the difference between the
+            # start_indices.
             pings_per_burst = np.int32(np.median(np.diff(start_indices)))
             print(f"{pings_per_burst} pings per burst")
-            print(f"{start_indices.shape[0]} bursts")
+            print(f"processing {start_indices.shape[0]} bursts")
             self.dt = burst_dt * pings_per_burst + burst_dt * 3
 
-            # keeping this in here for now to run a test, need to delete when
-            # above fully works.
-            # self.dday_start = dday_start
+            self.dday_start = self.start_ddays[0]
             self.dday_end = dday_end
-            # self.dt = dt_hours / 24.0
-            # self.start_ddays = np.arange(dday_start, dday_end, dt_hours / 24.0)
+
+            # Time stamps in the middle of the burst
+            self.dday_mid = self.start_ddays + pings_per_burst * burst_dt / 2
+
 
     def read_ensemble(self, iens):
         if iens > len(self.start_ddays) - 1:
@@ -254,6 +260,7 @@ class Pingavg:
             self.tgridparams.burst_average,
         )
         self.start_ddays = self.mcm.start_ddays
+        self.dday_mid = self.mcm.dday_mid
 
     # The following is modified from ladcp.py.
     @property
@@ -361,9 +368,12 @@ class Pingavg:
 
         npings = np.zeros((nens,), dtype=np.int16)
 
-        # midpoints of averaging intervals (dividing by 48 because of midpoint,
-        # so half the value):
-        dday = self.start_ddays[start:stop] + self.tgridparams.dt_hours / 48.0
+        # Midpoints of averaging intervals. Now calculating the time stamps for
+        # the averages directly in MCM.make_start_days() where we deal with the
+        # rest of the time vector. There we now also correctly calculate time
+        # stamps for burst averages.
+        # dday = self.start_ddays[start:stop] + self.tgridparams.dt_hours / 48.0
+        dday = self.dday_mid[start:stop]
 
         for i, iens in enumerate(indices):
             ens = self.mcm.read_ensemble(iens)

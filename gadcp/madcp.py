@@ -116,7 +116,7 @@ def proc(
             i1 = i0 + n_ensembles
         cut_file = "adcp_cut.dat"
         inst = "wh"
-        print("Extracting ping range %d to %d" % (i0, i1))
+        print("extracting ping range %d to %d" % (i0, i1))
         _ = extract_raw(infile, inst, i0, i1, outfile=cut_file)
         fnames = [cut_file]
     else:
