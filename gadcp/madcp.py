@@ -110,13 +110,13 @@ def proc(
         # series, we depend on the subset that is extracted here. This should be
         # easy to change in the future if desired. Writing a subset of the data to
         # disk does not seem to slow down the process very much.
-        print("extract subsurface ping range")
+        print("extracting subsurface ping range...")
         i0, i1 = ii[0], ii[-1]
         if n_ensembles is not None:
             i1 = i0 + n_ensembles
         cut_file = "adcp_cut.dat"
         inst = "wh"
-        print("extracting ping range %d to %d" % (i0, i1))
+        print("extracted ping range %d to %d" % (i0, i1))
         _ = extract_raw(infile, inst, i0, i1, outfile=cut_file)
         fnames = [cut_file]
     else:
@@ -148,7 +148,7 @@ def proc(
     #     burst_average=True,
     # )
 
-    print("time averaging and depth gridding")
+    print("time averaging and depth gridding...")
     mcm = MCM(
         fnames,
         driftparams,

@@ -153,15 +153,18 @@ class MCM:
             # burst.
             inter_burst_dt = np.median(dday_diff[dday_diff > burst_dt * 4])
             print(f'time between bursts: {inter_burst_dt * 24 * 60:1.1f} min')
-            # find starting points of all bursts
+            # Find starting points of all bursts.
             start_indices = np.flatnonzero(dday_diff > burst_dt * 4)
+            # Increase index so we are at the end of the larger time differences.
             start_indices += 1
+            # Include the very beginning.
             start_indices = np.insert(start_indices, 0, 0)
             self.start_ddays = self.dday[start_indices]
             self.dday_start = self.start_ddays[0]
             # Generate a dt that is inclusive of one burst.  We know the number
             # of pings in a burst from the difference between the
-            # start_indices.
+            # start_indices. Let's go a bit beyond the time needed (3 more ping
+            # intervals chosen here).
             pings_per_burst = np.int32(np.median(np.diff(start_indices)))
             print(f"{pings_per_burst} pings per burst")
             print(f"processing {start_indices.shape[0]} bursts")
@@ -172,7 +175,6 @@ class MCM:
 
             # Time stamps in the middle of the burst
             self.dday_mid = self.start_ddays + pings_per_burst * burst_dt / 2
-
 
     def read_ensemble(self, iens):
         if iens > len(self.start_ddays) - 1:
@@ -197,7 +199,8 @@ class MCM:
 
 class Pingavg:
     """
-    Edit raw moored ADCP data, and average on a uniform time grid.
+    Edit raw moored ADCP data, and average on a uniform time grid or average
+    overs bursts.
     """
 
     _editparams = dict(
@@ -239,20 +242,23 @@ class Pingavg:
             dtype=float,
         )
 
+        # Find time at depth.
         p = mcm.tsdat.pressure
         at_depth = np.nonzero(p > self.p_median)[0][0]
         t0 = (2 + np.ceil(mcm.dday[at_depth] * 24)) / 24.0
         in_water = np.nonzero(p > self.p_median / 2)[0][-1]
         t1 = (np.floor(mcm.dday[in_water] * 24) - 2) / 24.0
 
+        # Generate a set of default time gridding parameters and then update
+        # from the input parameters provided.
         default_tgridparams = dict(
             dt_hours=0.5, t0=t0, t1=t1, burst_average=False
         )
-
         self.tgridparams = Bunch(default_tgridparams)
         if tgridparams is not None:
             self.tgridparams.update_values(tgridparams, strict=True)
 
+        # Generate a time vector.
         self.mcm.make_start_ddays(
             self.tgridparams.t0,
             self.tgridparams.t1,
