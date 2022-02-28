@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""Module gadcp.madcp with functions for moored ADCPs"""
+"""Module gadcp.madcp with functions for moored ADCPs."""
 
 import os
 import subprocess
@@ -34,7 +34,7 @@ def proc(
     ibad=None,
     pressure_scale_factor = 1,
 ):
-    """Temporary function for processing ADCP raw data.
+    """Process moored ADCP raw data.
 
     Parameters
     ----------

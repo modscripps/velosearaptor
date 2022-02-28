@@ -16,6 +16,7 @@ from pycurrents.codas import to_date, to_day
 from pycurrents.adcp.transform import rdi_xyz_enu
 from pycurrents.file import npzfile
 from pycurrents.data import seawater
+
 # for the xyz_to_enu hotfix
 from pycurrents.adcp._transform import _heading_rotate, _heading_rotate_m
 from pycurrents.adcp._transform import _hpr_rotate, _hpr_rotate_m
@@ -82,7 +83,9 @@ class MCM:
         self.m = Multiread(self.fnames, sonar, ibad=ibad)
         tsdat = self.m.read(varlist=["VariableLeader"])
         # initial units: 10 Pa (about 1 mm or 0.001 decibar)
-        tsdat.pressure = tsdat.VL["Pressure"] / 1000.0 * pressure_scale_factor  # in decibars
+        tsdat.pressure = (
+            tsdat.VL["Pressure"] / 1000.0 * pressure_scale_factor
+        )  # in decibars
         self.tsdat = tsdat
 
         self.yearbase = self.m.yearbase
@@ -135,24 +138,29 @@ class MCM:
         the averaging interval will be determined from the burst sampling
         scheme apparent in the ping pattern.
         """
+        # Save whether we are averaging over bursts or not.
+        self.burst_average = burst_average
+        # Generate time stamps and stuff.
         if not burst_average:
             print("no burst average")
             self.dday_start = dday_start
             self.dday_end = dday_end
             self.dt = dt_hours / 24.0
             self.start_ddays = np.arange(dday_start, dday_end, dt_hours / 24.0)
-            # Time stamps for the averages. Midpoints of averaging intervals
+            # Time stamps for the averages. Midpoints of averaging intervals.
             self.dday_mid = self.start_ddays + self.dt / 2
         else:
             dday_diff = np.diff(self.dday)
-            # determine ping interval within burst and time between bursts
+            # Determine ping interval within burst and time between bursts.
             burst_dt = np.median(dday_diff)
-            print(f'time between pings within burst: {burst_dt * 24 * 60 * 60:1.1f} s')
+            print(
+                f"time between pings within burst: {burst_dt * 24 * 60 * 60:1.1f} s"
+            )
             # It seems safe to assume that the time between bursts is at least
             # four times as long as the time between individual pings within a
             # burst.
             inter_burst_dt = np.median(dday_diff[dday_diff > burst_dt * 4])
-            print(f'time between bursts: {inter_burst_dt * 24 * 60:1.1f} min')
+            print(f"time between bursts: {inter_burst_dt * 24 * 60:1.1f} min")
             # Find starting points of all bursts.
             start_indices = np.flatnonzero(dday_diff > burst_dt * 4)
             # Increase index so we are at the end of the larger time differences.
@@ -207,7 +215,7 @@ class Pingavg:
         max_e=0.2,  # absolute max e
         max_e_deviation=2,  # max in terms of sigma
         min_correlation=64,  # 64 is RDI default
-        maskbins=None # do not mask any bins
+        maskbins=None,  # do not mask any bins
     )
 
     def __init__(
@@ -267,6 +275,7 @@ class Pingavg:
         )
         self.start_ddays = self.mcm.start_ddays
         self.dday_mid = self.mcm.dday_mid
+        self.burst_average = self.mcm.burst_average
 
     # The following is modified from ladcp.py.
     @property
@@ -325,6 +334,16 @@ class Pingavg:
         if ep.maskbins is not None:
             ens.xyze[:, ep.maskbins, :] = np.ma.masked
 
+    def burst_average_depth(self, ens):
+        # Average the depth vectors if doing burst-averages. Otherwise we just
+        # return all depth vectors of this ensemble.
+        if self.burst_average:
+            depth_mean = ens.depth.mean(axis=0)
+            depth = np.tile(depth_mean, (ens.dday.size, 1))
+        else:
+            depth = ens.depth
+        return depth
+
     def regrid_enu(self, ens, method="linear"):
         """
         add enu_grid
@@ -332,9 +351,15 @@ class Pingavg:
         shape = (ens.dday.size, self.dgrid.size, ens.enu.shape[-1])
         enu_grid = np.ma.zeros(shape)
         enu_grid[:] = np.ma.masked
+        # Average the depth vectors if doing burst-averages. Otherwise we just
+        # return all depth vectors of this ensemble.
+        # TO DO: If calculating averages over regular time intervals, we need
+        # to low pass filter the pressure time series prior to creating the
+        # depth vectors.
+        depth = self.burst_average_depth(ens)
         for i in range(ens.dday.size):
             enu_grid[i] = interp1(
-                ens.depth[i], ens.enu[i], self.dgrid, axis=0, method=method
+                depth[i], ens.enu[i], self.dgrid, axis=0, method=method
             )
         ens.enu_grid = enu_grid
 
@@ -345,9 +370,10 @@ class Pingavg:
         shape = (ens.dday.size, self.dgrid.size)
         amp_grid = np.ma.zeros(shape)
         amp_grid[:] = np.ma.masked
+        depth = self.burst_average_depth(ens)
         for i in range(ens.dday.size):
             amp_grid[i] = interp1(
-                ens.depth[i],
+                depth[i],
                 ens.amp[i].mean(axis=-1),
                 self.dgrid,
                 axis=0,
@@ -449,7 +475,9 @@ class Pingavg:
         npzfile.savez(fpath, **self.ave)
 
 
-def rdi_xyz_enu_tmp(vel, heading, pitch, roll, orientation='down', gimbal=False):
+def rdi_xyz_enu_tmp(
+    vel, heading, pitch, roll, orientation="down", gimbal=False
+):
     """
     GV: I used this as a hotfix for a bug in the pycurrents package.
     The bug should be fixed now and this should not be needed anymore.
@@ -484,19 +512,22 @@ def rdi_xyz_enu_tmp(vel, heading, pitch, roll, orientation='down', gimbal=False)
     pitch = _process_attitude(pitch, "pitch", vel, velshape)
     roll = _process_attitude(roll, "roll", vel, velshape)
 
-    if (np.ma.is_masked(vel) or np.ma.is_masked(heading)
-            or np.ma.is_masked(pitch) or np.ma.is_masked(roll)):
+    if (
+        np.ma.is_masked(vel)
+        or np.ma.is_masked(heading)
+        or np.ma.is_masked(pitch)
+        or np.ma.is_masked(roll)
+    ):
         # If any input has masked values, use the fully masked function.
         velmask = np.ma.getmaskarray(vel).astype(np.int8)
-        hmask = np.ma.mask_or(np.ma.getmaskarray(roll),
-                                np.ma.getmaskarray(pitch),
-                                shrink=False)
-        hmask = np.ma.mask_or(hmask, np.ma.getmaskarray(heading),
-                                shrink=False)
-        hmask = hmask.astype(np.int8) # cython 11.2 can't handle bool
-        velr, outmask = _hpr_rotate_m(vel, heading, pitch, roll,
-                                        velmask, hmask,
-                                        orientation, gimbal)
+        hmask = np.ma.mask_or(
+            np.ma.getmaskarray(roll), np.ma.getmaskarray(pitch), shrink=False
+        )
+        hmask = np.ma.mask_or(hmask, np.ma.getmaskarray(heading), shrink=False)
+        hmask = hmask.astype(np.int8)  # cython 11.2 can't handle bool
+        velr, outmask = _hpr_rotate_m(
+            vel, heading, pitch, roll, velmask, hmask, orientation, gimbal
+        )
         velr = np.ma.array(velr, mask=outmask, copy=False)
     else:
         # If either input is a masked array with mask False,
