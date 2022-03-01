@@ -1,0 +1,9 @@
+pytest
+pytest-runner
+pytest-datadir
+numpy
+netcdf4
+xarray
+gsw
+scipy
+matplotlib

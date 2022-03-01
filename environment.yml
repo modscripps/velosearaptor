@@ -1,0 +1,8 @@
+# Note: Need to install pycurrents manually into this environment
+name: gadcp
+dependencies:
+  - python=3.8
+  - pip
+  - pip:
+    - pdoc
+    - -r requirements.txt

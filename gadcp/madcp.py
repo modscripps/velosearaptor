@@ -21,6 +21,7 @@ import gvpy as gv
 
 logger = logging.getLogger(__name__)
 
+
 def proc(
     infile,
     lon,
@@ -34,7 +35,7 @@ def proc(
     n_ensembles=None,
     ibad=None,
     pressure_scale_factor=1,
-    logdir='log',
+    logdir="log",
     verbose=False,
     plot_pressure=False,
 ):
@@ -86,17 +87,15 @@ def proc(
 
     To Do
     -----
-    x make time and depth grid parameters input parameters
     - allow for single ping processing/output, i.e. no time gridding
-    x allow for burst averaging
     - allow for external pressure time series input
 
     """
-    # Parse some metadata that we want to use to name the log.
+    # Parse metadata for naming the log.
     if meta_data is not None:
-        if 'sn' in meta_data and 'mooring' in meta_data:
-            sn = meta_data['sn']
-            mooring = meta_data['mooring']
+        if "sn" in meta_data and "mooring" in meta_data:
+            sn = meta_data["sn"]
+            mooring = meta_data["mooring"]
             has_mooring_id = True
         else:
             sn = None
@@ -113,6 +112,7 @@ def proc(
         filename = f"{mooring}_{sn}.log"
     else:
         filename = "adcp_proc.log"
+    # Delete any existing handlers. This may be bad style, but I kept adding handlers when developing this.
     logger.handlers = []
     logging.basicConfig(
         filename=logdir.joinpath(filename),
@@ -131,7 +131,9 @@ def proc(
     if has_mooring_id:
         logger.info(f"Processing {mooring} SN{sn} on {datestr}")
     else:
-        logger.warning("No meta data provided, logging to generic filename 'adcp_proc.log'")
+        logger.warning(
+            "No meta data provided, logging to generic filename 'adcp_proc.log'"
+        )
         logger.info(f"Processing on {datestr}")
 
     # Read configuration.
