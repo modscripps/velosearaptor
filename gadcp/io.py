@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""Module gadcp.io with in/out functions"""
+"""Module gadcp.io with in/out functions. Mostly provides wrapper functions to UHs `Multiread`."""
 
 import numpy as np
 import xarray as xr
@@ -63,7 +63,9 @@ def read_raw_rdi(file, auxillary_only=False):
         "XducerDepth",
     ]
 
-    out = xr.Dataset(data_vars={"dummy": (["z", "time"], np.ones((jj, ii)) * np.nan)})
+    out = xr.Dataset(
+        data_vars={"dummy": (["z", "time"], np.ones((jj, ii)) * np.nan)}
+    )
 
     # get 1d variables
     for v in varsii:
@@ -77,7 +79,6 @@ def read_raw_rdi(file, auxillary_only=False):
             out[v] = (["beam", "z", "time"], np.transpose(radcp[v]))
         if "pg" in radcp:
             out["pg"] = (["beam", "z", "time"], np.transpose(radcp["pg"]))
-
 
     out.coords["time"] = (["time"], adcptime)
     out.coords["z"] = (["z"], radcp.dep)
@@ -144,7 +145,6 @@ def read_raw_rdi_uh(file, auxillary_only=False):
     radcp.temperature = radcp.VL["Temperature"] / 100.0
 
     return radcp
-
 
 
 def _is_number(s):

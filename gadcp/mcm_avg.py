@@ -18,12 +18,12 @@ from pycurrents.file import npzfile
 from pycurrents.data import seawater
 
 # for the xyz_to_enu hotfix
-from pycurrents.adcp._transform import _heading_rotate, _heading_rotate_m
-from pycurrents.adcp._transform import _hpr_rotate, _hpr_rotate_m
-from pycurrents.adcp.transform import _process_vel, _process_attitude
+# from pycurrents.adcp._transform import _heading_rotate, _heading_rotate_m
+# from pycurrents.adcp._transform import _hpr_rotate, _hpr_rotate_m
+# from pycurrents.adcp.transform import _process_vel, _process_attitude
 
 # Standard logging
-L = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 
 class MCM:
@@ -74,7 +74,6 @@ class MCM:
             This was introduced for a malfunctioning pressure sensor and should
             not be necessary in most cases.
         """
-        # self.fnames = [os.path.join(datadir, f) for f in fnames]
         self.fnames = fnames
         self.driftparams = driftparams
         self.lat = lat
@@ -82,10 +81,11 @@ class MCM:
 
         self.m = Multiread(self.fnames, sonar, ibad=ibad)
         tsdat = self.m.read(varlist=["VariableLeader"])
-        # initial units: 10 Pa (about 1 mm or 0.001 decibar)
+        # Initial units: 10 Pa (about 1 mm or 0.001 decibar).
+        # Converting to decibars.
         tsdat.pressure = (
             tsdat.VL["Pressure"] / 1000.0 * pressure_scale_factor
-        )  # in decibars
+        )
         self.tsdat = tsdat
 
         self.yearbase = self.m.yearbase
@@ -282,7 +282,7 @@ class Pingavg:
     def magdec(self):
         if self._magdec is None:
             if self.lonlat is None:
-                L.info("No magnetic declination is available; using 0")
+                logger.warning("No magnetic declination is available; using 0")
                 self._magdec = 0
             else:
                 lonlat = self.lonlat
@@ -301,7 +301,7 @@ class Pingavg:
                     stdout=PIPE,
                 ).communicate()[0]
                 output = output.strip()
-                L.info("magdec output is: %s", output)
+                logger.info("magdec output is: %s", output)
                 self._magdec = float(output.split()[0])
         return self._magdec
 

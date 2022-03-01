@@ -10,6 +10,7 @@ import numpy as np
 import scipy as sp
 import xarray as xr
 from pathlib import Path
+import logging
 
 from pycurrents.adcp.rdiraw import extract_raw, Multiread
 from pycurrents.system import Bunch
@@ -18,8 +19,7 @@ from gadcp.mcm_avg import MCM, Pingavg
 
 import gvpy as gv
 
-from . import io
-
+logger = logging.getLogger(__name__)
 
 def proc(
     infile,
@@ -30,9 +30,13 @@ def proc(
     dgridparams,
     end_pc=None,
     end_adcp=None,
+    meta_data=None,
     n_ensembles=None,
     ibad=None,
-    pressure_scale_factor = 1,
+    pressure_scale_factor=1,
+    logdir='log',
+    verbose=False,
+    plot_pressure=False,
 ):
     """Process moored ADCP raw data.
 
@@ -56,6 +60,10 @@ def proc(
         time drift was recorded (not recommended).
     end_adcp : tuple (int, int, int, int, int, int), optional
         Time at data download (instrument).
+    meta_data : dict, optional
+        Provide additional metadata. All entries will be written into the attrs
+        of the output `xr.Dataset`. If entries mooring and sn are provided,
+        they are used to name the logfile.
     n_ensembles : None or int, optional
         Extract only this number of ensembles (after the instrument is in the
         water). Mostly for testing purposes. Defaults to None.
@@ -64,6 +72,13 @@ def proc(
         calculation. This is the zero-based index. Defaults to None.
     pressure_scale_factor : float, optional
         Scale factor for pressure time series. Defaults to 1 (no scaling).
+    logdir : str, optional
+        Directory for logfile. Defaults to 'log' and will create directory if
+        it doesn't exist.
+    verbose : bool, optional
+        Print all log information to screen if True. Defaults to False (only warnings).
+    plot_pressure : bool, optional
+        Plot pressure time series and indicate subsurface pings if True. Defaults to False.
 
     Returns
     -------
@@ -77,32 +92,78 @@ def proc(
     - allow for external pressure time series input
 
     """
-    print("reading configuration...")
-    m = Multiread(infile, "wh")
-    print("system configuration:", m.sysconfig)
+    # Parse some metadata that we want to use to name the log.
+    if meta_data is not None:
+        if 'sn' in meta_data and 'mooring' in meta_data:
+            sn = meta_data['sn']
+            mooring = meta_data['mooring']
+            has_mooring_id = True
+        else:
+            sn = None
+            mooring = None
+            has_mooring_id = False
+    else:
+        has_mooring_id = False
 
-    print("reading raw data...")
-    # raw = io.read_raw_rdi(infile)
+    # Set up a logger that will collect log info from this module and the
+    # other pycurrent methods as well.
+    logdir = Path(logdir)
+    logdir.mkdir(exist_ok=True)
+    if has_mooring_id:
+        filename = f"{mooring}_{sn}.log"
+    else:
+        filename = "adcp_proc.log"
+    logger.handlers = []
+    logging.basicConfig(
+        filename=logdir.joinpath(filename),
+        filemode="w",
+        format="%(asctime)s %(name)s %(levelname)s %(message)s",
+        datefmt="%H:%M:%S",
+        level=logging.INFO,
+        force=True,
+    )
+    ConsoleOutputHandler = logging.StreamHandler()
+    ConsoleOutputHandler.setLevel(logging.WARNING)
+    if verbose:
+        ConsoleOutputHandler.setLevel(logging.INFO)
+    logger.addHandler(ConsoleOutputHandler)
+    datestr = gv.time.now_datestr()
+    if has_mooring_id:
+        logger.info(f"Processing {mooring} SN{sn} on {datestr}")
+    else:
+        logger.warning("No meta data provided, logging to generic filename 'adcp_proc.log'")
+        logger.info(f"Processing on {datestr}")
+
+    # Read configuration.
+    m = Multiread(infile, "wh")
+    # logger.info(f"system configuration: {m.sysconfig}")
+
+    # Read raw data.
     raw = m.read(varlist=["VariableLeader"])
     raw.pressure = raw.VL["Pressure"] / 1000.0 * pressure_scale_factor
     raw.temperature = raw.VL["Temperature"] / 100.0
-    fig, ax = gv.plot.quickfig(fgs=(6, 2.5))
-    ax.plot(raw.dday, raw.pressure, label="all")
-    ax.invert_yaxis()
-    ax.set(xlabel="julian day", ylabel="pressure [dbar]")
-    # find time away from surface
-    ii = np.argwhere(raw.pressure > 50).squeeze()
-    # raw.pressure.isel(time=ii).plot(ax=ax, color="r")
-    ax.plot(raw.dday[ii], raw.pressure[ii], color="r", label="subsurface")
-    # find start time in julian days in the raw time series
+
+    # Find start time in julian days in the raw time series.
     t0 = raw.dday[0]
+
+    # Find time away from surface.
+    ii = np.argwhere(raw.pressure > 50).squeeze()
+
+    if plot_pressure:
+        fig, ax = gv.plot.quickfig(fgs=(6, 2.5))
+        ax.plot(raw.dday, raw.pressure, label="all")
+        ax.invert_yaxis()
+        ax.set(xlabel="julian day", ylabel="pressure [dbar]")
+        ax.plot(raw.dday[ii], raw.pressure[ii], color="r", label="subsurface")
 
     if n_ensembles is not None:
         if isinstance(infile, list):
             if len(infile) == 1:
                 infile = infile[0]
             else:
-                 raise Exception("Can't have more than one file if using n_ensembles.")
+                raise Exception(
+                    "Can't have more than one file if using n_ensembles."
+                )
 
         # Wondering if we really need to extract the subsurface range here? MCM
         # also looks for data in the water and discards the rest unless specified
@@ -116,16 +177,11 @@ def proc(
             i1 = i0 + n_ensembles
         cut_file = "adcp_cut.dat"
         inst = "wh"
-        print("extracted ping range %d to %d" % (i0, i1))
+        # print("extracted ping range %d to %d" % (i0, i1))
         _ = extract_raw(infile, inst, i0, i1, outfile=cut_file)
         fnames = [cut_file]
     else:
         fnames = infile
-
-    # # read the cut time series
-    # mc = Multiread(cut_file, inst)
-    # orientation = "up" if mc.sysconfig["up"] else "down"
-    # print("instrument orientation: ", orientation)
 
     # Parameters for time averaging and depth gridding
     outdir = "./"
@@ -147,8 +203,14 @@ def proc(
     #     # t1 = t1,
     #     burst_average=True,
     # )
+    logger.info("processing settings")
+    logger.info("-------------------")
+    _log_params(editparams)
+    _log_params(tgridparams)
+    _log_params(dgridparams)
+    logger.info("-------------------")
 
-    print("time averaging and depth gridding...")
+    # Time averaging and depth gridding.
     mcm = MCM(
         fnames,
         driftparams,
@@ -168,21 +230,30 @@ def proc(
     npzname = "adcp_proc.npz"
     pa.save_npz(npzname, outdir=outdir)
 
-    if n_ensembles is not None:
+    if n_ensembles is not None and plot_pressure:
         ax.plot(
             mcm.tsdat.dday,
             mcm.tsdat.pressure,
             color="orange",
             label="n_ensembles",
         )
-    ax.legend()
+    if plot_pressure:
+        ax.legend()
 
     # load the generated file as netcdf / xarray.Dataset
     data = npz2nc(npzname)
-    # add some more info
+
+    # Add some more info.
+    data.attrs["orientation"] = mcm.orientation
     data.attrs["magdec"] = pa.ave.magdec
     for att in ["max_e", "max_e_deviation", "min_correlation"]:
         data.attrs[att] = pa.ave.editparams[att]
+
+    # Add meta data if provided.
+    if meta_data is not None:
+        for k, v in meta_data.items():
+            data.attrs[k] = v
+    data.attrs["proc time"] = np.datetime64("now").astype("str")
 
     # remove npz file
     os.remove(npzname)
@@ -276,3 +347,21 @@ def add_meta_data(ds):
     ds.temperature.attrs = dict(long_name="temperature", units="°C")
     ds.pressure.attrs = dict(long_name="pressure", units="dbar")
     return ds
+
+
+def _log_params(pd):
+    """Print ADCP processing parameter dict to logs.
+
+    Parameters
+    ----------
+    pd : dict
+        Parameter dict.
+    """
+
+    for k, v in pd.items():
+        if k == "maskbins":
+            logstr = (k, ":", np.flatnonzero(v))
+            logger.info(logstr)
+        else:
+            logstr = (k, ":", v)
+            logger.info(logstr)
