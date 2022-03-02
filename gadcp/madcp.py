@@ -106,8 +106,12 @@ class ProcessADCP:
         ----------
         raw_data : str or list or Path
             Location(s) of raw data.
-        """
+        min_file_size : int
+            Minimum size for file to be included. Defaults to 1e4 which
+            corresponds to about 10kB and is a good value for excluding small
+            files without any actual data.
 
+        """
         def list_dir(dir, min_file_size):
             # List all raw files.
             all_raw_files = list(sorted(dir.glob("*.00*")))
@@ -137,7 +141,11 @@ class ProcessADCP:
                 self.files = [raw_data.as_posix()]
 
     def parse_meta_data(self):
-        """Add essential meta data to attributes and remove them from the meta_data dict."""
+        """Add essential meta data to attributes and remove them from the meta_data dict.
+
+        Will throw a KeyError if no lon/lat provided.
+
+        """
         essential_meta_data = ["lon", "lat"]
         [
             self._safely_add_attribute_from_params(k, self.meta_data)
@@ -171,12 +179,18 @@ class ProcessADCP:
         )
 
     def parse_tgridparams(self, tgridparams):
-        # Find time at depth.
+        # Find time at depth to determine default time grid parameters.
+        # Differentiate between time series only in the water and time series
+        # including the overshoot on mooring deployment.
         p = self.tsdat.pressure
-        at_depth = np.nonzero(p > self.p_median)[0][0]
-        t0 = (2 + np.ceil(self.dday[at_depth] * 24)) / 24.0
-        in_water = np.nonzero(p > self.p_median / 2)[0][-1]
-        t1 = (np.floor(self.dday[in_water] * 24) - 2) / 24.0
+        if ~np.any(p < 10):
+            t0 = self.dday[0]
+            t1 = self.dday[-1]
+        else:
+            at_depth = np.nonzero(p > self.p_median)[0][0]
+            t0 = self.dday[at_depth]
+            in_water = np.nonzero(p > self.p_median / 2)[0][-1]
+            t1 = self.dday[in_water]
 
         # Generate a set of default time gridding parameters and then update
         # from the input parameters provided.
@@ -582,7 +596,13 @@ class ProcessADCP:
         if self.verbose:
             ConsoleOutputHandler.setLevel(logging.INFO)
         logger.addHandler(ConsoleOutputHandler)
-        datestr = gv.time.now_datestr()
+
+        # current date
+        datestr = np.datetime64(datetime.datetime.now()).astype(datetime.datetime)
+        strformat="%Y-%m-%d"
+        datestr = datestr.strftime(strformat)
+
+
         if has_mooring_id:
             logger.info(f"Processing {mooring} SN {sn} on {datestr}")
         else:
