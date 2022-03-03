@@ -1,6 +1,28 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""Module gadcp.madcp with functions for moored ADCPs."""
+"""Module gadcp.madcp with functions for moored ADCPs.
+
+### Notes
+Some general notes and to do items for this module.
+
+#### To Do
+- Adjust depth grid to average depth of ADCP bin
+
+#### Depth Gridding
+The depth vector for the ADCP raw data (in instrument coordinates) is
+calculated in :meth:`pycurrents.rdiraw.FileBBWHOS` as <br>
+`dep = np.arange(NCells) * CellSize + Bin1Dist`
+The depth vector thus points to the center of each bin.
+
+From the RDI manual *WorkHorse Monitor, Sentinel, Mariner, Quartermaster, and
+Long Ranger ADCPs Commands and Output Data Format*:
+
+> This [Bin1Dist] field contains the distance to the middle of the first depth
+> cell (bin). This distance is a function of depth cell length (WS), the
+> profiling mode (WM), the blank after transmit distance (WF), and speed of
+> sound.
+
+"""
 
 import os
 from subprocess import Popen, PIPE  # for magdec
@@ -38,8 +60,9 @@ class ProcessADCP:
     """Moored ADCP Processing.
 
     An instance of ProcessADCP is initialized by providing raw data and
-    processing parameters.  The method :meth:`average_ensembles` can then be
-    used to average over just a few or all pings.
+    processing parameters. Once initialized, the instance method
+    :meth:`average_ensembles` can be used to average over just a few or
+    all pings.
 
     Magnetic declination is automatically calculated via a call to the command
     line tool
@@ -57,8 +80,9 @@ class ProcessADCP:
     downloaded from RDI
     [here](https://www.comm-tec.com/Docs/Manuali/RDI/BBPRIME.pdf).
 
-    Time-averaged data are grouped together in an `xarray.Dataset` for easy
-    access and convenient output to netcdf format.
+    Time-averaged data are grouped together in an `xarray.Dataset` in the
+    instance attribute `ds` for easy access and convenient output to netcdf
+    format.
 
     Parameters
     ----------
@@ -179,7 +203,7 @@ class ProcessADCP:
         plot=False,
         pressure_scale_factor=1,
     ):
-        self.meta_data = meta_data.copy()
+        self.meta_data = Bunch(meta_data.copy())
         self.ibad = ibad
         self.logdir = logdir
         self.verbose = verbose
@@ -260,6 +284,11 @@ class ProcessADCP:
 
         """
         self.m = Multiread(self.files, sonar="wh", ibad=self.ibad)
+        # Make some more meta data realily available by reading a single ping from the raw data.
+        ping = self.m.read(start=0, stop=1)
+        self.meta_data.Bin1Dist = ping.FL.Bin1Dist / 100.0
+        self.meta_data.NCells = ping.FL.NCells
+        self.meta_data.CellSize = ping.FL.CellSize / 100.0
 
     def _read_auxiliary_data(self):
         """Read auxiliary data.
@@ -573,6 +602,7 @@ class ProcessADCP:
         """Raw ADCP data."""
 
         if self._raw is None:
+            print('Reading raw data...')
             self._raw = io.read_raw_rdi(self.files)
             self._raw.coords["bin"] = (("z"), np.arange(self._raw.z.size))
         return self._raw
