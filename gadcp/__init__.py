@@ -13,7 +13,7 @@ analyze raw ADCP data.
 
 ---
 
-TODO: Move :fun:`gadcp.adcp.LADCPYoYoSplit` to its own ladcp submodule.
+TODO: Move :class:`gadcp.adcp.LADCPYoYoSplit` to its own ladcp submodule.
 
 """
 __all__ = ["io", "adcp", "madcp"]
