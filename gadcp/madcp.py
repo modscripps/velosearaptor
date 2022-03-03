@@ -5,9 +5,6 @@
 ### Notes
 Some general notes and to do items for this module.
 
-#### To Do
-- Adjust depth grid to average depth of ADCP bin
-
 #### Depth Gridding
 The depth vector for the ADCP raw data (in instrument coordinates) is
 calculated in :meth:`pycurrents.rdiraw.FileBBWHOS` as <br>
@@ -21,6 +18,11 @@ Long Ranger ADCPs Commands and Output Data Format*:
 > cell (bin). This distance is a function of depth cell length (WS), the
 > profiling mode (WM), the blank after transmit distance (WF), and speed of
 > sound.
+
+#### To Do
+- Default depth grid: if minimum/maximum pressure changes much from median, we need to do this differently
+- Pressure time series: If calculating averages over regular time intervals, we need to low pass filter the pressure time series prior to creating the depth vectors.
+- Pressure time series: Allow for input of external pressure time series.
 
 """
 
@@ -211,6 +213,7 @@ class ProcessADCP:
 
         self._magdec = None
         self._raw = None
+        self._default_dgridparams = None
 
         self._set_up_logger()
         self.parse_file_locations(raw_data)
@@ -318,6 +321,39 @@ class ProcessADCP:
             for k in essential_meta_data
         ]
 
+    @property
+    def default_dgridparams(self):
+        """Default depth gridding parameters.
+
+        This is based on median depth of the ADCP and the bin sizes.
+
+        """
+        if self._default_dgridparams is None:
+            self.p_median = np.median(self.tsdat.pressure)
+            pdep_median = np.round(seawater.depth2(self.p_median, self.lat))
+            n = self.meta_data.NCells + 2
+            d_interval = self.meta_data.CellSize
+            distance_to_first_bin = np.round(self.meta_data.Bin1Dist)
+            distance_to_last_bin = distance_to_first_bin + n * d_interval
+
+            # todo: if minimum/maximum pressure changes much from median, we need to do this differently
+            if self.sysconfig["up"]:
+                dtop = pdep_median - distance_to_last_bin
+                if dtop < 10:
+                    dtop = 10
+                self._default_dgridparams = dict(
+                    dbot=pdep_median - distance_to_first_bin + 2 * d_interval,
+                    dtop=dtop,
+                    d_interval=d_interval,
+                )
+            else:
+                self._default_dgridparams = dict(
+                    dtop=pdep_median + distance_to_first_bin - 2 * d_interval,
+                    dbot=pdep_median + distance_to_last_bin,
+                    d_interval=d_interval,
+                )
+        return self._default_dgridparams
+
     def parse_dgridparams(self, dgridparams):
         """Parse depth gridding parameters.
 
@@ -328,19 +364,7 @@ class ProcessADCP:
         dgridparams : dict
 
         """
-
-        self.p_median = np.median(self.tsdat.pressure)
-        if self.sysconfig["up"]:
-            default_dgridparams = dict(
-                dbot=int(self.p_median), dtop=10, d_interval=5
-            )
-        else:
-            default_dgridparams = dict(
-                dtop=int(self.p_median),
-                dbot=int(self.p_median) + 1000,
-                d_interval=5,
-            )
-        self.dgridparams = Bunch(default_dgridparams)
+        self.dgridparams = Bunch(self.default_dgridparams)
         if dgridparams is not None:
             self.dgridparams.update_values(dgridparams, strict=True)
         else:
@@ -572,7 +596,6 @@ class ProcessADCP:
         (must be installed) based on `lon` and `lat`.
 
         """
-
         if self._magdec is None:
             if self.lat is None:
                 logger.warning("No magnetic declination is available; using 0")
@@ -600,9 +623,8 @@ class ProcessADCP:
     @property
     def raw(self):
         """Raw ADCP data."""
-
         if self._raw is None:
-            print('Reading raw data...')
+            print("Reading raw data...")
             self._raw = io.read_raw_rdi(self.files)
             self._raw.coords["bin"] = (("z"), np.arange(self._raw.z.size))
         return self._raw
@@ -622,9 +644,7 @@ class ProcessADCP:
         )
 
     def _edit(self, ens):
-        """Apply editing to xyze.
-
-        """
+        """Apply editing to xyze."""
         ep = self.editparams
         cond = (ens.cor < ep.min_correlation).any(axis=-1)
         ens.xyze[cond] = np.ma.masked
@@ -1018,4 +1038,3 @@ class ProcessADCP:
         binmask = self.raw.bin.data < 0
         binmask[indices] = True
         return binmask
-
