@@ -152,7 +152,8 @@ class ProcessADCP:
     - `max_e`=0.2,  # absolute max e
     - `max_e_deviation`=2,  # max in terms of sigma
     - `min_correlation`=64,  # 64 is RDI default
-    - `maskbins`
+    - `maskbins` : Array with booleans indexing into the ADCP bins. Use the
+      convenience method `generate_binmask`.
 
     """
 
@@ -982,3 +983,9 @@ class ProcessADCP:
         ax.invert_yaxis()
         ax.set(xlabel="", ylabel="pressure [dbar]")
         ax.legend()
+
+    def generate_binmask(self, indices):
+        binmask = self.raw.bin.data < 0
+        binmask[indices] = True
+        return binmask
+
