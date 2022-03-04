@@ -3,7 +3,7 @@
 """Module gadcp.madcp with functions for moored ADCPs.
 
 ### Notes
-Some general notes and to do items for this module.
+Some general notes and todo items for this module.
 
 #### Depth Gridding
 The depth vector for the ADCP raw data (in instrument coordinates) is
