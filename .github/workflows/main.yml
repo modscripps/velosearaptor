@@ -24,13 +24,13 @@ jobs:
       with:
         python-version: ${{ matrix.python-version }}
     - name: Cache pip
-        uses: actions/cache@v2
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-
-            ${{ runner.os }}-
+      uses: actions/cache@v2
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+          ${{ runner.os }}-
       # https://docs.github.com/en/actions/guides/building-and-testing-python#installing-dependencies
       # ^-- This gives info on installing dependencies with pip
     - name: Install dependencies
@@ -40,19 +40,19 @@ jobs:
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
         python -m pip install .
     - name: Debugging information
-        run: |
-          echo "github.ref:" ${{github.ref}}
-          echo "github.event_name:" ${{github.event_name}}
-          echo "github.head_ref:" ${{github.head_ref}}
-          echo "github.base_ref:" ${{github.base_ref}}
-          set -x
-          git rev-parse --abbrev-ref HEAD
-          git branch
-          git branch -a
-          git remote -v
-          python -V
-          pip list --not-required
-          pip list
+      run: |
+        echo "github.ref:" ${{github.ref}}
+        echo "github.event_name:" ${{github.event_name}}
+        echo "github.head_ref:" ${{github.head_ref}}
+        echo "github.base_ref:" ${{github.base_ref}}
+        set -x
+        git rev-parse --abbrev-ref HEAD
+        git branch
+        git branch -a
+        git remote -v
+        python -V
+        pip list --not-required
+        pip list
     - name: Build docs
       run: |
         pdoc -d numpy -o docs gadcp
