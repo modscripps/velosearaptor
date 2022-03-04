@@ -55,7 +55,7 @@ jobs:
         pip list
     - name: Build docs
       run: |
-        pdoc -d numpy -o docs gadcp
+        pdoc -d numpy -o ./docs ./gadcp
     # Add the .nojekyll file
     - name: nojekyll
       if: ${{ github.event_name == 'push' }}
