@@ -55,7 +55,7 @@ jobs:
         pip list
     - name: Build docs
       run: |
-        pdoc -d numpy -o ../docs ./gadcp
+        pdoc -d numpy -o ./docs ./gadcp
     # Add the .nojekyll file
     - name: nojekyll
       if: ${{ github.event_name == 'push' }}
@@ -70,5 +70,5 @@ jobs:
       with:
         publish_branch: gh-pages
         github_token: ${{ secrets.GITHUB_TOKEN }}
-        publish_dir: ./doc
+        publish_dir: ../doc
         force_orphan: true
