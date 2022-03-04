@@ -55,6 +55,7 @@ jobs:
         pip list
     - name: Build docs
       run: |
+        pdoc --version
         pdoc -d numpy -o ./docs ./gadcp
     # Add the .nojekyll file
     - name: nojekyll
