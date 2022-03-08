@@ -8,7 +8,7 @@ with open("HISTORY.rst") as history_file:
 
 setup(
     name="gadcp",
-    version="0.0.1",
+    version="0.2.0",
     author="Gunnar Voet",
     author_email="gvoet@ucsd.edu",
     url="",
