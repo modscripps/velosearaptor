@@ -163,7 +163,8 @@ class ProcessADCP:
     - `dt_hours` : Time grid interval. Defaults to 0.5h.
     - `t0` : Start time for gridding. Determined from data if not provided.
     - `t1` : End time for gridding. Determined from data if not provided.
-    - burst_average :
+    - burst_average : bool
+        Set ensemble averaging to act on burst sampling scheme. Defaults to False.
 
     **Depth gridding parameters**
     Provide depth gridding parameters via `dgridparams`. Accepted entries are
@@ -499,12 +500,12 @@ class ProcessADCP:
         dday_start = self.tgridparams.t0
         dday_end = self.tgridparams.t1
         dt_hours = self.tgridparams.dt_hours
-        burst_average = self.tgridparams.burst_average
+        is_burst_average = self.tgridparams.burst_average
 
         # Save whether we are averaging over bursts or not.
-        self.burst_average = burst_average
+        self.is_burst_average = is_burst_average
         # Generate time stamps and stuff.
-        if not burst_average:
+        if not is_burst_average:
             print("no burst average")
             self.dday_start = dday_start
             self.dday_end = dday_end
@@ -673,7 +674,7 @@ class ProcessADCP:
             Depth vector for each ping.
 
         """
-        if self.burst_average:
+        if self.is_burst_average:
             depth_mean = ens.depth.mean(axis=0)
             depth = np.tile(depth_mean, (ens.dday.size, 1))
         else:
