@@ -629,6 +629,19 @@ class ProcessADCP:
             self._raw.coords["bin"] = (("z"), np.arange(self._raw.z.size))
         return self._raw
 
+    def _edit(self, ens):
+        """Apply editing to xyze."""
+        ep = self.editparams
+        cond = (ens.cor < ep.min_correlation).any(axis=-1)
+        ens.xyze[cond] = np.ma.masked
+        e = ens.xyze[:, :, 3]
+        max_e = min(ep.max_e, e.std() * ep.max_e_deviation)
+        ens.max_e_applied = max_e
+        cond = np.abs(e) > max_e
+        ens.xyze[cond] = np.ma.masked
+        if ep.maskbins is not None:
+            ens.xyze[:, ep.maskbins, :] = np.ma.masked
+
     def _to_enu(self, ens):
         """
         add enu
@@ -643,21 +656,8 @@ class ProcessADCP:
             orientation=self.orientation,
         )
 
-    def _edit(self, ens):
-        """Apply editing to xyze."""
-        ep = self.editparams
-        cond = (ens.cor < ep.min_correlation).any(axis=-1)
-        ens.xyze[cond] = np.ma.masked
-        e = ens.xyze[:, :, 3]
-        max_e = min(ep.max_e, e.std() * ep.max_e_deviation)
-        ens.max_e_applied = max_e
-        cond = np.abs(e) > max_e
-        ens.xyze[cond] = np.ma.masked
-        if ep.maskbins is not None:
-            ens.xyze[:, ep.maskbins, :] = np.ma.masked
-
     def _burst_average_depth(self, ens):
-        """Depth-averagint within a burst.
+        """Depth-average within a burst.
 
         Average the depth vectors if doing burst-averages. Otherwise we just
         return all depth vectors of this ensemble.
@@ -833,6 +833,173 @@ class ProcessADCP:
 
         self._log_processing_params()
 
+    def burst_average_ensembles(
+        self, start=None, stop=None, pg_condition=None, interpolate_bin=None
+    ):
+        """Time-averaging prior to depth-gridding.
+
+        Adds results as dictionary under `ave` and as `xarray.Dataset` under `ds`.
+
+        Writes processing parameters to the log file.
+
+        Parameters
+        ----------
+        start : int, optional
+            Range start for averaging. Index into start times of averaging
+            intervals. Defaults to None (start at beginning).
+        stop : int, optional
+            Range start for averaging. Index into start times of averaging
+            intervals. Defaults to None (start at beginning).
+        pg_condition : float or int or None
+            Only return data exceeding percent good condition. The pg condition
+            is applied prior to interpolating to the universal depth grid.
+        interpolate_bin : int or None, optional
+            Interpolate over a single, previously masked, bin. Defaults to None (no interpolation).
+
+        """
+        nens_orig = len(self.start_ddays)
+        indices_orig = np.arange(nens_orig)
+        indices = indices_orig[start:stop]
+        if start is None and stop is None:
+            logger.info("Averaging all ensembles")
+        else:
+            logger.info(f"Averaging ensembles {indices[0]} to {indices[-1]}")
+        nens = len(indices)
+        ndgrid = len(self.dgrid)
+        uvwe = np.ma.zeros((nens, ndgrid, 4), dtype=np.float32)
+        uvwe_std = np.ma.zeros((nens, ndgrid, 4), dtype=np.float32)
+
+        pg = np.zeros((nens, ndgrid), dtype=np.int8)
+        amp = np.ma.zeros((nens, ndgrid), dtype=np.float32)
+
+        temperature = np.ma.zeros((nens,), dtype=np.float32)
+        pressure = np.ma.zeros((nens,), dtype=np.float32)
+        pressure_std = np.ma.zeros((nens,), dtype=np.float32)
+        pressure_max = np.ma.zeros((nens,), dtype=np.float32)
+
+        npings = np.zeros((nens,), dtype=np.int16)
+
+        dday = self.dday_mid[start:stop]
+
+        for i, iens in enumerate(tqdm(indices)):
+            ens = self.read_ensemble(iens)
+            if ens is not None:
+                self._edit(ens)  # modifies xyze
+                self._to_enu(ens)  # transform to earth coords (east, north, up)
+                self._regrid_enu(ens)
+                self._regrid_amp(ens)
+
+                nprofs = ens.enu_grid.shape[0]
+            else:
+                nprofs = 0
+            npings[i] = nprofs
+            if nprofs < 2:
+                uvwe[i] = np.ma.masked
+                uvwe_std[i] = np.ma.masked
+                # (pg is not a masked array)
+                amp[i] = np.ma.masked
+                pressure[i] = np.ma.masked
+                pressure_std[i] = np.ma.masked
+                pressure_max[i] = np.ma.masked
+                temperature[i] = np.ma.masked
+                continue
+
+            # Depth vector for interpolation
+            depth = self._burst_average_depth(ens)
+            depth = depth[0, :]
+
+            # Calculate burst-average on instrument-relative depth grid
+            uvwe_inst = ens.enu.mean(axis=0)
+            uvwe_std_inst = ens.enu.std(axis=0)
+
+            pgi_inst = 100 * ens.enu[..., 0].count(axis=0) // nprofs
+
+            if pg_condition is not None:
+                pgi_index = pgi_inst < pg_condition
+                uvwe_inst[pgi_index, :] = np.ma.masked
+                uvwe_std_inst[pgi_index, :] = np.ma.masked
+
+            if interpolate_bin is not None:
+                zi = interpolate_bin
+                neighbors = [zi - 2, zi - 1, zi + 1, zi + 2]
+                dtmp = depth[neighbors]
+                tmp = interp1(
+                    dtmp,
+                    uvwe_inst[neighbors, :],
+                    depth[zi],
+                    axis=0,
+                    method="linear",
+                )
+                uvwe_inst[zi, :] = tmp
+
+            # Interpolate burst-average to universal depth grid.
+            uvwe_grid = interp1(
+                depth, uvwe_inst, self.dgrid, axis=0, method="linear"
+            )
+            uvwe_std_grid = interp1(
+                depth, uvwe_std_inst, self.dgrid, axis=0, method="linear"
+            )
+            uvwe[i] = uvwe_grid
+            uvwe_std[i] = uvwe_std_grid
+
+            # Interpolate pg to universal depth grid. Not overly satisfying but
+            # seems like that's what we need to do here.
+            pgi_grid = interp1(
+                depth, pgi_inst, self.dgrid, axis=0, method="linear"
+            )
+            pg[i] = pgi_grid.astype(np.int8)
+
+            # Not changed to averaging in instrument-relative coordinates first.
+            amp[i] = ens.amp_grid.mean(axis=0)
+
+            pressure[i] = ens.pressure.mean()
+            pressure_std[i] = ens.pressure.std()
+            pressure_max[i] = ens.pressure.max()
+            temperature[i] = ens.temperature.mean()
+
+        self.ave = Bunch(
+            u=uvwe[..., 0],
+            v=uvwe[..., 1],
+            w=uvwe[..., 2],
+            e=uvwe[..., 3],
+            u_std=uvwe_std[..., 0],
+            v_std=uvwe_std[..., 1],
+            w_std=uvwe_std[..., 2],
+            e_std=uvwe_std[..., 3],
+            pg=pg,
+            amp=amp,
+            temperature=temperature,
+            pressure=pressure,
+            pressure_std=pressure_std,
+            pressure_max=pressure_max,
+            npings=npings,
+            dday=dday,
+            yearbase=self.yearbase,
+            dep=self.dgrid,
+            editparams=self.editparams,
+            tgridparams=self.tgridparams,
+            dgridparams=self.dgridparams,
+            magdec=self.magdec,
+            lon=self.lon,
+            lat=self.lon,
+        )
+
+        self._ave2nc()
+
+        # Add some more info.
+        self.ds.attrs["orientation"] = self.orientation
+        self.ds.attrs["magdec"] = self.magdec
+        for att in ["max_e", "max_e_deviation", "min_correlation"]:
+            self.ds.attrs[att] = self.editparams[att]
+
+        # Add meta data if provided.
+        if self.meta_data is not None:
+            for k, v in self.meta_data.items():
+                self.ds.attrs[k] = v
+        self.ds.attrs["proc time"] = np.datetime64("now").astype("str")
+
+        self._log_processing_params()
+
     def _safely_add_attribute_from_params(self, key, d):
         """Add attribute from dictionary and throw an exception if the key is missing.
 
@@ -926,7 +1093,7 @@ class ProcessADCP:
         """
 
         for k, v in pd.items():
-            if k == "maskbins":
+            if k == "maskbins" and v is not None:
                 logstr = (k, ":", np.flatnonzero(v))
                 logger.info(logstr)
             else:
