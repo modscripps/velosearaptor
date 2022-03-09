@@ -181,15 +181,18 @@ class ProcessADCP:
     - `min_correlation`=64,  # 64 is RDI default
     - `maskbins` : Array with booleans indexing into the ADCP bins. Use the
       convenience method `generate_binmask`.
+    - `pg_limit` : float or int or None.
+            Percent good limit applied prior to interpolating to the universal
+            depth grid in `burst_average_ensembles`.
 
     """
-
     # Default editing parameters.
     _editparams = dict(
         max_e=0.2,  # absolute max e
         max_e_deviation=2,  # max in terms of sigma
         min_correlation=64,  # 64 is RDI default
         maskbins=None,  # do not mask any bins
+        pg_limit=50, # percent good limit applied in `burst_average_ensembles`
     )
 
     def __init__(
@@ -835,9 +838,12 @@ class ProcessADCP:
         self._log_processing_params()
 
     def burst_average_ensembles(
-        self, start=None, stop=None, pg_condition=None, interpolate_bin=None
+        self, start=None, stop=None, interpolate_bin=None
     ):
         """Time-averaging prior to depth-gridding.
+
+        Uses pre-defined editing parameters that can be updated with
+        `parse_editparams`.
 
         Adds results as dictionary under `ave` and as `xarray.Dataset` under `ds`.
 
@@ -851,13 +857,11 @@ class ProcessADCP:
         stop : int, optional
             Range start for averaging. Index into start times of averaging
             intervals. Defaults to None (start at beginning).
-        pg_condition : float or int or None
-            Only return data exceeding percent good condition. The pg condition
-            is applied prior to interpolating to the universal depth grid.
         interpolate_bin : int or None, optional
             Interpolate over a single, previously masked, bin. Defaults to None (no interpolation).
 
         """
+        pg_condition=self.editparams.pg_limit
         nens_orig = len(self.start_ddays)
         indices_orig = np.arange(nens_orig)
         indices = indices_orig[start:stop]
