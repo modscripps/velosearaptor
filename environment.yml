@@ -3,6 +3,8 @@ name: gadcp
 dependencies:
   - python
   - pip
+  - mercurial
+  - numpy
   - pip:
     - -r requirements.txt
     - -e .
