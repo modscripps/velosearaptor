@@ -6,7 +6,7 @@ import numpy as np
 import xarray as xr
 
 import gvpy as gv
-from pycurrents.adcp.rdiraw import Multiread
+from pycurrents.adcp.rdiraw import Multiread, extract_raw
 
 
 def read_raw_rdi(file, auxillary_only=False):
@@ -145,6 +145,25 @@ def read_raw_rdi_uh(file, auxillary_only=False):
     radcp.temperature = radcp.VL["Temperature"] / 100.0
 
     return radcp
+
+
+def extract_raw_rdi(file, i0, i1, outfile, inst='wh'):
+    """Extract ping range from raw RDI file and save to new raw file.
+
+    Parameters
+    ----------
+    file : str or Path
+        Input file.
+    i0 : int
+        Start ping.
+    i1 : int
+        End ping.
+    outfile : str or Path
+        Path and name of output file.
+    inst : str
+        One of ('wh','os','bb','ec'). Defaults to 'wh'.
+    """
+    data = extract_raw(file, inst, i0, i1, outfile=outfile)
 
 
 def _is_number(s):
