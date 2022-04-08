@@ -11,3 +11,5 @@ docs
 notebooks/dev
 notebooks/log
 src
+gadcp/tests/data/rawfiles.cache
+geomag

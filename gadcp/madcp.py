@@ -24,6 +24,8 @@ Long Ranger ADCPs Commands and Output Data Format*:
 import os
 from subprocess import Popen, PIPE  # for magdec
 import logging
+from shutil import which
+from warnings import warn
 
 import datetime
 import matplotlib.pyplot as plt
@@ -32,7 +34,7 @@ import scipy as sp
 import xarray as xr
 import pathlib
 from pathlib import Path
-from tqdm.notebook import tqdm
+from tqdm import tqdm
 
 from pycurrents.adcp.rdiraw import extract_raw, Multiread
 from pycurrents.system import Bunch
@@ -102,6 +104,8 @@ class ProcessADCP:
         Mark beam with bad data (zero based).
     logdir : str, optional
         Log file directory. Defaults to `log/`.
+    magdec : float, optional
+        Magnetic declination in degrees. 
 
     Attributes
     ----------
@@ -203,6 +207,7 @@ class ProcessADCP:
         verbose=False,
         plot=False,
         pressure_scale_factor=1,
+        magdec=None,
     ):
         self.meta_data = Bunch(meta_data.copy())
         self.ibad = ibad
@@ -210,7 +215,7 @@ class ProcessADCP:
         self.verbose = verbose
         self.pressure_scale_factor = pressure_scale_factor
 
-        self._magdec = None
+        self._magdec = magdec
         self._raw = None
         self._default_dgridparams = None
 
@@ -601,12 +606,36 @@ class ProcessADCP:
                 logger.warning("No magnetic declination is available; using 0")
                 self._magdec = 0
             else:
+                # Look for magdec executable
+                magdec_found = True
+                magdec_path = which("magdec")
+                
+                if magdec_path is None:
+                    magdec_found = False
+                    package_dir = os.path.dirname(__file__)
+                    
+                if not magdec_found:
+                    # Try this package directory
+                    magdec_path = os.path.join(package_dir, "magdec")
+                    magdec_found = os.path.isfile(magdec_path)
+                    
+                if not magdec_found:
+                    # Try the magdec installation directory 
+                    magdec_path = os.path.abspath(os.path.join(package_dir, "../geomag/magdec"))
+                    magdec_found = os.path.isfile(magdec_path)
+                        
+                if not magdec_found:
+                    raise FileNotFoundError("Cannot find program magdec on the system path or paths within gadcp.")
+                        
+                print(f"magdec found at {magdec_path}")
+
                 n = len(self.start_ddays)
                 dday_mid = self.start_ddays[n // 2]
                 y, m, d = to_date(self.yearbase, dday_mid)[:3]
+                
                 output = Popen(
                     [
-                        "magdec",
+                        magdec_path,
                         str(self.lon),
                         str(self.lat),
                         str(y),
@@ -618,6 +647,8 @@ class ProcessADCP:
                 output = output.strip()
                 logger.info("magdec output is: %s", output)
                 self._magdec = float(output.split()[0])
+        else:
+            warn("megdec is already defined. Doing nothing.")
         return self._magdec
 
     @property
