@@ -1,75 +1,5 @@
 """
 Edit and average the data from moored ADCPs.
-
-This was developed initially for the wh300 upward-looking
-instruments at the top of the MIXET moorings.
-
-To use it, one must provide information and a small script
-like this (taken from MIXET):
-
-#####################
-
-
-from pycurrents.adcp.mcm_avg import MCM, Pingavg
-
-outdir = "./output"
-datadir = "../wh300_data"
-
-fnamesdict = dict(M45N=["mcm_4_5N.dat"],
-                  M15N=['_RDI_000_16470.000', '_RDI_512_16470.000'],
-                  M05N=['_RDI_000_16678.000', '_RDI_512_16678.000'],
-                 )
-
-driftparamsdict = dict(M45N=dict(end_pc=(2012, 11, 16, 1, 21, 48),
-                                 end_adcp=(2012, 11, 16, 1, 27, 12),
-                                 start_dday=None,
-                                 ),
-                       M15N=dict(end_pc=(2012, 11, 14, 13, 54, 15),
-                                 end_adcp=(2012, 11, 14, 13, 52, 54)),
-                       M05N=dict(end_pc=(2012, 11, 13, 21, 00, 22),
-                                 end_adcp=(2012, 11, 13, 21, 00, 19)),
-                      )
-
-#positions from Scott:
-#M1    4.5N    04  30.09 N       156  00.70 E
-#M2    3N       03  13.082 N     155  59.956 E
-#M3    1.5N    01  30.128 N     156  00.424 E
-#M4     .5N     00  33.847 N     156  00.009 E
-#M5    .5S      00   34.495 S     156  00.06 E
-
-
-positionsdict = dict(M45N=(156.0117, 4.5015),
-                     M15N=(156.0071, 1.5021),
-                     M05N=(156.0002, 0.5651),
-                     )
-
-
-editparams = dict(max_e=0.2,          # absolute max e
-                  max_e_deviation=2,  # max in terms of sigma
-                  )
-
-dgridparams = dict(#dbot=int(self.p_median),
-                   dtop=10,
-                   d_interval=1,
-                   )
-
-tgridparams = dict(dt_hours = 1.0,
-                   #t0 = t0,
-                   #t1 = t1,
-                   )
-
-
-for key in fnamesdict.keys():
-    mcm = MCM(fnamesdict[key], driftparamsdict[key], datadir=datadir)
-    pa = Pingavg(mcm, lonlat=positionsdict[key],
-                 dgridparams=dgridparams,
-                 tgridparams=tgridparams,
-                 )
-    pa.average_ensembles()
-    fname = key + '_hourly.npz'
-    pa.save_npz(fname, outdir=outdir)
-
-### end MIXET example
 """
 
 import os
@@ -87,8 +17,13 @@ from pycurrents.adcp.transform import rdi_xyz_enu
 from pycurrents.file import npzfile
 from pycurrents.data import seawater
 
+# for the xyz_to_enu hotfix
+# from pycurrents.adcp._transform import _heading_rotate, _heading_rotate_m
+# from pycurrents.adcp._transform import _hpr_rotate, _hpr_rotate_m
+# from pycurrents.adcp.transform import _process_vel, _process_attitude
+
 # Standard logging
-L = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 
 class MCM:
@@ -136,8 +71,9 @@ class MCM:
             to 30.
         pressure_scale_factor : float, optional
             Scale factor for pressure time series. Defaults to 1 (no scaling).
+            This was introduced for a malfunctioning pressure sensor and should
+            not be necessary in most cases.
         """
-        # self.fnames = [os.path.join(datadir, f) for f in fnames]
         self.fnames = fnames
         self.driftparams = driftparams
         self.lat = lat
@@ -145,8 +81,11 @@ class MCM:
 
         self.m = Multiread(self.fnames, sonar, ibad=ibad)
         tsdat = self.m.read(varlist=["VariableLeader"])
-        # initial units: 10 Pa (about 1 mm or 0.001 decibar)
-        tsdat.pressure = tsdat.VL["Pressure"] / 1000.0 * pressure_scale_factor  # in decibars
+        # Initial units: 10 Pa (about 1 mm or 0.001 decibar).
+        # Converting to decibars.
+        tsdat.pressure = (
+            tsdat.VL["Pressure"] / 1000.0 * pressure_scale_factor
+        )
         self.tsdat = tsdat
 
         self.yearbase = self.m.yearbase
@@ -185,54 +124,65 @@ class MCM:
         Parameters
         ----------
         dday_start : float
-
+            Start time stamp.
         dday_end : float
-
-        dt_hours :
-
+            End time stamp.
+        dt_hours : float
+            Averaging interval in hours.
         burst_average : bool, optional
-            Average over bursts. Defaults to False.
+            Average over bursts. Defaults to False. If True, other parameters will be ignored.
 
         Notes
         -----
-        If turning on burst averaging, other input values will be ignored.
+        If turning on burst averaging, other input values will be ignored and
+        the averaging interval will be determined from the burst sampling
+        scheme apparent in the ping pattern.
         """
+        # Save whether we are averaging over bursts or not.
+        self.burst_average = burst_average
+        # Generate time stamps and stuff.
         if not burst_average:
             print("no burst average")
             self.dday_start = dday_start
             self.dday_end = dday_end
             self.dt = dt_hours / 24.0
             self.start_ddays = np.arange(dday_start, dday_end, dt_hours / 24.0)
+            # Time stamps for the averages. Midpoints of averaging intervals.
+            self.dday_mid = self.start_ddays + self.dt / 2
         else:
-            # determine burst length and time between bursts
             dday_diff = np.diff(self.dday)
+            # Determine ping interval within burst and time between bursts.
             burst_dt = np.median(dday_diff)
-            print(burst_dt * 24 * 60)
+            print(
+                f"time between pings within burst: {burst_dt * 24 * 60 * 60:1.1f} s"
+            )
             # It seems safe to assume that the time between bursts is at least
-            # four times as long as the time between individual bursts within a
+            # four times as long as the time between individual pings within a
             # burst.
             inter_burst_dt = np.median(dday_diff[dday_diff > burst_dt * 4])
-            print(inter_burst_dt * 24 * 60)
-            # find starting points of all bursts
+            print(f"time between bursts: {inter_burst_dt * 24 * 60:1.1f} min")
+            # Find starting points of all bursts.
             start_indices = np.flatnonzero(dday_diff > burst_dt * 4)
+            # Increase index so we are at the end of the larger time differences.
             start_indices += 1
+            # Include the very beginning.
             start_indices = np.insert(start_indices, 0, 0)
             self.start_ddays = self.dday[start_indices]
             self.dday_start = self.start_ddays[0]
-            # generate a dt that is inclusive of one burst
-            # we know the number of pings in a burst from the difference
-            # between the start_indices:
+            # Generate a dt that is inclusive of one burst.  We know the number
+            # of pings in a burst from the difference between the
+            # start_indices. Let's go a bit beyond the time needed (3 more ping
+            # intervals chosen here).
             pings_per_burst = np.int32(np.median(np.diff(start_indices)))
             print(f"{pings_per_burst} pings per burst")
-            print(f"{start_indices.shape[0]} bursts")
+            print(f"processing {start_indices.shape[0]} bursts")
             self.dt = burst_dt * pings_per_burst + burst_dt * 3
 
-            # keeping this in here for now to run a test, need to delete when
-            # above fully works.
-            # self.dday_start = dday_start
+            self.dday_start = self.start_ddays[0]
             self.dday_end = dday_end
-            # self.dt = dt_hours / 24.0
-            # self.start_ddays = np.arange(dday_start, dday_end, dt_hours / 24.0)
+
+            # Time stamps in the middle of the burst
+            self.dday_mid = self.start_ddays + pings_per_burst * burst_dt / 2
 
     def read_ensemble(self, iens):
         if iens > len(self.start_ddays) - 1:
@@ -257,13 +207,15 @@ class MCM:
 
 class Pingavg:
     """
-    Edit raw moored ADCP data, and average on a uniform time grid.
+    Edit raw moored ADCP data, and average on a uniform time grid or average
+    overs bursts.
     """
 
     _editparams = dict(
         max_e=0.2,  # absolute max e
         max_e_deviation=2,  # max in terms of sigma
         min_correlation=64,  # 64 is RDI default
+        maskbins=None,  # do not mask any bins
     )
 
     def __init__(
@@ -298,20 +250,23 @@ class Pingavg:
             dtype=float,
         )
 
+        # Find time at depth.
         p = mcm.tsdat.pressure
         at_depth = np.nonzero(p > self.p_median)[0][0]
         t0 = (2 + np.ceil(mcm.dday[at_depth] * 24)) / 24.0
         in_water = np.nonzero(p > self.p_median / 2)[0][-1]
         t1 = (np.floor(mcm.dday[in_water] * 24) - 2) / 24.0
 
+        # Generate a set of default time gridding parameters and then update
+        # from the input parameters provided.
         default_tgridparams = dict(
             dt_hours=0.5, t0=t0, t1=t1, burst_average=False
         )
-
         self.tgridparams = Bunch(default_tgridparams)
         if tgridparams is not None:
             self.tgridparams.update_values(tgridparams, strict=True)
 
+        # Generate a time vector.
         self.mcm.make_start_ddays(
             self.tgridparams.t0,
             self.tgridparams.t1,
@@ -319,13 +274,15 @@ class Pingavg:
             self.tgridparams.burst_average,
         )
         self.start_ddays = self.mcm.start_ddays
+        self.dday_mid = self.mcm.dday_mid
+        self.burst_average = self.mcm.burst_average
 
     # The following is modified from ladcp.py.
     @property
     def magdec(self):
         if self._magdec is None:
             if self.lonlat is None:
-                L.info("No magnetic declination is available; using 0")
+                logger.warning("No magnetic declination is available; using 0")
                 self._magdec = 0
             else:
                 lonlat = self.lonlat
@@ -344,7 +301,7 @@ class Pingavg:
                     stdout=PIPE,
                 ).communicate()[0]
                 output = output.strip()
-                L.info("magdec output is: %s", output)
+                logger.info("magdec output is: %s", output)
                 self._magdec = float(output.split()[0])
         return self._magdec
 
@@ -374,6 +331,18 @@ class Pingavg:
         ens.max_e_applied = max_e
         cond = np.abs(e) > max_e
         ens.xyze[cond] = np.ma.masked
+        if ep.maskbins is not None:
+            ens.xyze[:, ep.maskbins, :] = np.ma.masked
+
+    def burst_average_depth(self, ens):
+        # Average the depth vectors if doing burst-averages. Otherwise we just
+        # return all depth vectors of this ensemble.
+        if self.burst_average:
+            depth_mean = ens.depth.mean(axis=0)
+            depth = np.tile(depth_mean, (ens.dday.size, 1))
+        else:
+            depth = ens.depth
+        return depth
 
     def regrid_enu(self, ens, method="linear"):
         """
@@ -382,9 +351,15 @@ class Pingavg:
         shape = (ens.dday.size, self.dgrid.size, ens.enu.shape[-1])
         enu_grid = np.ma.zeros(shape)
         enu_grid[:] = np.ma.masked
+        # Average the depth vectors if doing burst-averages. Otherwise we just
+        # return all depth vectors of this ensemble.
+        # TO DO: If calculating averages over regular time intervals, we need
+        # to low pass filter the pressure time series prior to creating the
+        # depth vectors.
+        depth = self.burst_average_depth(ens)
         for i in range(ens.dday.size):
             enu_grid[i] = interp1(
-                ens.depth[i], ens.enu[i], self.dgrid, axis=0, method=method
+                depth[i], ens.enu[i], self.dgrid, axis=0, method=method
             )
         ens.enu_grid = enu_grid
 
@@ -395,9 +370,10 @@ class Pingavg:
         shape = (ens.dday.size, self.dgrid.size)
         amp_grid = np.ma.zeros(shape)
         amp_grid[:] = np.ma.masked
+        depth = self.burst_average_depth(ens)
         for i in range(ens.dday.size):
             amp_grid[i] = interp1(
-                ens.depth[i],
+                depth[i],
                 ens.amp[i].mean(axis=-1),
                 self.dgrid,
                 axis=0,
@@ -424,9 +400,12 @@ class Pingavg:
 
         npings = np.zeros((nens,), dtype=np.int16)
 
-        # midpoints of averaging intervals (dividing by 48 because of midpoint,
-        # so half the value):
-        dday = self.start_ddays[start:stop] + self.tgridparams.dt_hours / 48.0
+        # Midpoints of averaging intervals. Now calculating the time stamps for
+        # the averages directly in MCM.make_start_days() where we deal with the
+        # rest of the time vector. There we now also correctly calculate time
+        # stamps for burst averages.
+        # dday = self.start_ddays[start:stop] + self.tgridparams.dt_hours / 48.0
+        dday = self.dday_mid[start:stop]
 
         for i, iens in enumerate(indices):
             ens = self.mcm.read_ensemble(iens)
@@ -494,3 +473,77 @@ class Pingavg:
     def save_npz(self, fname, outdir="./"):
         fpath = os.path.join(outdir, fname)
         npzfile.savez(fpath, **self.ave)
+
+
+def rdi_xyz_enu_tmp(
+    vel, heading, pitch, roll, orientation="down", gimbal=False
+):
+    """
+    GV: I used this as a hotfix for a bug in the pycurrents package.
+    The bug should be fixed now and this should not be needed anymore.
+    I am leaving this in here for now but go back to using rdi_xyz_enu()
+    above in Pingavg.
+    Also leaving the imports at the top needed for this function.
+
+    Transform a velocity or sequence from xyz to enu.
+
+    vel is a sequence or array of entries, [u, v, w, ...],
+    where u, v and w are optionally followed by e; that is, vel
+    can have 3, or 4 entries, and only the first three will
+    be modified on output.  vel may be 1, 2, or 3-D.
+
+    heading is a single value in compass degrees, or a 1-D sequence
+    that must match the first dimension of vel if vel is 2-D or 3-D.
+
+    pitch and roll have the same constraints as heading.
+    pitch is tilt1; roll is tilt2;
+
+    gimbal = False (default) adjusts the raw pitch (tilt1) for the
+    roll (tilt2), as appropriate for the internal sensor.
+
+    The data ordering convention is that if vel is 3-D, the indices
+    are time, depth, component; heading is assumed to be a
+    constant or a time series, but not varying with depth.
+
+    This is a wrapper around a cython function.
+    """
+    vel, velshape = _process_vel(vel, min_comps=3)
+    heading = _process_attitude(heading, "heading", vel, velshape)
+    pitch = _process_attitude(pitch, "pitch", vel, velshape)
+    roll = _process_attitude(roll, "roll", vel, velshape)
+
+    if (
+        np.ma.is_masked(vel)
+        or np.ma.is_masked(heading)
+        or np.ma.is_masked(pitch)
+        or np.ma.is_masked(roll)
+    ):
+        # If any input has masked values, use the fully masked function.
+        velmask = np.ma.getmaskarray(vel).astype(np.int8)
+        hmask = np.ma.mask_or(
+            np.ma.getmaskarray(roll), np.ma.getmaskarray(pitch), shrink=False
+        )
+        hmask = np.ma.mask_or(hmask, np.ma.getmaskarray(heading), shrink=False)
+        hmask = hmask.astype(np.int8)  # cython 11.2 can't handle bool
+        velr, outmask = _hpr_rotate_m(
+            vel, heading, pitch, roll, velmask, hmask, orientation, gimbal
+        )
+        velr = np.ma.array(velr, mask=outmask, copy=False)
+    else:
+        # If either input is a masked array with mask False,
+        # strip off the mask, do the calculation,
+        # and convert the output back into a masked array.
+        maskout = np.ma.isMaskedArray(vel)
+        if maskout:
+            vel = vel.view(np.ndarray)
+        if np.ma.isMaskedArray(heading):
+            heading = heading.view(np.ndarray)  # or heading.data?
+        if np.ma.isMaskedArray(pitch):
+            pitch = pitch.view(np.ndarray)
+        if np.ma.isMaskedArray(roll):
+            roll = roll.view(np.ndarray)
+        velr = _hpr_rotate(vel, heading, pitch, roll, orientation, gimbal)
+        if maskout:
+            velr = np.ma.asarray(velr)
+
+    return velr.reshape(velshape)

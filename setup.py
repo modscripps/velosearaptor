@@ -8,7 +8,7 @@ with open("HISTORY.rst") as history_file:
 
 setup(
     name="gadcp",
-    version="0.0.1",
+    version="0.2.0",
     author="Gunnar Voet",
     author_email="gvoet@ucsd.edu",
     url="",
@@ -25,8 +25,14 @@ setup(
         "xarray",
         "matplotlib",
     ],
+    extras_require={
+    "test": [  # install these with: pip install gadcp[test]
+        "pytest>=3.8",
+    ],
+    },
     # Packaging
     packages=find_packages(include=["gadcp", "gadcp.*"], exclude=["*.tests"]),
+    include_package_data=True,
     zip_safe=False,
     platforms=["any"],  # or more specific, e.g. "win32", "cygwin", "osx"
     # Metadata

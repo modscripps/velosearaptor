@@ -1,0 +1,13 @@
+pytest
+pytest-runner
+pytest-datadir
+numpy
+netcdf4
+xarray
+gsw
+scipy
+matplotlib
+tqdm
+pdoc
+hg+https://currents.soest.hawaii.edu/hgstage/pycurrents/#egg=pycurrents
+git+https://github.com/gunnarvoet/gvpy.git#egg=gvpy

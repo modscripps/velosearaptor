@@ -1,278 +1,1208 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""Module gadcp.madcp with functions for moored ADCPs"""
+"""Module gadcp.madcp with functions for moored ADCPs.
+
+### Notes
+Some general notes for this module.
+
+#### Depth Gridding
+The depth vector for the ADCP raw data (in instrument coordinates) is
+calculated in :meth:`pycurrents.rdiraw.FileBBWHOS` as <br>
+`dep = np.arange(NCells) * CellSize + Bin1Dist`
+The depth vector thus points to the center of each bin.
+
+From the RDI manual *WorkHorse Monitor, Sentinel, Mariner, Quartermaster, and
+Long Ranger ADCPs Commands and Output Data Format*:
+
+> This [Bin1Dist] field contains the distance to the middle of the first depth
+> cell (bin). This distance is a function of depth cell length (WS), the
+> profiling mode (WM), the blank after transmit distance (WF), and speed of
+> sound.
+
+"""
 
 import os
-import subprocess
+from subprocess import Popen, PIPE  # for magdec
+import logging
+
 import datetime
 import matplotlib.pyplot as plt
 import numpy as np
 import scipy as sp
 import xarray as xr
+import pathlib
 from pathlib import Path
+from tqdm.notebook import tqdm
 
 from pycurrents.adcp.rdiraw import extract_raw, Multiread
 from pycurrents.system import Bunch
+from pycurrents.system import Bunch
+from pycurrents.num.nptools import rangeslice
+from pycurrents.num import interp1
+from pycurrents.codas import to_date, to_day
+from pycurrents.adcp.transform import rdi_xyz_enu
+from pycurrents.file import npzfile
+from pycurrents.data import seawater
 
-from gadcp.mcm_avg import MCM, Pingavg
+# from gadcp.mcm_avg import MCM, Pingavg
+from . import io
 
 import gvpy as gv
 
-from . import io
+# Standard logging
+logger = logging.getLogger(__name__)
 
 
-def proc(
-    infile,
-    lon,
-    lat,
-    editparams,
-    tgridparams,
-    dgridparams,
-    end_pc=None,
-    end_adcp=None,
-    n_ensembles=None,
-    ibad=None,
-    pressure_scale_factor = 1,
-):
-    """Temporary function for processing ADCP raw data.
+class ProcessADCP:
+    """Moored ADCP Processing.
+
+    An instance of ProcessADCP is initialized by providing raw data and
+    processing parameters. Once initialized, the instance method
+    :meth:`average_ensembles` can be used to average over just a few or
+    all pings.
+
+    Magnetic declination is automatically calculated via a call to the command
+    line tool
+    [magdec](https://currents.soest.hawaii.edu/hgstage/geomag/file/tip) that
+    must be installed. Once calculated, the magnetic declination is stored in
+    `magdec` and automatically applied to the data.
+
+    Prior to time averaging, data are edited based on correlation and error
+    velocity thresholds. The variable `pg` is calculated based on the number of
+    excluded pings, i.e. it is the numbur of good pings divided by the number
+    of total pings within one depth bin and one time bin. It may be used to
+    further filter the data.
+
+    A pdf document on ADCP data collection and processing principles can be
+    downloaded from RDI
+    [here](https://www.comm-tec.com/Docs/Manuali/RDI/BBPRIME.pdf).
+
+    Time-averaged data are grouped together in an `xarray.Dataset` in the
+    instance attribute `ds` for easy access and convenient output to netcdf
+    format.
 
     Parameters
     ----------
-    infile : str or Path
-        ADCP data file.
-    lon : float
-        Mooring longitude
-    lat : float
-        Mooring latitude
-    editparams : dict
-        Raw data editing parameters.
-    tgridparams : dict
-        Time gridding parameters.
-    dgridparams : dict
-        Depth gridding parameters.
-    end_pc : tuple (int, int, int, int, int, int), optional
-        Time at data download (UTC) as six element
-        tuple (year, month, day, hour, minute, second). Can be omitted if no
-        time drift was recorded (not recommended).
-    end_adcp : tuple (int, int, int, int, int, int), optional
-        Time at data download (instrument).
-    n_ensembles : None or int, optional
-        Extract only this number of ensembles (after the instrument is in the
-        water). Mostly for testing purposes. Defaults to None.
-    ibad : int, optional
-        The index of a beam to be excluded from the beam_to_xyz
-        calculation. This is the zero-based index. Defaults to None.
-    pressure_scale_factor : float, optional
-        Scale factor for pressure time series. Defaults to 1 (no scaling).
+    raw_data : str or list or Path
+        Location(s) of raw data.
+    meta_data : dict
+        Dictionary with meta data. At a minimum entries for `lon` and `lat` are
+        needed. If `mooring` and `sn` provide mooring name and serial number
+        then these will be used to name the log file produced during
+        processing.
+    driftparams : dict, optional
+        Time drift parameters. See notes below.
+    tgridparams : dict, optional
+        Time gridding parameters. See notes below.
+    dgridparams : dict, optional
+        Depth gridding parameters. See notes below.
+    editparams : dict, optional
+        Editing parameters. See notes below.
+    ibad : bool, optional
+        Mark beam with bad data (zero based).
+    logdir : str, optional
+        Log file directory. Defaults to `log/`.
 
-    Returns
-    -------
-    TODO
+    Attributes
+    ----------
+    files : list
+        List pointing to raw data file(s).
+    dday_start : float
+        Start time of ADCP time series, determined either through `t0` in
+        `tgridparams` or the start of the time series once at depth.
+    dday_end : float
+        End time of ADCP time series, determined either through `t1` in
+        `tgridparams` or the end of the time series at depth.
+    start_ddays : list
+        Start times of averaging intervals
+    dday_mid : float
+        Time stamp for ping average as determined in :meth:`make_start_ddays`.
+    dt : float
+        Time that is inclusive of one average. For regular averaging, this is
+        `dt_hours` in `tgridparams` converted to Julian days. For
+        burst-averagint, this is a time interval that is inclusive of all pings
+        in one bursts (but goes slightly beyond that into the time between
+        bursts).
+    time_drift_rate : float
+        Clock drift calculated from `driftparams`.
+    orientation : str
+        Instrument orientation `up` or `down`.
+    magdec : float
+        Magnetic declination.
+    m : pycurrents.adcp.rdiraw.Multiread
+        Multiread instance.
+    tsdat : Bunch
+        Auxiliary data.
+    raw : xarray.Dataset
+        Raw ADCP data.
+    ds : xarray.Dataset
+        Time-averaged dataset added by running :meth:`average_ensembles`.
 
-    To Do
+    Notes
     -----
-    x make time and depth grid parameters input parameters
-    - allow for single ping processing/output, i.e. no time gridding
-    x allow for burst averaging
-    - allow for external pressure time series input
+    Various parameters are passed to the instance through dictionaries. Their
+    specifics are described below. Gridding and editing parameters can be
+    updated after creating the ProcessADCP instance via `parse_dgridparams`,
+    `parse_tgridparams`, and  `parse_editparams`.
+
+    **Time drift parameters**
+    Provide clock drift parameters via `driftparams`. Accepted entries are
+    - `end_adcp` : Time of ADCP at data download
+    - `end_pc` : UTC time at data download
+
+    The difference between `end_adcp` and `end_pc` is used to linearly correct
+    for instrument clock drift.
+
+    **Time gridding parameters**
+    Provide time gridding parameters via `tgridparams`. Accepted entries are
+    - `dt_hours` : Time grid interval. Defaults to 0.5h.
+    - `t0` : Start time for gridding. Determined from data if not provided.
+    - `t1` : End time for gridding. Determined from data if not provided.
+    - burst_average : bool
+        Set ensemble averaging to act on burst sampling scheme. Defaults to False.
+
+    **Depth gridding parameters**
+    Provide depth gridding parameters via `dgridparams`. Accepted entries are
+    - `dtop` : Shallow depth in m.
+    - `dbot` : Deep depth in m.
+    - `dinterval` : Vertical grid size in m. Defaults to 5m.
+
+    Values for `dbot` and `dtop` are generated if not provided.
+
+    **Editing parameters**
+    Provide editing parameters via `editparams`.
+    - `max_e`=0.2,  # absolute max e
+    - `max_e_deviation`=2,  # max in terms of sigma
+    - `min_correlation`=64,  # 64 is RDI default
+    - `maskbins` : Array with booleans indexing into the ADCP bins. Use the
+      convenience method `generate_binmask`.
+    - `pg_limit` : float or int or None.
+            Percent good limit applied prior to interpolating to the universal
+            depth grid in `burst_average_ensembles`.
 
     """
-    print("reading configuration...")
-    m = Multiread(infile, "wh")
-    print("system configuration:", m.sysconfig)
+    # Default editing parameters.
+    _editparams = dict(
+        max_e=0.2,  # absolute max e
+        max_e_deviation=2,  # max in terms of sigma
+        min_correlation=64,  # 64 is RDI default
+        maskbins=None,  # do not mask any bins
+        pg_limit=50, # percent good limit applied in `burst_average_ensembles`
+    )
 
-    print("reading raw data...")
-    # raw = io.read_raw_rdi(infile)
-    raw = m.read(varlist=["VariableLeader"])
-    raw.pressure = raw.VL["Pressure"] / 1000.0 * pressure_scale_factor
-    raw.temperature = raw.VL["Temperature"] / 100.0
-    fig, ax = gv.plot.quickfig(fgs=(6, 2.5))
-    ax.plot(raw.dday, raw.pressure, label="all")
-    ax.invert_yaxis()
-    ax.set(xlabel="julian day", ylabel="pressure [dbar]")
-    # find time away from surface
-    ii = np.argwhere(raw.pressure > 50).squeeze()
-    # raw.pressure.isel(time=ii).plot(ax=ax, color="r")
-    ax.plot(raw.dday[ii], raw.pressure[ii], color="r", label="subsurface")
-    # find start time in julian days in the raw time series
-    t0 = raw.dday[0]
+    def __init__(
+        self,
+        raw_data,
+        meta_data,
+        driftparams=None,
+        tgridparams=None,
+        dgridparams=None,
+        editparams=None,
+        ibad=None,
+        logdir="log",
+        verbose=False,
+        plot=False,
+        pressure_scale_factor=1,
+    ):
+        self.meta_data = Bunch(meta_data.copy())
+        self.ibad = ibad
+        self.logdir = logdir
+        self.verbose = verbose
+        self.pressure_scale_factor = pressure_scale_factor
 
-    if n_ensembles is not None:
-        if isinstance(infile, list):
-            if len(infile) == 1:
-                infile = infile[0]
+        self._magdec = None
+        self._raw = None
+        self._default_dgridparams = None
+
+        self._set_up_logger()
+        self.parse_file_locations(raw_data)
+        self._initiate_data_reader()
+        self._read_auxiliary_data()
+        self._parse_meta_data()
+        self.parse_driftparams(driftparams)
+        self._parse_sysconfig()
+        self.parse_dgridparams(dgridparams)
+        self.parse_tgridparams(tgridparams)
+        self.parse_editparams(editparams)
+
+        self.make_start_ddays()
+
+        if plot:
+            self.plot_pressure()
+
+    def parse_file_locations(self, raw_data, min_file_size=1e4):
+        """Parse input for raw data files.
+
+        Input can either be a single file name as a str, a single file as a
+        Path instance, a list of either of these, or a Path instance pointing to a
+        directory with raw ADCP files. In the latter case, files that are
+        smaller than a threshold will not be included in the processing.
+
+        Outputs to attribute `files`. The output can be fed to Multiread instances.
+
+        Parameters
+        ----------
+        raw_data : str or list or Path
+            Location(s) of raw data.
+        min_file_size : int
+            Minimum size for file to be included. Defaults to 1e4 which
+            corresponds to about 10kB and is a good value for excluding small
+            files without any actual data.
+
+        """
+
+        def list_dir(dir, min_file_size):
+            # List all raw files.
+            all_raw_files = list(sorted(dir.glob("*.00*")))
+            # only files larger than about 10kB
+            files = [
+                file.as_posix()
+                for file in all_raw_files
+                if file.stat().st_size > min_file_size
+            ]
+            return files
+
+        input_type = type(raw_data)
+        if input_type is list:
+            if type(raw_data[0]) is str:
+                self.files = raw_data
+            elif type(raw_data[0]) is pathlib.PosixPath:
+                self.files = [file.as_posix() for file in raw_data]
+        elif input_type is str:
+            if Path(raw_data).is_dir():
+                self.files = list_dir(Path(raw_data), min_file_size)
             else:
-                 raise Exception("Can't have more than one file if using n_ensembles.")
+                self.files = [raw_data]
+        elif input_type is pathlib.PosixPath:
+            if raw_data.is_dir():
+                self.files = list_dir(raw_data, min_file_size)
+            else:
+                self.files = [raw_data.as_posix()]
 
-        # Wondering if we really need to extract the subsurface range here? MCM
-        # also looks for data in the water and discards the rest unless specified
-        # otherwise. Currently, if we want to process less than the full time
-        # series, we depend on the subset that is extracted here. This should be
-        # easy to change in the future if desired. Writing a subset of the data to
-        # disk does not seem to slow down the process very much.
-        print("extract subsurface ping range")
-        i0, i1 = ii[0], ii[-1]
-        if n_ensembles is not None:
-            i1 = i0 + n_ensembles
-        cut_file = "adcp_cut.dat"
-        inst = "wh"
-        print("Extracting ping range %d to %d" % (i0, i1))
-        _ = extract_raw(infile, inst, i0, i1, outfile=cut_file)
-        fnames = [cut_file]
-    else:
-        fnames = infile
+    def _initiate_data_reader(self):
+        """Initiate a Multiread data reader.
 
-    # # read the cut time series
-    # mc = Multiread(cut_file, inst)
-    # orientation = "up" if mc.sysconfig["up"] else "down"
-    # print("instrument orientation: ", orientation)
+        Adds attribute `m`.
 
-    # Parameters for time averaging and depth gridding
-    outdir = "./"
-    datadir = "./"
-    driftparams = dict(end_pc=end_pc, end_adcp=end_adcp, start_dday=t0)
-    positions = (lon, lat)
+        """
+        self.m = Multiread(self.files, sonar="wh", ibad=self.ibad)
+        # Make some more meta data realily available by reading a single ping from the raw data.
+        ping = self.m.read(start=0, stop=1)
+        self.meta_data.Bin1Dist = ping.FL.Bin1Dist / 100.0
+        self.meta_data.NCells = ping.FL.NCells
+        self.meta_data.CellSize = ping.FL.CellSize / 100.0
 
-    # editparams = dict(
-    #     max_e=0.2,  # absolute max e
-    #     max_e_deviation=2,  # max in terms of sigma
-    #     min_correlation=64,
-    # )  # 64 is RDI standard
-    # dgridparams = dict(
-    #     dbot=1500, dtop=100, d_interval=16
-    # )  # int(self.p_median),  # 50,
-    # tgridparams = dict(
-    #     # dt_hours=1.0,  #  1.0/4,
-    #     # t0=132,
-    #     # t1 = t1,
-    #     burst_average=True,
-    # )
+    def _read_auxiliary_data(self):
+        """Read auxiliary data.
 
-    print("time averaging and depth gridding")
-    mcm = MCM(
-        fnames,
-        driftparams,
-        datadir=datadir,
-        lat=lat,
-        ibad=ibad,
-        pressure_scale_factor=pressure_scale_factor,
-    )
-    pa = Pingavg(
-        mcm,
-        lonlat=positions,
-        dgridparams=dgridparams,
-        tgridparams=tgridparams,
-        editparams=editparams,
-    )
-    pa.average_ensembles()
-    npzname = "adcp_proc.npz"
-    pa.save_npz(npzname, outdir=outdir)
+        Adds attribute `tsdat`.
 
-    if n_ensembles is not None:
-        ax.plot(
-            mcm.tsdat.dday,
-            mcm.tsdat.pressure,
-            color="orange",
-            label="n_ensembles",
+        """
+
+        tsdat = self.m.read(varlist=["VariableLeader"])
+        # Initial pressure units: 10 Pa (about 1 mm or 0.001 decibar).
+        # Converting to decibars.
+        tsdat.pressure = (
+            tsdat.VL["Pressure"] / 1000.0 * self.pressure_scale_factor
         )
-    ax.legend()
+        tsdat.temperature = tsdat.VL["Temperature"] / 100.0
+        self.tsdat = tsdat
 
-    # load the generated file as netcdf / xarray.Dataset
-    data = npz2nc(npzname)
-    # add some more info
-    data.attrs["magdec"] = pa.ave.magdec
-    for att in ["max_e", "max_e_deviation", "min_correlation"]:
-        data.attrs[att] = pa.ave.editparams[att]
+    def _parse_meta_data(self):
+        """Add essential meta data to attributes and remove them from the meta_data dict.
 
-    # remove npz file
-    os.remove(npzname)
+        Will throw a KeyError if no lon/lat provided.
 
-    return m, mcm, pa, data
+        """
+        essential_meta_data = ["lon", "lat"]
+        [
+            self._safely_add_attribute_from_params(k, self.meta_data)
+            for k in essential_meta_data
+        ]
 
+    @property
+    def default_dgridparams(self):
+        """Default depth gridding parameters.
 
-def npzload(file):
-    mfd_prefix = "__mfd__"
-    mfm_prefix = "__mfm__"
-    fz = open(file, "rb")
-    z = np.load(fz, mmap_mode=None, encoding="bytes", allow_pickle=True)
-    out = Bunch()
-    for k, v in z.items():
-        if k.startswith(mfd_prefix):
-            kma = k[len(mfd_prefix) :]
-            kmm = mfm_prefix + kma
-            out[kma] = np.ma.array(v, mask=z[kmm], copy=False)
-        elif k.startswith(mfm_prefix):
-            continue
+        This is based on median depth of the ADCP and the bin sizes.
+
+        """
+        if self._default_dgridparams is None:
+            self.p_median = np.median(self.tsdat.pressure)
+            pdep_median = np.round(seawater.depth2(self.p_median, self.lat))
+            n = self.meta_data.NCells + 2
+            d_interval = self.meta_data.CellSize
+            distance_to_first_bin = np.round(self.meta_data.Bin1Dist)
+            distance_to_last_bin = distance_to_first_bin + n * d_interval
+
+            # TODO: if minimum/maximum pressure changes much from median, we need to do this differently
+            # see GitHub issue #1
+            if self.sysconfig["up"]:
+                dtop = pdep_median - distance_to_last_bin
+                if dtop < 10:
+                    dtop = 10
+                self._default_dgridparams = dict(
+                    dbot=pdep_median - distance_to_first_bin + 2 * d_interval,
+                    dtop=dtop,
+                    d_interval=d_interval,
+                )
+            else:
+                self._default_dgridparams = dict(
+                    dtop=pdep_median + distance_to_first_bin - 2 * d_interval,
+                    dbot=pdep_median + distance_to_last_bin,
+                    d_interval=d_interval,
+                )
+        return self._default_dgridparams
+
+    def parse_dgridparams(self, dgridparams):
+        """Parse depth gridding parameters.
+
+        See top level class notes for more info.
+
+        Parameters
+        ----------
+        dgridparams : dict
+
+        """
+        self.dgridparams = Bunch(self.default_dgridparams)
+        if dgridparams is not None:
+            self.dgridparams.update_values(dgridparams, strict=True)
         else:
-            if v.ndim == 0:
-                v = v.item()
-                if isinstance(v, dict):
-                    v = Bunch(v)
-            out[k] = v
-    fz.close()
+            logger.warning(
+                "No depth gridding parameters provided, using default values."
+            )
+        self.dgrid = np.arange(
+            self.dgridparams.dtop,
+            self.dgridparams.dbot,
+            self.dgridparams.d_interval,
+            dtype=float,
+        )
 
-    return out
+    def parse_tgridparams(self, tgridparams):
+        """Parse time gridding parameters.
 
+        See top level class notes for more info.
 
-def npz2nc(npzfile):
-    """Convert data structure from npz to xarray / netcdf file format.
+        Parameters
+        ----------
+        tgridparams : dict
 
-    Parameters
-    ----------
-    npzfile : str
-        ADCP data in npz file format.
+        """
+        # Find time at depth to determine default time grid parameters.
+        # Differentiate between time series only in the water and time series
+        # including the overshoot on mooring deployment.
+        p = self.tsdat.pressure
+        if ~np.any(p < 10):
+            t0 = self.dday[0]
+            t1 = self.dday[-1]
+        else:
+            at_depth = np.nonzero(p > self.p_median)[0][0]
+            t0 = self.dday[at_depth]
+            in_water = np.nonzero(p > self.p_median / 2)[0][-1]
+            t1 = self.dday[in_water]
 
-    Returns
-    -------
-    out : xarray.Dataset
-        ADCP data ready for saving to netcdf.
-    """
-    # load npz file
-    dat = npzload(npzfile)
-    # identify variables
-    k = dat.keys()
-    varsint = []
-    vars1d = []
-    vars2d = []
-    for ki in k:
+        # Generate a set of default time gridding parameters and then update
+        # from the input parameters provided.
+        default_tgridparams = dict(
+            dt_hours=0.5, t0=t0, t1=t1, burst_average=False
+        )
+        self.tgridparams = Bunch(default_tgridparams)
+        if tgridparams is not None:
+            self.tgridparams.update_values(tgridparams, strict=True)
+        else:
+            logger.warning(
+                "No time gridding parameters provided, using default values."
+            )
+
+    def parse_editparams(self, editparams):
+        """Parse editing parameters.
+
+        See top level class notes for more info.
+
+        Parameters
+        ----------
+        editparams : dict
+
+        """
+        self.editparams = Bunch(self._editparams)
+        if editparams is not None:
+            self.editparams.update_values(editparams, strict=True)
+        else:
+            logger.warning("No edit parameters provided, using default values.")
+
+    def parse_driftparams(self, driftparams):
+        """Parse time drift parameters.
+
+        See top level class notes for more info.
+
+        Parameters
+        ----------
+        driftparams : dict
+
+        """
+        driftparams = dict() if driftparams is None else driftparams
+        self.driftparams = driftparams
+        self.yearbase = self.m.yearbase
+        t0 = self.tsdat.dday[0]
+        self.t0 = t0
+        t1_adcp = driftparams.get("end_adcp", None)
+        if t1_adcp is not None:
+            t1_pc = to_day(self.m.yearbase, *driftparams["end_pc"])
+            t1_adcp = to_day(self.m.yearbase, *driftparams["end_adcp"])
+            self.time_drift_rate = (t1_pc - t0) / (t1_adcp - t0)
+        else:
+            logger.warning(
+                "No time drift parameters provided, not applying any clock correction."
+            )
+            self.time_drift_rate = 1
+
+        self.dday = self._correct_dday(self.tsdat.dday)
+
+    def _correct_dday(self, dday_orig):
+        """Apply linear correction for clock drift.
+
+        Parameters
+        ----------
+        dday_orig : array-like
+            Origial time vector.
+
+        Returns
+        -------
+        array-like
+            Corrected time vector
+
+        """
+
+        return self.t0 + self.time_drift_rate * (dday_orig - self.t0)
+
+    def _parse_sysconfig(self):
+        # We have to get the up/down reading from sysconfig for
+        # a time when the instrument was in the water, so we
+        # use the middle of the deployment.
+        imid = len(self.tsdat.dday) // 2
+        middle = self.m.read(
+            varlist=["VariableLeader"], start=imid, stop=imid + 1
+        )
+        self.orientation = "up" if middle.sysconfig.up else "down"
+        self.sysconfig = middle.sysconfig
+
+    def make_start_ddays(self):
+        """Generate time stamps for ping averaging.
+
+        Notes
+        -----
+        If turning on burst averaging, other input values will be ignored and
+        the averaging interval will be determined from the burst sampling
+        scheme apparent in the ping pattern.
+
+        """
+        dday_start = self.tgridparams.t0
+        dday_end = self.tgridparams.t1
+        dt_hours = self.tgridparams.dt_hours
+        is_burst_average = self.tgridparams.burst_average
+
+        # Save whether we are averaging over bursts or not.
+        self.is_burst_average = is_burst_average
+        # Generate time stamps and stuff.
+        if not is_burst_average:
+            print("no burst average")
+            self.dday_start = dday_start
+            self.dday_end = dday_end
+            self.dt = dt_hours / 24.0
+            self.start_ddays = np.arange(dday_start, dday_end, dt_hours / 24.0)
+            # Time stamps for the averages. Midpoints of averaging intervals.
+            self.dday_mid = self.start_ddays + self.dt / 2
+        else:
+            dday_diff = np.diff(self.dday)
+            # Determine ping interval within burst and time between bursts.
+            burst_dt = np.median(dday_diff)
+            print(
+                f"time between pings within burst: {burst_dt * 24 * 60 * 60:1.1f} s"
+            )
+            # It seems safe to assume that the time between bursts is at least
+            # four times as long as the time between individual pings within a
+            # burst.
+            inter_burst_dt = np.median(dday_diff[dday_diff > burst_dt * 4])
+            print(f"time between bursts: {inter_burst_dt * 24 * 60:1.1f} min")
+            # Find starting points of all bursts.
+            start_indices = np.flatnonzero(dday_diff > burst_dt * 4)
+            # Increase index so we are at the end of the larger time differences.
+            start_indices += 1
+            # Include the very beginning.
+            start_indices = np.insert(start_indices, 0, 0)
+            self.start_ddays = self.dday[start_indices]
+            self.dday_start = self.start_ddays[0]
+            # Generate a dt that is inclusive of one burst.  We know the number
+            # of pings in a burst from the difference between the
+            # start_indices. Let's go a bit beyond the time needed (3 more ping
+            # intervals chosen here).
+            pings_per_burst = np.int32(np.median(np.diff(start_indices)))
+            print(f"{pings_per_burst} pings per burst")
+            print(f"{start_indices.shape[0]} bursts total")
+            self.dt = burst_dt * pings_per_burst + burst_dt * 3
+
+            self.dday_start = self.start_ddays[0]
+            self.dday_end = dday_end
+
+            # Time stamps in the middle of the burst
+            self.dday_mid = self.start_ddays + pings_per_burst * burst_dt / 2
+
+    def read_ensemble(self, iens):
+        """Read ensembles (several individual pings grouped together).
+
+        Parameters
+        ----------
+        iens : int
+            Index into ensemble start times (they are generated in
+            :meth:`make_start_ddays`).
+
+        Returns
+        -------
+        dat : pycurrents.adcp.rdiraw.Bunch
+            Dictionary with data.
+
+        Raises
+        ------
+        ValueError
+            If `iens` is too large to index into `start_ddays`.
+
+        """
+
+        if iens > len(self.start_ddays) - 1:
+            raise ValueError("ens num %d is out of range" % iens)
+
+        # Get indices within the interval.
+        sl = rangeslice(
+            self.dday, self.start_ddays[iens], self.start_ddays[iens] + self.dt
+        )
+        # Use the indices to extract data.
+        dat = self.m.read(start=sl.start, stop=sl.stop)
+        if dat is None:
+            return None
+        dat.dday_orig = dat.dday
+        dat.dday = self._correct_dday(dat.dday_orig)
+        dat.pressure = dat.VL["Pressure"] / 1000.0 * self.pressure_scale_factor
+        sign = -1 if self.orientation == "up" else 1
+        pdepth = seawater.depth2(dat.pressure, self.lat)
+        dat.depth = pdepth[:, np.newaxis] + sign * dat.dep
+        return dat
+
+    @property
+    def magdec(self):
+        """Magnetic declination.
+
+        Calculated using
+        [magdec](https://currents.soest.hawaii.edu/hgstage/geomag/file/tip)
+        (must be installed) based on `lon` and `lat`.
+
+        """
+        if self._magdec is None:
+            if self.lat is None:
+                logger.warning("No magnetic declination is available; using 0")
+                self._magdec = 0
+            else:
+                n = len(self.start_ddays)
+                dday_mid = self.start_ddays[n // 2]
+                y, m, d = to_date(self.yearbase, dday_mid)[:3]
+                output = Popen(
+                    [
+                        "magdec",
+                        str(self.lon),
+                        str(self.lat),
+                        str(y),
+                        str(m),
+                        str(d),
+                    ],
+                    stdout=PIPE,
+                ).communicate()[0]
+                output = output.strip()
+                logger.info("magdec output is: %s", output)
+                self._magdec = float(output.split()[0])
+        return self._magdec
+
+    @property
+    def raw(self):
+        """Raw ADCP data."""
+        if self._raw is None:
+            print("Reading raw data...")
+            self._raw = io.read_raw_rdi(self.files)
+            self._raw.coords["bin"] = (("z"), np.arange(self._raw.z.size))
+        return self._raw
+
+    def _edit(self, ens):
+        """Apply editing to xyze."""
+        ep = self.editparams
+        cond = (ens.cor < ep.min_correlation).any(axis=-1)
+        ens.xyze[cond] = np.ma.masked
+        e = ens.xyze[:, :, 3]
+        max_e = min(ep.max_e, e.std() * ep.max_e_deviation)
+        ens.max_e_applied = max_e
+        cond = np.abs(e) > max_e
+        ens.xyze[cond] = np.ma.masked
+        if ep.maskbins is not None:
+            ens.xyze[:, ep.maskbins, :] = np.ma.masked
+
+    def _to_enu(self, ens):
+        """
+        add enu
+        GV: enu is east, north, up, errvel (optional) whereas xyz are
+        instrument coordinates.
+        """
+        ens.enu = rdi_xyz_enu(
+            ens.xyze,
+            ens.heading + self.magdec,
+            ens.pitch,
+            ens.roll,
+            orientation=self.orientation,
+        )
+
+    def _burst_average_depth(self, ens):
+        """Depth-average within a burst.
+
+        Average the depth vectors if doing burst-averages. Otherwise we just
+        return all depth vectors of this ensemble.
+
+        Parameters
+        ----------
+        ens : Bunch
+            Ensemble data.
+
+        Returns
+        -------
+        depth : array-like
+            Depth vector for each ping.
+
+        """
+        if self.is_burst_average:
+            depth_mean = ens.depth.mean(axis=0)
+            depth = np.tile(depth_mean, (ens.dday.size, 1))
+        else:
+            depth = ens.depth
+        return depth
+
+    def _regrid_enu(self, ens, method="linear"):
+        """Depth-grid enu velocities."""
+        shape = (ens.dday.size, self.dgrid.size, ens.enu.shape[-1])
+        enu_grid = np.ma.zeros(shape)
+        enu_grid[:] = np.ma.masked
+        # Average the depth vectors if doing burst-averages. Otherwise we just
+        # return all depth vectors of this ensemble.
+        # TO DO: If calculating averages over regular time intervals, we need
+        # to low pass filter the pressure time series prior to creating the
+        # depth vectors.
+        depth = self._burst_average_depth(ens)
+        for i in range(ens.dday.size):
+            enu_grid[i] = interp1(
+                depth[i], ens.enu[i], self.dgrid, axis=0, method=method
+            )
+        ens.enu_grid = enu_grid
+
+    def _regrid_amp(self, ens, method="linear"):
+        """Depth-grid amplitudes (averaged over all 4 beams)."""
+        shape = (ens.dday.size, self.dgrid.size)
+        amp_grid = np.ma.zeros(shape)
+        amp_grid[:] = np.ma.masked
+        depth = self._burst_average_depth(ens)
+        for i in range(ens.dday.size):
+            amp_grid[i] = interp1(
+                depth[i],
+                ens.amp[i].mean(axis=-1),
+                self.dgrid,
+                axis=0,
+                method=method,
+            )
+        ens.amp_grid = amp_grid
+
+    def average_ensembles(self, start=None, stop=None):
+        """Time-averaging.
+
+        Adds results as dictionary under `ave` and as `xarray.Dataset` under `ds`.
+
+        Writes processing parameters to the log file.
+
+        Parameters
+        ----------
+        start : int
+            Range start for averaging. Index into start times of averaging
+            intervals.
+        stop : int
+            Range start for averaging. Index into start times of averaging
+            intervals.
+
+        """
+
+        nens_orig = len(self.start_ddays)
+        indices_orig = np.arange(nens_orig)
+        indices = indices_orig[start:stop]
+        if start is None and stop is None:
+            logger.info("Averaging all ensembles")
+        else:
+            logger.info(f"Averaging ensembles {indices[0]} to {indices[-1]}")
+        nens = len(indices)
+        ndgrid = len(self.dgrid)
+        uvwe = np.ma.zeros((nens, ndgrid, 4), dtype=np.float32)
+        uvwe_std = np.ma.zeros((nens, ndgrid, 4), dtype=np.float32)
+
+        pg = np.zeros((nens, ndgrid), dtype=np.int8)
+        amp = np.ma.zeros((nens, ndgrid), dtype=np.float32)
+
+        temperature = np.ma.zeros((nens,), dtype=np.float32)
+        pressure = np.ma.zeros((nens,), dtype=np.float32)
+        pressure_std = np.ma.zeros((nens,), dtype=np.float32)
+        pressure_max = np.ma.zeros((nens,), dtype=np.float32)
+
+        npings = np.zeros((nens,), dtype=np.int16)
+
+        dday = self.dday_mid[start:stop]
+
+        for i, iens in enumerate(tqdm(indices)):
+            ens = self.read_ensemble(iens)
+            if ens is not None:
+                self._edit(ens)  # modifies xyze
+                self._to_enu(ens)  # transform to earth coords (east, north, up)
+                self._regrid_enu(ens)
+                self._regrid_amp(ens)
+
+                nprofs = ens.enu_grid.shape[0]
+            else:
+                nprofs = 0
+            npings[i] = nprofs
+            if nprofs < 2:
+                uvwe[i] = np.ma.masked
+                uvwe_std[i] = np.ma.masked
+                # (pg is not a masked array)
+                amp[i] = np.ma.masked
+                pressure[i] = np.ma.masked
+                pressure_std[i] = np.ma.masked
+                pressure_max[i] = np.ma.masked
+                temperature[i] = np.ma.masked
+                continue
+
+            uvwe[i] = ens.enu_grid.mean(axis=0)
+            uvwe_std[i] = ens.enu_grid.std(axis=0)
+
+            pgi = 100 * ens.enu_grid[..., 0].count(axis=0) // nprofs
+            pg[i] = pgi.astype(np.int8)
+            amp[i] = ens.amp_grid.mean(axis=0)
+
+            pressure[i] = ens.pressure.mean()
+            pressure_std[i] = ens.pressure.std()
+            pressure_max[i] = ens.pressure.max()
+            temperature[i] = ens.temperature.mean()
+
+        self.ave = Bunch(
+            u=uvwe[..., 0],
+            v=uvwe[..., 1],
+            w=uvwe[..., 2],
+            e=uvwe[..., 3],
+            u_std=uvwe_std[..., 0],
+            v_std=uvwe_std[..., 1],
+            w_std=uvwe_std[..., 2],
+            e_std=uvwe_std[..., 3],
+            pg=pg,
+            amp=amp,
+            temperature=temperature,
+            pressure=pressure,
+            pressure_std=pressure_std,
+            pressure_max=pressure_max,
+            npings=npings,
+            dday=dday,
+            yearbase=self.yearbase,
+            dep=self.dgrid,
+            editparams=self.editparams,
+            tgridparams=self.tgridparams,
+            dgridparams=self.dgridparams,
+            magdec=self.magdec,
+            lon=self.lon,
+            lat=self.lon,
+        )
+
+        self._ave2nc()
+
+        # Add some more info.
+        self.ds.attrs["orientation"] = self.orientation
+        self.ds.attrs["magdec"] = self.magdec
+        for att in ["max_e", "max_e_deviation", "min_correlation"]:
+            self.ds.attrs[att] = self.editparams[att]
+
+        # Add meta data if provided.
+        if self.meta_data is not None:
+            for k, v in self.meta_data.items():
+                self.ds.attrs[k] = v
+        self.ds.attrs["proc time"] = np.datetime64("now").astype("str")
+
+        self._log_processing_params()
+
+    def burst_average_ensembles(
+        self, start=None, stop=None, interpolate_bin=None
+    ):
+        """Time-averaging prior to depth-gridding.
+
+        Uses pre-defined editing parameters that can be updated with
+        `parse_editparams`.
+
+        Adds results as dictionary under `ave` and as `xarray.Dataset` under `ds`.
+
+        Writes processing parameters to the log file.
+
+        Parameters
+        ----------
+        start : int, optional
+            Range start for averaging. Index into start times of averaging
+            intervals. Defaults to None (start at beginning).
+        stop : int, optional
+            Range start for averaging. Index into start times of averaging
+            intervals. Defaults to None (start at beginning).
+        interpolate_bin : int or None, optional
+            Interpolate over a single, previously masked, bin. Defaults to None (no interpolation).
+
+        """
+        pg_condition=self.editparams.pg_limit
+        nens_orig = len(self.start_ddays)
+        indices_orig = np.arange(nens_orig)
+        indices = indices_orig[start:stop]
+        if start is None and stop is None:
+            logger.info("Averaging all ensembles")
+        else:
+            logger.info(f"Averaging ensembles {indices[0]} to {indices[-1]}")
+        nens = len(indices)
+        ndgrid = len(self.dgrid)
+        uvwe = np.ma.zeros((nens, ndgrid, 4), dtype=np.float32)
+        uvwe_std = np.ma.zeros((nens, ndgrid, 4), dtype=np.float32)
+
+        pg = np.zeros((nens, ndgrid), dtype=np.int8)
+        amp = np.ma.zeros((nens, ndgrid), dtype=np.float32)
+
+        temperature = np.ma.zeros((nens,), dtype=np.float32)
+        pressure = np.ma.zeros((nens,), dtype=np.float32)
+        pressure_std = np.ma.zeros((nens,), dtype=np.float32)
+        pressure_max = np.ma.zeros((nens,), dtype=np.float32)
+
+        npings = np.zeros((nens,), dtype=np.int16)
+
+        dday = self.dday_mid[start:stop]
+
+        for i, iens in enumerate(tqdm(indices)):
+            ens = self.read_ensemble(iens)
+            if ens is not None:
+                self._edit(ens)  # modifies xyze
+                self._to_enu(ens)  # transform to earth coords (east, north, up)
+                self._regrid_enu(ens)
+                self._regrid_amp(ens)
+
+                nprofs = ens.enu_grid.shape[0]
+            else:
+                nprofs = 0
+            npings[i] = nprofs
+            if nprofs < 2:
+                uvwe[i] = np.ma.masked
+                uvwe_std[i] = np.ma.masked
+                # (pg is not a masked array)
+                amp[i] = np.ma.masked
+                pressure[i] = np.ma.masked
+                pressure_std[i] = np.ma.masked
+                pressure_max[i] = np.ma.masked
+                temperature[i] = np.ma.masked
+                continue
+
+            # Depth vector for interpolation
+            depth = self._burst_average_depth(ens)
+            depth = depth[0, :]
+
+            # Calculate burst-average on instrument-relative depth grid
+            uvwe_inst = ens.enu.mean(axis=0)
+            uvwe_std_inst = ens.enu.std(axis=0)
+
+            pgi_inst = 100 * ens.enu[..., 0].count(axis=0) // nprofs
+
+            if pg_condition is not None:
+                pgi_index = pgi_inst < pg_condition
+                uvwe_inst[pgi_index, :] = np.ma.masked
+                uvwe_std_inst[pgi_index, :] = np.ma.masked
+
+            if interpolate_bin is not None:
+                zi = interpolate_bin
+                neighbors = [zi - 2, zi - 1, zi + 1, zi + 2]
+                dtmp = depth[neighbors]
+                tmp = interp1(
+                    dtmp,
+                    uvwe_inst[neighbors, :],
+                    depth[zi],
+                    axis=0,
+                    method="linear",
+                )
+                uvwe_inst[zi, :] = tmp
+
+            # Interpolate burst-average to universal depth grid.
+            uvwe_grid = interp1(
+                depth, uvwe_inst, self.dgrid, axis=0, method="linear"
+            )
+            uvwe_std_grid = interp1(
+                depth, uvwe_std_inst, self.dgrid, axis=0, method="linear"
+            )
+            uvwe[i] = uvwe_grid
+            uvwe_std[i] = uvwe_std_grid
+
+            # Interpolate pg to universal depth grid. Not overly satisfying but
+            # seems like that's what we need to do here.
+            pgi_grid = interp1(
+                depth, pgi_inst, self.dgrid, axis=0, method="linear"
+            )
+            pg[i] = pgi_grid.astype(np.int8)
+
+            # Not changed to averaging in instrument-relative coordinates first.
+            amp[i] = ens.amp_grid.mean(axis=0)
+
+            pressure[i] = ens.pressure.mean()
+            pressure_std[i] = ens.pressure.std()
+            pressure_max[i] = ens.pressure.max()
+            temperature[i] = ens.temperature.mean()
+
+        self.ave = Bunch(
+            u=uvwe[..., 0],
+            v=uvwe[..., 1],
+            w=uvwe[..., 2],
+            e=uvwe[..., 3],
+            u_std=uvwe_std[..., 0],
+            v_std=uvwe_std[..., 1],
+            w_std=uvwe_std[..., 2],
+            e_std=uvwe_std[..., 3],
+            pg=pg,
+            amp=amp,
+            temperature=temperature,
+            pressure=pressure,
+            pressure_std=pressure_std,
+            pressure_max=pressure_max,
+            npings=npings,
+            dday=dday,
+            yearbase=self.yearbase,
+            dep=self.dgrid,
+            editparams=self.editparams,
+            tgridparams=self.tgridparams,
+            dgridparams=self.dgridparams,
+            magdec=self.magdec,
+            lon=self.lon,
+            lat=self.lon,
+        )
+
+        self._ave2nc()
+
+        # Add some more info.
+        self.ds.attrs["orientation"] = self.orientation
+        self.ds.attrs["magdec"] = self.magdec
+        for att in ["max_e", "max_e_deviation", "min_correlation"]:
+            self.ds.attrs[att] = self.editparams[att]
+
+        # Add meta data if provided.
+        if self.meta_data is not None:
+            for k, v in self.meta_data.items():
+                self.ds.attrs[k] = v
+        self.ds.attrs["proc time"] = np.datetime64("now").astype("str")
+
+        self._log_processing_params()
+
+    def _safely_add_attribute_from_params(self, key, d):
+        """Add attribute from dictionary and throw an exception if the key is missing.
+
+        Parameters
+        ----------
+        key : str
+        d : dict
+        """
         try:
-            tmp = dat[ki].shape
-            if len(tmp) == 1:
-                vars1d.append(ki)
-            elif len(tmp) == 2:
-                vars2d.append(ki)
-        except:
-            tmp = None
-            varsint.append(ki)
-        # print(ki, tmp)
+            setattr(self, key, d.pop(key))
+        except KeyError:
+            print(f"{key} is missing in input parameters")
 
-    # generate time vector
-    base = datetime.datetime(dat.yearbase, 1, 1, 0, 0, 0)
-    time = [base + datetime.timedelta(days=ti) for ti in dat.dday]
-    adcptime = [np.datetime64(ti) for ti in time]
-    # generate Dataset
-    out = xr.Dataset(
-        {"pg": (["z", "time"], dat.pg.T)},
-        coords={"time": (["time"], adcptime), "z": (["z"], dat.dep)},
-    )
-    for vari in vars2d:
-        out[vari] = (["z", "time"], dat[vari].T)
-    for vari in vars1d:
-        if vari not in ["dep", "dday"]:
-            out[vari] = (["time"], dat[vari])
+    def _set_up_logger(self):
+        """Set up logging to both a file and to screen.
 
-    # add variable names and units for plotting
-    out = add_meta_data(out)
+        Default for screen logging is to show only warnings unless `verbose` is
+        set to True.
 
-    return out
+        """
 
+        # Parse metadata for naming the log.
+        if self.meta_data is not None:
+            if "sn" in self.meta_data and "mooring" in self.meta_data:
+                sn = self.meta_data["sn"]
+                mooring = self.meta_data["mooring"]
+                has_mooring_id = True
+            else:
+                sn = None
+                mooring = None
+                has_mooring_id = False
+        else:
+            has_mooring_id = False
 
-def add_meta_data(ds):
-    ds.u.attrs = dict(long_name="u", units="m/s")
-    ds.v.attrs = dict(long_name="v", units="m/s")
-    ds.w.attrs = dict(long_name="w", units="m/s")
-    ds.e.attrs = dict(long_name="error velocity", units="m/s")
-    ds.z.attrs = dict(long_name="depth", units="m")
-    ds.temperature.attrs = dict(long_name="temperature", units="°C")
-    ds.pressure.attrs = dict(long_name="pressure", units="dbar")
-    return ds
+        # Set up a logger that will collect log info from this module and the
+        # other pycurrent methods as well.
+        logdir = Path(self.logdir)
+        logdir.mkdir(exist_ok=True)
+        if has_mooring_id:
+            filename = f"{mooring}_{sn}.log"
+        else:
+            filename = "adcp_proc.log"
+        # Delete any existing handlers. This may be bad style, but I kept adding handlers when developing this.
+        logger.handlers = []
+        logging.basicConfig(
+            filename=logdir.joinpath(filename),
+            filemode="w",
+            format="%(asctime)s %(name)s %(levelname)s %(message)s",
+            datefmt="%H:%M:%S",
+            level=logging.INFO,
+            force=True,
+        )
+        ConsoleOutputHandler = logging.StreamHandler()
+        ConsoleOutputHandler.setLevel(logging.WARNING)
+        if self.verbose:
+            ConsoleOutputHandler.setLevel(logging.INFO)
+        logger.addHandler(ConsoleOutputHandler)
+
+        # current date
+        datestr = np.datetime64(datetime.datetime.now()).astype(
+            datetime.datetime
+        )
+        strformat = "%Y-%m-%d"
+        datestr = datestr.strftime(strformat)
+
+        if has_mooring_id:
+            logger.info(f"Processing {mooring} SN {sn} on {datestr}")
+        else:
+            logger.warning(
+                "No meta data provided, logging to generic filename 'adcp_proc.log'"
+            )
+            logger.info(f"Processing on {datestr}")
+
+    def _log_processing_params(self):
+        """Write processing parameters to log file."""
+
+        logger.info("processing settings")
+        logger.info("-------------------")
+        self._log_params(self.dgridparams)
+        self._log_params(self.tgridparams)
+        self._log_params(self.editparams)
+        logger.info("-------------------")
+
+    def _log_params(self, pd):
+        """Print ADCP processing parameter dict to logs.
+
+        Parameters
+        ----------
+        pd : dict
+            Parameter dict.
+        """
+
+        for k, v in pd.items():
+            if k == "maskbins" and v is not None:
+                logstr = (k, ":", np.flatnonzero(v))
+                logger.info(logstr)
+            else:
+                logstr = (k, ":", v)
+                logger.info(logstr)
+
+    def _ave2nc(self):
+        """Convert data structure from ave to xarray.Dataset format."""
+        # load npz file
+        dat = self.ave.copy()
+        dat = Bunch(dat)
+        # identify variables
+        k = dat.keys()
+        varsint = []
+        vars1d = []
+        vars2d = []
+        for ki in k:
+            try:
+                tmp = dat[ki].shape
+                if len(tmp) == 1:
+                    vars1d.append(ki)
+                elif len(tmp) == 2:
+                    vars2d.append(ki)
+            except:
+                tmp = None
+                varsint.append(ki)
+            # print(ki, tmp)
+
+        # generate time vector
+        base = datetime.datetime(dat.yearbase, 1, 1, 0, 0, 0)
+        time = [base + datetime.timedelta(days=ti) for ti in dat.dday]
+        adcptime = [np.datetime64(ti) for ti in time]
+        # generate Dataset
+        out = xr.Dataset(
+            {"pg": (["z", "time"], dat.pg.T)},
+            coords={"time": (["time"], adcptime), "z": (["z"], dat.dep)},
+        )
+        for vari in vars2d:
+            out[vari] = (["z", "time"], dat[vari].T)
+        for vari in vars1d:
+            if vari not in ["dep", "dday"]:
+                out[vari] = (["time"], dat[vari])
+
+        # Drop depth levels with all nan
+        out = out.dropna(how="all", dim="z")
+
+        # add variable names and units for plotting
+        out = self._add_names_and_units(out)
+
+        self.ds = out
+
+    def _add_names_and_units(self, ds):
+        """Add variable meta-data to Dataset.
+
+        Parameters
+        ----------
+        ds : xarray.Dataset
+
+        Returns
+        -------
+        ds : xarray.Dataset
+
+        """
+
+        ds.u.attrs = dict(long_name="u", units="m/s")
+        ds.v.attrs = dict(long_name="v", units="m/s")
+        ds.w.attrs = dict(long_name="w", units="m/s")
+        ds.e.attrs = dict(long_name="error velocity", units="m/s")
+        ds.z.attrs = dict(long_name="depth", units="m")
+        ds.temperature.attrs = dict(long_name="temperature", units="°C")
+        ds.pressure.attrs = dict(long_name="pressure", units="dbar")
+        return ds
+
+    def plot_echo_stats(self):
+        """Plot beam statistics (correlation and amplitude) from raw ADCP data."""
+        r = self.raw
+
+        fig, ax = plt.subplots(
+            nrows=1,
+            ncols=2,
+            figsize=(5, r.bin.max().data * 0.3),
+            constrained_layout=True,
+            sharey=True,
+        )
+        r.cor.mean(dim="time").plot(
+            hue="beam", y="bin", marker="o", linestyle="", ax=ax[0]
+        )
+        r.amp.mean(dim="time").plot(
+            hue="beam", y="bin", marker="o", linestyle="", ax=ax[1]
+        )
+        ax[0].invert_yaxis()
+        ax[1].set(ylabel="")
+        ax[0].set_yticks(r.bin.data)
+        for axi in ax:
+            gv.plot.axstyle(axi)
+
+    def plot_pressure(self):
+        """Plot pressure time series and mark time at depth."""
+        fig, ax = gv.plot.quickfig(fgs=(6, 2.5))
+        self.raw.pressure.plot(ax=ax, label="all")
+        self.raw.pressure.where(self.raw.pressure > 50).plot(
+            ax=ax, label="subsurface"
+        )
+        ax.invert_yaxis()
+        ax.set(xlabel="", ylabel="pressure [dbar]")
+        ax.legend()
+
+    def generate_binmask(self, indices):
+        binmask = self.raw.bin.data < 0
+        binmask[indices] = True
+        return binmask

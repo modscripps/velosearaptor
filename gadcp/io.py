@@ -1,12 +1,12 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""Module gadcp.io with in/out functions"""
+"""Module gadcp.io with in/out functions. Mostly provides wrapper functions to UHs `Multiread`."""
 
 import numpy as np
 import xarray as xr
 
 import gvpy as gv
-from pycurrents.adcp.rdiraw import Multiread
+from pycurrents.adcp.rdiraw import Multiread, extract_raw
 
 
 def read_raw_rdi(file, auxillary_only=False):
@@ -63,7 +63,9 @@ def read_raw_rdi(file, auxillary_only=False):
         "XducerDepth",
     ]
 
-    out = xr.Dataset(data_vars={"dummy": (["z", "time"], np.ones((jj, ii)) * np.nan)})
+    out = xr.Dataset(
+        data_vars={"dummy": (["z", "time"], np.ones((jj, ii)) * np.nan)}
+    )
 
     # get 1d variables
     for v in varsii:
@@ -73,8 +75,10 @@ def read_raw_rdi(file, auxillary_only=False):
 
     # get 2d variables
     if auxillary_only is False:
-        for v in ["vel", "cor", "amp", "pg"]:
+        for v in ["vel", "cor", "amp"]:
             out[v] = (["beam", "z", "time"], np.transpose(radcp[v]))
+        if "pg" in radcp:
+            out["pg"] = (["beam", "z", "time"], np.transpose(radcp["pg"]))
 
     out.coords["time"] = (["time"], adcptime)
     out.coords["z"] = (["z"], radcp.dep)
@@ -142,6 +146,24 @@ def read_raw_rdi_uh(file, auxillary_only=False):
 
     return radcp
 
+
+def extract_raw_rdi(file, i0, i1, outfile, inst='wh'):
+    """Extract ping range from raw RDI file and save to new raw file.
+
+    Parameters
+    ----------
+    file : str or Path
+        Input file.
+    i0 : int
+        Start ping.
+    i1 : int
+        End ping.
+    outfile : str or Path
+        Path and name of output file.
+    inst : str
+        One of ('wh','os','bb','ec'). Defaults to 'wh'.
+    """
+    data = extract_raw(file, inst, i0, i1, outfile=outfile)
 
 
 def _is_number(s):

@@ -1,0 +1,75 @@
+# This workflow will install Python dependencies, run tests and lint with a variety of Python versions
+# For more information see: https://help.github.com/actions/language-and-framework-guides/using-python-with-github-actions
+
+name: gadcp pdoc
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-deploy:
+
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: [3.9]
+
+    steps:
+    - uses: actions/checkout@v2
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v2
+      with:
+        python-version: ${{ matrix.python-version }}
+    - name: Cache pip
+      uses: actions/cache@v2
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+          ${{ runner.os }}-
+      # https://docs.github.com/en/actions/guides/building-and-testing-python#installing-dependencies
+      # ^-- This gives info on installing dependencies with pip
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        python -m pip install pdoc numpy
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+        python -m pip install .
+    - name: Debugging information
+      run: |
+        echo "github.ref:" ${{github.ref}}
+        echo "github.event_name:" ${{github.event_name}}
+        echo "github.head_ref:" ${{github.head_ref}}
+        echo "github.base_ref:" ${{github.base_ref}}
+        set -x
+        git rev-parse --abbrev-ref HEAD
+        git branch
+        git branch -a
+        git remote -v
+        python -V
+        pip list --not-required
+        pip list
+    - name: Build docs
+      run: |
+        pdoc --version
+        pdoc -d numpy -o ./docs ./gadcp
+    # Add the .nojekyll file
+    - name: nojekyll
+      if: ${{ github.event_name == 'push' }}
+      run: |
+        touch ./docs/.nojekyll
+    # Deploy
+    # https://github.com/peaceiris/actions-gh-pages
+    - name: Deploy
+      uses: peaceiris/actions-gh-pages@v3
+      if: ${{ github.event_name == 'push' }}
+      #if: ${{ success() && github.event_name == 'push' && github.ref == 'refs/heads/$defaultBranch' }}
+      with:
+        publish_branch: gh-pages
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        publish_dir: ./docs
+        force_orphan: true
