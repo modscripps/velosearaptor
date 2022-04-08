@@ -8,5 +8,6 @@ dist/
 .vscode
 html
 docs
-notebooks
+notebooks/dev
+notebooks/log
 src
