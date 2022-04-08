@@ -3,7 +3,7 @@
 """Module gadcp.madcp with functions for moored ADCPs.
 
 ### Notes
-Some general notes and todo items for this module.
+Some general notes for this module.
 
 #### Depth Gridding
 The depth vector for the ADCP raw data (in instrument coordinates) is
@@ -18,11 +18,6 @@ Long Ranger ADCPs Commands and Output Data Format*:
 > cell (bin). This distance is a function of depth cell length (WS), the
 > profiling mode (WM), the blank after transmit distance (WF), and speed of
 > sound.
-
-#### To Do
-- Default depth grid: if minimum/maximum pressure changes much from median, we need to do this differently
-- Pressure time series: If calculating averages over regular time intervals, we need to low pass filter the pressure time series prior to creating the depth vectors.
-- Pressure time series: Allow for input of external pressure time series.
 
 """
 
@@ -340,7 +335,8 @@ class ProcessADCP:
             distance_to_first_bin = np.round(self.meta_data.Bin1Dist)
             distance_to_last_bin = distance_to_first_bin + n * d_interval
 
-            # todo: if minimum/maximum pressure changes much from median, we need to do this differently
+            # TODO: if minimum/maximum pressure changes much from median, we need to do this differently
+            # see GitHub issue #1
             if self.sysconfig["up"]:
                 dtop = pdep_median - distance_to_last_bin
                 if dtop < 10:
