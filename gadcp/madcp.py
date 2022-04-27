@@ -633,7 +633,7 @@ class ProcessADCP:
                         "Cannot find program magdec on the system path or paths within gadcp."
                     )
 
-                print(f"magdec found at {magdec_path}")
+                logger.info(f"magdec found at {magdec_path}")
 
                 n = len(self.start_ddays)
                 dday_mid = self.start_ddays[n // 2]
