@@ -105,7 +105,7 @@ class ProcessADCP:
     logdir : str, optional
         Log file directory. Defaults to `log/`.
     magdec : float, optional
-        Magnetic declination in degrees. 
+        Magnetic declination in degrees.
 
     Attributes
     ----------
@@ -185,13 +185,14 @@ class ProcessADCP:
             depth grid in `burst_average_ensembles`.
 
     """
+
     # Default editing parameters.
     _editparams = dict(
         max_e=0.2,  # absolute max e
         max_e_deviation=2,  # max in terms of sigma
         min_correlation=64,  # 64 is RDI default
         maskbins=None,  # do not mask any bins
-        pg_limit=50, # percent good limit applied in `burst_average_ensembles`
+        pg_limit=50,  # percent good limit applied in `burst_average_ensembles`
     )
 
     def __init__(
@@ -215,6 +216,7 @@ class ProcessADCP:
         self.verbose = verbose
         self.pressure_scale_factor = pressure_scale_factor
 
+        self._magdec_provided = magdec
         self._magdec = magdec
         self._raw = None
         self._default_dgridparams = None
@@ -596,43 +598,47 @@ class ProcessADCP:
     def magdec(self):
         """Magnetic declination.
 
-        Calculated using
+        If not provided as input argument magdec is calculated using
         [magdec](https://currents.soest.hawaii.edu/hgstage/geomag/file/tip)
         (must be installed) based on `lon` and `lat`.
 
         """
         if self._magdec is None:
             if self.lat is None:
-                logger.warning("No magnetic declination is available; using 0")
+                logger.warning("No lon/lat provided, cannot calculate magnetic declination.")
                 self._magdec = 0
             else:
                 # Look for magdec executable
                 magdec_found = True
                 magdec_path = which("magdec")
-                
+
                 if magdec_path is None:
                     magdec_found = False
                     package_dir = os.path.dirname(__file__)
-                    
+
                 if not magdec_found:
                     # Try this package directory
                     magdec_path = os.path.join(package_dir, "magdec")
                     magdec_found = os.path.isfile(magdec_path)
-                    
+
                 if not magdec_found:
-                    # Try the magdec installation directory 
-                    magdec_path = os.path.abspath(os.path.join(package_dir, "../geomag/magdec"))
+                    # Try the magdec installation directory
+                    magdec_path = os.path.abspath(
+                        os.path.join(package_dir, "../geomag/magdec")
+                    )
                     magdec_found = os.path.isfile(magdec_path)
-                        
+
                 if not magdec_found:
-                    raise FileNotFoundError("Cannot find program magdec on the system path or paths within gadcp.")
-                        
-                print(f"magdec found at {magdec_path}")
+                    raise FileNotFoundError(
+                        "Cannot find program magdec on the system path or paths within gadcp."
+                    )
+
+                logger.info(f"magdec found at {magdec_path}")
 
                 n = len(self.start_ddays)
                 dday_mid = self.start_ddays[n // 2]
                 y, m, d = to_date(self.yearbase, dday_mid)[:3]
-                
+
                 output = Popen(
                     [
                         magdec_path,
@@ -647,8 +653,8 @@ class ProcessADCP:
                 output = output.strip()
                 logger.info("magdec output is: %s", output)
                 self._magdec = float(output.split()[0])
-        else:
-            warn("megdec is already defined. Doing nothing.")
+        elif self._magdec_provided is not None:
+            logger.info(f"magdec {self._magdec_provided} provided.")
         return self._magdec
 
     @property
@@ -888,7 +894,7 @@ class ProcessADCP:
             Interpolate over a single, previously masked, bin. Defaults to None (no interpolation).
 
         """
-        pg_condition=self.editparams.pg_limit
+        pg_condition = self.editparams.pg_limit
         nens_orig = len(self.start_ddays)
         indices_orig = np.arange(nens_orig)
         indices = indices_orig[start:stop]
