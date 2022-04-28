@@ -36,14 +36,12 @@ import pathlib
 from pathlib import Path
 from tqdm import tqdm
 
-from pycurrents.adcp.rdiraw import extract_raw, Multiread
-from pycurrents.system import Bunch
+from pycurrents.adcp.rdiraw import Multiread
 from pycurrents.system import Bunch
 from pycurrents.num.nptools import rangeslice
 from pycurrents.num import interp1
 from pycurrents.codas import to_date, to_day
 from pycurrents.adcp.transform import rdi_xyz_enu
-from pycurrents.file import npzfile
 from pycurrents.data import seawater
 
 # from gadcp.mcm_avg import MCM, Pingavg
