@@ -2,10 +2,10 @@
 # -*- coding: utf-8 -*-
 """Module gadcp.io with in/out functions. Mostly provides wrapper functions to UHs `Multiread`."""
 
+import datetime
 import numpy as np
 import xarray as xr
 
-import gvpy as gv
 from pycurrents.adcp.rdiraw import Multiread, extract_raw
 
 
@@ -46,7 +46,7 @@ def read_raw_rdi(file, auxillary_only=False):
                 varlist=["Velocity", "PercentGood", "Intensity", "Correlation"]
             )
     # convert time
-    adcptime = gv.io.yday0_to_datetime64(radcp.yearbase, radcp.dday)
+    adcptime = yday0_to_datetime64(radcp.yearbase, radcp.dday)
 
     jj = np.squeeze(radcp.dep.shape)
     assert radcp.nbins == jj
@@ -137,7 +137,7 @@ def read_raw_rdi_uh(file, auxillary_only=False):
             )
 
     # convert time
-    adcptime = gv.io.yday0_to_datetime64(radcp.yearbase, radcp.dday)
+    adcptime = yday0_to_datetime64(radcp.yearbase, radcp.dday)
     radcp.time = adcptime
 
     # pressure and temperature
@@ -164,6 +164,29 @@ def extract_raw_rdi(file, i0, i1, outfile, inst='wh'):
         One of ('wh','os','bb','ec'). Defaults to 'wh'.
     """
     data = extract_raw(file, inst, i0, i1, outfile=outfile)
+
+
+def yday0_to_datetime64(baseyear, yday):
+    """
+    Convert year day (starting at yday 0) to numpy's datetime64 format.
+
+    Parameters
+    ----------
+    baseyear : int
+        Base year
+    yday : float
+        Year day
+
+    Returns
+    -------
+    time : np.datetime64
+        Time in numpy datetime64 format
+    """
+    base = datetime.datetime(baseyear, 1, 1, 0, 0, 0)
+    time = [base + datetime.timedelta(days=ti) for ti in yday]
+    # convert to numpy datetime64
+    time64 = np.array([np.datetime64(ti, "ms") for ti in time])
+    return time64
 
 
 def _is_number(s):

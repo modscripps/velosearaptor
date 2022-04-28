@@ -1,22 +1,21 @@
 from setuptools import find_packages, setup
+from pathlib import Path
 
-with open("README.rst") as readme_file:
-    readme = readme_file.read()
-
-with open("HISTORY.rst") as history_file:
-    history = history_file.read()
+this_directory = Path(__file__).parent
+readme = (this_directory / "README.md").read_text()
+history = (this_directory / "HISTORY.md").read_text()
 
 setup(
     name="gadcp",
     version="0.2.0",
     author="Gunnar Voet",
     author_email="gvoet@ucsd.edu",
-    url="",
+    url="https://github.com/gunnarvoet/gadcp/",
     license="",
     # Description
     description="Python functions for interfacing with RDI ADCP data, mostly based on pycurrents",
     long_description=f"{readme}\n\n{history}",
-    long_description_content_type="text/x-rst",
+    long_description_content_type='text/markdown',
     # Requirements
     python_requires=">=3.6",
     install_requires=[

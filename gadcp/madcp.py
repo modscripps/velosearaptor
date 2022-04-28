@@ -104,6 +104,8 @@ class ProcessADCP:
         Log file directory. Defaults to `log/`.
     magdec : float, optional
         Magnetic declination in degrees.
+    pressure : xr.DataArray, optional
+        Pressure time series in dbar as xr.DataAarray with coordinate `time`.
 
     Attributes
     ----------
@@ -207,14 +209,19 @@ class ProcessADCP:
         plot=False,
         pressure_scale_factor=1,
         magdec=None,
+        pressure=None,
     ):
         self.meta_data = Bunch(meta_data.copy())
         self.ibad = ibad
         self.logdir = logdir
         self.verbose = verbose
-        self.pressure_scale_factor = pressure_scale_factor
 
+        self._magdec_provided = magdec
         self._magdec = magdec
+
+        self._pressure_provided = pressure
+        self._pressure_scale_factor = pressure_scale_factor
+
         self._raw = None
         self._default_dgridparams = None
 
@@ -298,18 +305,95 @@ class ProcessADCP:
         self.meta_data.NCells = ping.FL.NCells
         self.meta_data.CellSize = ping.FL.CellSize / 100.0
 
+    def _generate_external_pressure_interpolator(self, dat):
+        """Interpolate external pressure to pycurrents time vector.
+
+        Parameters
+        ----------
+        dat : pycurrents.adcp.rdiraw.Bunch
+            Data structure.
+
+        Returns
+        -------
+        Interpolator
+
+        """
+
+        # We already have a function to convert the pycurrents time to
+        # datetime64. Interpolate in this time domain.
+        time = io.yday0_to_datetime64(dat.yearbase, dat.dday)
+        p_interpolated = self._pressure_provided.interp(time=time).data
+
+        # Beginning and end may have NaN's if the ADCP was started before
+        # the external pressure sensor. Make sure this happens only when
+        # outside the water and then replace with atmospheric pressure.
+        if np.any(np.isnan(p_interpolated)):
+            nan_mask = np.isnan(p_interpolated)
+            i_nan = np.flatnonzero(nan_mask)
+
+            first_few_good_median = np.median(p_interpolated[~nan_mask][:20])
+            last_few_good_median = np.median(p_interpolated[~nan_mask][-20:])
+
+        if np.isnan(p_interpolated[0]):
+            if first_few_good_median < 1:
+                i_divide = np.flatnonzero(np.diff(i_nan) - 1) + 1
+                if i_divide.size == 0:
+                    p_interpolated[nan_mask] = first_few_good_median
+                else:
+                    p_interpolated[0:i_divide] = first_few_good_median
+
+        if np.isnan(p_interpolated[-1]):
+            if last_few_good_median < 1:
+                i_divide = np.flatnonzero(np.diff(i_nan) - 1) + 1
+                if i_divide.size == 0:
+                    p_interpolated[nan_mask] = last_few_good_median
+                else:
+                    p_interpolated[i_divide:] = last_few_good_median
+
+        # Now generate an interpolation function that will take dday as input
+        # for later per-ensemble interpolation.
+        self._external_pressure_interpolator = sp.interpolate.interp1d(
+            dat.dday,
+            p_interpolated,
+            bounds_error=False,
+            fill_value="extrapolate",
+        )
+
+    def _external_pressure_to_dat(self, dat):
+        """Interpolate external pressure to pycurrents time vector.
+
+        Parameters
+        ----------
+        dat : pycurrents.adcp.rdiraw.Bunch
+            Data structure.
+
+        Returns
+        -------
+        array-like
+            Pressure
+
+        """
+        return self._external_pressure_interpolator(dat.dday)
+
+    def _scale_pycurrents_pressure(self, dat):
+        # Initial pressure units: 10 Pa (about 1 mm or 0.001 decibar).
+        # Converting to decibars.
+        return dat.VL["Pressure"] / 1000.0 * self._pressure_scale_factor
+
     def _read_auxiliary_data(self):
         """Read auxiliary data.
 
         Adds attribute `tsdat`.
 
         """
-
         tsdat = self.m.read(varlist=["VariableLeader"])
-        # Initial pressure units: 10 Pa (about 1 mm or 0.001 decibar).
-        # Converting to decibars.
-        tsdat.pressure = tsdat.VL["Pressure"] / 1000.0 * self.pressure_scale_factor
         tsdat.temperature = tsdat.VL["Temperature"] / 100.0
+        # Replace pressure if provided from external sensor
+        if self._pressure_provided is not None:
+            self._generate_external_pressure_interpolator(tsdat)
+            tsdat.pressure = self._external_pressure_to_dat(tsdat)
+        else:
+            tsdat.pressure = self._scale_pycurrents_pressure(tsdat)
         self.tsdat = tsdat
 
     def _parse_meta_data(self):
@@ -592,7 +676,11 @@ class ProcessADCP:
             return None
         dat.dday_orig = dat.dday
         dat.dday = self._correct_dday(dat.dday_orig)
-        dat.pressure = dat.VL["Pressure"] / 1000.0 * self.pressure_scale_factor
+        if self._pressure_provided is not None:
+            # Replace pressure if provided
+            dat.pressure = self._external_pressure_to_dat(dat)
+        else:
+            dat.pressure = self._scale_pycurrents_pressure(dat)
         sign = -1 if self.orientation == "up" else 1
         pdepth = seawater.depth2(dat.pressure, self.lat)
         dat.depth = pdepth[:, np.newaxis] + sign * dat.dep
@@ -602,14 +690,16 @@ class ProcessADCP:
     def magdec(self):
         """Magnetic declination.
 
-        Calculated using
+        If not provided as input argument magdec is calculated using
         [magdec](https://currents.soest.hawaii.edu/hgstage/geomag/file/tip)
         (must be installed) based on `lon` and `lat`.
 
         """
         if self._magdec is None:
             if self.lat is None:
-                logger.warning("No magnetic declination is available; using 0")
+                logger.warning(
+                    "No lon/lat provided, cannot calculate magnetic declination."
+                )
                 self._magdec = 0
             else:
                 # Look for magdec executable
@@ -637,7 +727,7 @@ class ProcessADCP:
                         "Cannot find program magdec on the system path or paths within gadcp."
                     )
 
-                print(f"magdec found at {magdec_path}")
+                logger.info(f"magdec found at {magdec_path}")
 
                 n = len(self.start_ddays)
                 dday_mid = self.start_ddays[n // 2]
@@ -657,8 +747,8 @@ class ProcessADCP:
                 output = output.strip()
                 logger.info("magdec output is: %s", output)
                 self._magdec = float(output.split()[0])
-        else:
-            warn("megdec is already defined. Doing nothing.")
+        elif self._magdec_provided is not None:
+            logger.info(f"magdec {self._magdec_provided} provided.")
         return self._magdec
 
     @property
