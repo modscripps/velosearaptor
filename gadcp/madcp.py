@@ -103,7 +103,7 @@ class ProcessADCP:
     logdir : str, optional
         Log file directory. Defaults to `log/`.
     magdec : float, optional
-        Magnetic declination in degrees. 
+        Magnetic declination in degrees.
 
     Attributes
     ----------
@@ -183,13 +183,14 @@ class ProcessADCP:
             depth grid in `burst_average_ensembles`.
 
     """
+
     # Default editing parameters.
     _editparams = dict(
         max_e=0.2,  # absolute max e
         max_e_deviation=2,  # max in terms of sigma
         min_correlation=64,  # 64 is RDI default
         maskbins=None,  # do not mask any bins
-        pg_limit=50, # percent good limit applied in `burst_average_ensembles`
+        pg_limit=50,  # percent good limit applied in `burst_average_ensembles`
     )
 
     def __init__(
@@ -217,11 +218,13 @@ class ProcessADCP:
         self._raw = None
         self._default_dgridparams = None
 
-        self._set_up_logger()
         self.parse_file_locations(raw_data)
         self._initiate_data_reader()
         self._read_auxiliary_data()
         self._parse_meta_data()
+
+        self._set_up_logger()
+
         self.parse_driftparams(driftparams)
         self._parse_sysconfig()
         self.parse_dgridparams(dgridparams)
@@ -305,9 +308,7 @@ class ProcessADCP:
         tsdat = self.m.read(varlist=["VariableLeader"])
         # Initial pressure units: 10 Pa (about 1 mm or 0.001 decibar).
         # Converting to decibars.
-        tsdat.pressure = (
-            tsdat.VL["Pressure"] / 1000.0 * self.pressure_scale_factor
-        )
+        tsdat.pressure = tsdat.VL["Pressure"] / 1000.0 * self.pressure_scale_factor
         tsdat.temperature = tsdat.VL["Temperature"] / 100.0
         self.tsdat = tsdat
 
@@ -318,10 +319,23 @@ class ProcessADCP:
 
         """
         essential_meta_data = ["lon", "lat"]
+
         [
             self._safely_add_attribute_from_params(k, self.meta_data)
             for k in essential_meta_data
         ]
+
+        # Check SN
+        sn_internal = int.from_bytes(self.tsdat.FL.Inst_SN, "little")
+
+        if "sn" not in self.meta_data:
+            self.meta_data.sn = sn_internal
+
+        # Check internal SN matches user set one
+        if sn_internal != self.meta_data.sn:
+            warn(
+                f"Serial number in file, {sn_internal}, is different from that set by user, {self.meta_data.sn}. Keeping user value."
+            )
 
     @property
     def default_dgridparams(self):
@@ -406,9 +420,7 @@ class ProcessADCP:
 
         # Generate a set of default time gridding parameters and then update
         # from the input parameters provided.
-        default_tgridparams = dict(
-            dt_hours=0.5, t0=t0, t1=t1, burst_average=False
-        )
+        default_tgridparams = dict(dt_hours=0.5, t0=t0, t1=t1, burst_average=False)
         self.tgridparams = Bunch(default_tgridparams)
         if tgridparams is not None:
             self.tgridparams.update_values(tgridparams, strict=True)
@@ -483,9 +495,7 @@ class ProcessADCP:
         # a time when the instrument was in the water, so we
         # use the middle of the deployment.
         imid = len(self.tsdat.dday) // 2
-        middle = self.m.read(
-            varlist=["VariableLeader"], start=imid, stop=imid + 1
-        )
+        middle = self.m.read(varlist=["VariableLeader"], start=imid, stop=imid + 1)
         self.orientation = "up" if middle.sysconfig.up else "down"
         self.sysconfig = middle.sysconfig
 
@@ -519,9 +529,7 @@ class ProcessADCP:
             dday_diff = np.diff(self.dday)
             # Determine ping interval within burst and time between bursts.
             burst_dt = np.median(dday_diff)
-            print(
-                f"time between pings within burst: {burst_dt * 24 * 60 * 60:1.1f} s"
-            )
+            print(f"time between pings within burst: {burst_dt * 24 * 60 * 60:1.1f} s")
             # It seems safe to assume that the time between bursts is at least
             # four times as long as the time between individual pings within a
             # burst.
@@ -607,30 +615,34 @@ class ProcessADCP:
                 # Look for magdec executable
                 magdec_found = True
                 magdec_path = which("magdec")
-                
+
                 if magdec_path is None:
                     magdec_found = False
                     package_dir = os.path.dirname(__file__)
-                    
+
                 if not magdec_found:
                     # Try this package directory
                     magdec_path = os.path.join(package_dir, "magdec")
                     magdec_found = os.path.isfile(magdec_path)
-                    
+
                 if not magdec_found:
-                    # Try the magdec installation directory 
-                    magdec_path = os.path.abspath(os.path.join(package_dir, "../geomag/magdec"))
+                    # Try the magdec installation directory
+                    magdec_path = os.path.abspath(
+                        os.path.join(package_dir, "../geomag/magdec")
+                    )
                     magdec_found = os.path.isfile(magdec_path)
-                        
+
                 if not magdec_found:
-                    raise FileNotFoundError("Cannot find program magdec on the system path or paths within gadcp.")
-                        
+                    raise FileNotFoundError(
+                        "Cannot find program magdec on the system path or paths within gadcp."
+                    )
+
                 print(f"magdec found at {magdec_path}")
 
                 n = len(self.start_ddays)
                 dday_mid = self.start_ddays[n // 2]
                 y, m, d = to_date(self.yearbase, dday_mid)[:3]
-                
+
                 output = Popen(
                     [
                         magdec_path,
@@ -862,9 +874,7 @@ class ProcessADCP:
 
         self._log_processing_params()
 
-    def burst_average_ensembles(
-        self, start=None, stop=None, interpolate_bin=None
-    ):
+    def burst_average_ensembles(self, start=None, stop=None, interpolate_bin=None):
         """Time-averaging prior to depth-gridding.
 
         Uses pre-defined editing parameters that can be updated with
@@ -886,7 +896,7 @@ class ProcessADCP:
             Interpolate over a single, previously masked, bin. Defaults to None (no interpolation).
 
         """
-        pg_condition=self.editparams.pg_limit
+        pg_condition = self.editparams.pg_limit
         nens_orig = len(self.start_ddays)
         indices_orig = np.arange(nens_orig)
         indices = indices_orig[start:stop]
@@ -963,9 +973,7 @@ class ProcessADCP:
                 uvwe_inst[zi, :] = tmp
 
             # Interpolate burst-average to universal depth grid.
-            uvwe_grid = interp1(
-                depth, uvwe_inst, self.dgrid, axis=0, method="linear"
-            )
+            uvwe_grid = interp1(depth, uvwe_inst, self.dgrid, axis=0, method="linear")
             uvwe_std_grid = interp1(
                 depth, uvwe_std_inst, self.dgrid, axis=0, method="linear"
             )
@@ -974,9 +982,7 @@ class ProcessADCP:
 
             # Interpolate pg to universal depth grid. Not overly satisfying but
             # seems like that's what we need to do here.
-            pgi_grid = interp1(
-                depth, pgi_inst, self.dgrid, axis=0, method="linear"
-            )
+            pgi_grid = interp1(depth, pgi_inst, self.dgrid, axis=0, method="linear")
             pg[i] = pgi_grid.astype(np.int8)
 
             # Not changed to averaging in instrument-relative coordinates first.
@@ -1089,9 +1095,7 @@ class ProcessADCP:
         logger.addHandler(ConsoleOutputHandler)
 
         # current date
-        datestr = np.datetime64(datetime.datetime.now()).astype(
-            datetime.datetime
-        )
+        datestr = np.datetime64(datetime.datetime.now()).astype(datetime.datetime)
         strformat = "%Y-%m-%d"
         datestr = datestr.strftime(strformat)
 
@@ -1224,9 +1228,7 @@ class ProcessADCP:
         """Plot pressure time series and mark time at depth."""
         fig, ax = gv.plot.quickfig(fgs=(6, 2.5))
         self.raw.pressure.plot(ax=ax, label="all")
-        self.raw.pressure.where(self.raw.pressure > 50).plot(
-            ax=ax, label="subsurface"
-        )
+        self.raw.pressure.where(self.raw.pressure > 50).plot(ax=ax, label="subsurface")
         ax.invert_yaxis()
         ax.set(xlabel="", ylabel="pressure [dbar]")
         ax.legend()
