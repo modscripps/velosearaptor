@@ -844,6 +844,135 @@ class ProcessADCP:
             )
         ens.amp_grid = amp_grid
 
+    def _binmap_one_beam(self, ens):
+        """Binmap single ping data for a single beam."""
+        pass
+
+    def _binmap_all_beams(self, ens):
+        """Binmap single ping data for all beams."""
+        pass
+
+    def process_pings(self, start=None, stop=None, binmap=False, ens_size=50000):
+        """Process single ping data without averaging.
+
+        Adds results as dictionary under `ave` and as `xarray.Dataset` under `ds`.
+
+        Writes processing parameters to the log file.
+
+        Parameters
+        ----------
+        start : int, optional
+            Start processing at this ping number.
+        stop : int, optional
+            Start processing at this ping number.
+        binmap : bool, optional
+            Do binmapping of along-beam data.
+        ens_size : int, optional
+            Pings are processed in ensembles to reduce memory usage.
+            This parameter sets how many pings are in an ensemble. The default is 50000.
+
+        """
+        if start is None:
+            idx_start = np.searchsorted(self.dday, self.dday_start)
+        if stop is None:
+            idx_stop = np.searchsorted(self.dday, self.dday_end)
+
+        ens_idxs = np.hstack((np.arange(idx_start, idx_stop, ens_size), idx_stop))
+        write_idxs = ens_idxs - ens_idxs[0]
+        npings = idx_stop - idx_start
+        nens = ens_idxs.size - 1
+        ndgrid = self.tsdat.dep.size
+
+        logger.info("Processing all pings")
+        logger.info(f"Binmapping is {binmap}")
+
+        uvwe = np.ma.zeros((npings, ndgrid, 4), dtype=np.float32)
+
+        pg = np.zeros((npings, ndgrid), dtype=np.int8)
+        amp = np.ma.zeros((npings, ndgrid), dtype=np.float32)
+
+        # temperature = np.ma.zeros((npings,), dtype=np.float32)
+        # pressure = np.ma.zeros((npings,), dtype=np.float32)
+
+        temperature = self.tsdat.temperature[idx_start:idx_stop]
+        pressure = self.tsdat.pressure[idx_start:idx_stop]
+
+        dday = self.dday[idx_start:idx_stop]
+
+        for i in tqdm(range(nens)):
+
+            ens = self.m.read(start=ens_idxs[i], stop=ens_idxs[i + 1])
+            # Arrays we write to might be different length from the
+            idx0 = write_idxs[i]
+            idx1 = write_idxs[i + 1]
+
+            if ens is not None:
+                # I pulled this out of read_ensembles because we need to calculate depth for _ave2nc to work.
+                ens.dday_orig = ens.dday
+                ens.dday = self._correct_dday(ens.dday_orig)
+                if self._pressure_provided is not None:
+                    # Replace pressure if provided
+                    ens.pressure = self._external_pressure_to_dat(ens)
+                else:
+                    ens.pressure = self._scale_pycurrents_pressure(ens)
+                sign = -1 if self.orientation == "up" else 1
+                pdepth = seawater.depth2(ens.pressure, self.lat)
+                ens.depth = pdepth[:, np.newaxis] + sign * ens.dep
+
+                # self._binmap_all_beams(ens) # modifies along-beam data and recalculates xyze
+                # self._edit(ens)  # modifies xyze
+                self._to_enu(ens)  # transform to earth coords (east, north, up)
+
+            else:
+                uvwe[idx0:idx1] = np.ma.masked
+                amp[idx0:idx1] = np.ma.masked
+                # pressure[idx0:idx1] = np.ma.masked
+                # temperature[idx0:idx1] = np.ma.masked
+                continue
+
+            uvwe[idx0:idx1] = ens.enu
+
+            # pgi = 100 * ens.enu_grid[..., 0].count(axis=0) // nprofs
+            # pg[i] = pgi.astype(np.int8)
+            amp[idx0:idx1] = ens.amp.mean(axis=-1)  # Average over beams... why?
+
+        self.ave = Bunch(
+            u=uvwe[..., 0],
+            v=uvwe[..., 1],
+            w=uvwe[..., 2],
+            e=uvwe[..., 3],
+            pg=pg,
+            amp=amp,
+            temperature=temperature,
+            pressure=pressure,
+            # npings=npings,
+            dday=dday,
+            yearbase=self.yearbase,
+            dep=ens.dep,  # <<<<----- BAD!!! This a fudge because I don't want to calculated a depth vector. We use the depth vector from the last ensemble.
+            editparams=self.editparams,
+            tgridparams=self.tgridparams,
+            # dgridparams=self.dgridparams,
+            magdec=self.magdec,
+            lon=self.lon,
+            lat=self.lon,
+        )
+
+        self._ave2nc()
+
+        # Add some more info.
+        self.ds.attrs["orientation"] = self.orientation
+        self.ds.attrs["magdec"] = self.magdec
+        for att in ["max_e", "max_e_deviation", "min_correlation"]:
+            self.ds.attrs[att] = self.editparams[att]
+
+        # Add meta data if provided.
+        if self.meta_data is not None:
+            for k, v in self.meta_data.items():
+                self.ds.attrs[k] = v
+        self.ds.attrs["proc time"] = np.datetime64("now").astype("str")
+
+        self._log_processing_params()
+
     def average_ensembles(self, start=None, stop=None):
         """Time-averaging.
 
