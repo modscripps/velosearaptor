@@ -41,7 +41,7 @@ from pycurrents.system import Bunch
 from pycurrents.num.nptools import rangeslice
 from pycurrents.num import interp1
 from pycurrents.codas import to_date, to_day
-from pycurrents.adcp.transform import rdi_xyz_enu
+from pycurrents.adcp.transform import Transform, rdi_xyz_enu
 from pycurrents.data import seawater
 
 # from gadcp.mcm_avg import MCM, Pingavg
@@ -844,13 +844,112 @@ class ProcessADCP:
             )
         ens.amp_grid = amp_grid
 
-    def _binmap_one_beam(self, ens):
-        """Binmap single ping data for a single beam."""
-        pass
+    def _binmap_one_beam(self, ens, beam_number):
+        """Binmap single ping data for a single beam by linear interpolation.
+
+        Mapping is applied to velocity, amplitude and correlation.
+
+        Currently only works for 4 beam ADCP.
+
+        Parameters
+        ----------
+        ens : Bunch
+            An ADCP dataset read by Multiread.
+        beam_number : int
+            An integer from 1 to 4 representing the beam number.
+
+        Returns
+        -------
+        veli : ndarray
+            Mapped velocity.
+        ampi : ndarray
+            Mapped amplitude.
+        cori : ndarray
+            Mapped correlation.
+
+        """
+
+        if beam_number not in [1, 2, 3, 4]:
+            raise ValueError("Beam number must be 1, 2, 3 or 4.")
+
+        tba = np.tan(np.deg2rad(ens.sysconfig.angle))  # Tangent of beam angle
+        pitch = np.deg2rad(ens.pitch)
+        roll = np.deg2rad(ens.roll)
+
+        # The true bin distances
+        if beam_number == 1:
+            dep = (
+                ens.dep[None, :]
+                * ((np.cos(roll) - tba * np.sin(roll)) * np.cos(pitch))[:, None]
+            )  # None adds a new axis.
+        elif beam_number == 2:
+            dep = (
+                ens.dep[None, :]
+                * ((np.cos(roll) + tba * np.sin(roll)) * np.cos(pitch))[:, None]
+            )
+        elif beam_number == 3:
+            dep = (
+                ens.dep[None, :]
+                * ((np.cos(pitch) + tba * np.sin(pitch)) * np.cos(roll))[:, None]
+            )
+        elif beam_number == 4:
+            dep = (
+                ens.dep[None, :]
+                * ((np.cos(pitch) - tba * np.sin(pitch)) * np.cos(roll))[:, None]
+            )
+
+        vel = ens.vel[..., beam_number - 1]
+        amp = ens.amp[..., beam_number - 1]
+        cor = ens.cor[..., beam_number - 1]
+
+        # Calculate interpolating weights (this hogs RAM!)
+        dz = np.diff(dep, axis=1)
+        w = np.clip((ens.dep - dep[:, :-1, None]) / dz[:, :, None], 0, 1)
+
+        # Determine data above or below the deepest bins
+        above = (w == 1.0).all(axis=1)
+        below = (w == 0.0).all(axis=1)
+        bad = above | below
+
+        # Calculate differences
+        dvel = np.diff(vel, axis=1)
+        damp = np.diff(amp, axis=1)
+        dcor = np.diff(cor, axis=1)
+
+        veli = vel[:, [0]] + np.sum(w * dvel[:, :, None], axis=1)
+        veli[bad] = np.nan
+
+        ampi = amp[:, [0]] + np.sum(w * damp[:, :, None], axis=1)
+        ampi[bad] = np.nan
+
+        cori = cor[:, [0]] + np.sum(w * dcor[:, :, None], axis=1)
+        cori[bad] = np.nan
+
+        return veli, ampi, cori
 
     def _binmap_all_beams(self, ens):
         """Binmap single ping data for all beams."""
-        pass
+
+        for beam_number in [1, 2, 3, 4]:
+            veli, ampi, cori = self._binmap_one_beam(ens, beam_number)
+            ens.vel[..., beam_number - 1] = veli
+            ens.amp[..., beam_number - 1] = ampi
+            ens.cor[..., beam_number - 1] = cori
+
+            ens[f"vel{beam_number}"] = veli
+            ens[f"amp{beam_number}"] = ampi
+            ens[f"cor{beam_number}"] = cori
+
+    def _recalculate_xyze(self, ens, ibad=None):
+        """Recalculate xyze from along-mean data. Useful if beam data are bin mapped."""
+        if ens.sysconfig.convex:
+            geom = "convex"
+        else:
+            geom = "concave"
+
+        trans = Transform(angle=ens.sysconfig.angle, geometry=geom)
+
+        ens.xyze = trans.beam_to_xyz(ens.vel, ibad=ibad)
 
     def process_pings(self, start=None, stop=None, binmap=False, ens_size=50000):
         """Process single ping data without averaging.
@@ -864,7 +963,7 @@ class ProcessADCP:
         start : int, optional
             Start processing at this ping number.
         stop : int, optional
-            Start processing at this ping number.
+            Stop processing at this ping number.
         binmap : bool, optional
             Do binmapping of along-beam data.
         ens_size : int, optional
@@ -878,7 +977,7 @@ class ProcessADCP:
             idx_stop = np.searchsorted(self.dday, self.dday_end)
 
         ens_idxs = np.hstack((np.arange(idx_start, idx_stop, ens_size), idx_stop))
-        write_idxs = ens_idxs - ens_idxs[0]
+        write_idxs = ens_idxs - ens_idxs[0]  # Arrays we write to start at index 0
         npings = idx_stop - idx_start
         nens = ens_idxs.size - 1
         ndgrid = self.tsdat.dep.size
@@ -902,7 +1001,6 @@ class ProcessADCP:
         for i in tqdm(range(nens)):
 
             ens = self.m.read(start=ens_idxs[i], stop=ens_idxs[i + 1])
-            # Arrays we write to might be different length from the
             idx0 = write_idxs[i]
             idx1 = write_idxs[i + 1]
 
@@ -919,7 +1017,10 @@ class ProcessADCP:
                 pdepth = seawater.depth2(ens.pressure, self.lat)
                 ens.depth = pdepth[:, np.newaxis] + sign * ens.dep
 
-                # self._binmap_all_beams(ens) # modifies along-beam data and recalculates xyze
+                if binmap:
+                    self._binmap_all_beams(ens)
+                    self._recalculate_xyze(ens)
+
                 # self._edit(ens)  # modifies xyze
                 self._to_enu(ens)  # transform to earth coords (east, north, up)
 
