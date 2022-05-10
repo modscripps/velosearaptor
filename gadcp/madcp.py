@@ -98,8 +98,8 @@ class ProcessADCP:
         Depth gridding parameters. See notes below.
     editparams : dict, optional
         Editing parameters. See notes below.
-    ibad : bool, optional
-        Mark beam with bad data (zero based).
+    ibad : int, optional
+        Mark beam with bad data (zero based). Defaults to None.
     logdir : str, optional
         Log file directory. Defaults to `log/`.
     magdec : float, optional
