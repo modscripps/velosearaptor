@@ -397,10 +397,13 @@ class ProcessADCP:
         self.tsdat = tsdat
 
     def _parse_meta_data(self):
-        """Add essential meta data to attributes and remove them from the meta_data dict.
+        """Parse meta data.
 
-        Will throw a KeyError if no lon/lat provided.
+        - Add essential meta data to attributes. Will throw a KeyError if no
+          lon/lat provided.
 
+        - Read serial number from raw data and complain if it does not match
+          the meta data SN.
         """
         essential_meta_data = ["lon", "lat"]
 
@@ -1135,9 +1138,10 @@ class ProcessADCP:
         d : dict
         """
         try:
-            setattr(self, key, d.pop(key))
-        except KeyError:
-            print(f"{key} is missing in input parameters")
+            setattr(self, key, d[key])
+        except KeyError as error:
+            print(f"{error} is missing in input parameters")
+            raise
 
     def _set_up_logger(self):
         """Set up logging to both a file and to screen.
