@@ -63,9 +63,7 @@ def read_raw_rdi(file, auxillary_only=False):
         "XducerDepth",
     ]
 
-    out = xr.Dataset(
-        data_vars={"dummy": (["z", "time"], np.ones((jj, ii)) * np.nan)}
-    )
+    out = xr.Dataset(data_vars={"dummy": (["z", "time"], np.ones((jj, ii)) * np.nan)})
 
     # get 1d variables
     for v in varsii:
@@ -147,7 +145,7 @@ def read_raw_rdi_uh(file, auxillary_only=False):
     return radcp
 
 
-def extract_raw_rdi(file, i0, i1, outfile, inst='wh'):
+def extract_raw_rdi(file, i0, i1, outfile, inst="wh"):
     """Extract ping range from raw RDI file and save to new raw file.
 
     Parameters
@@ -208,3 +206,64 @@ def _is_number(s):
         return True
     except ValueError:
         return False
+
+
+def cf_conventions():
+    """Return dictionary with CF standard names and units.
+
+    See https://cfconventions.org/Data/cf-standard-names/current/build/cf-standard-name-table.html
+    and http://cfconventions.org/cf-conventions/cf-conventions.html
+    for further information.
+
+    Returns
+    -------
+    CF : dict
+        CF standard names in units.
+    """
+
+    CF = dict(
+        depth=dict(
+            long_name="depth",
+            standard_name="depth",
+            units="m",
+            positive="down",
+        ),
+        u=dict(
+            long_name="u", standard_name="eastward_sea_water_velocity", units="m s-1"
+        ),
+        v=dict(
+            long_name="v", standard_name="northward_sea_water_velocity", units="m s-1"
+        ),
+        w=dict(long_name="w", standard_name="upward_sea_water_velocity", units="m s-1"),
+        e=dict(
+            long_name="error velocity",
+            standard_name="indicative_error_from_multibeam_acoustic_doppler_velocity_profiler_in_sea_water",
+            units="m s-1",
+        ),
+        pressure=dict(
+            long_name="pressure", standard_name="sea_water_pressure", units="dbar"
+        ),
+        temperature=dict(
+            long_name="temperature",
+            standard_name="sea_water_temperature",
+            units="degrees_Celsius",
+        ),
+        xducer_depth=dict(
+            long_name="transducer depth",
+            standard_name="transducer_depth",
+            units="m",
+            positive="down",
+        ),
+        npings=dict(
+            long_name="number of pings",
+            standard_name="number_of_pings",
+        ),
+        pg=dict(
+            long_name="percent good",
+            standard_name="percent_good_pings_in_ensemble_average",
+        ),
+        amp=dict(
+            long_name="amplitude",
+        ),
+    )
+    return CF
