@@ -35,6 +35,7 @@ import xarray as xr
 import pathlib
 from pathlib import Path
 from tqdm import tqdm
+import gsw
 
 from pycurrents.adcp.rdiraw import Multiread
 from pycurrents.system import Bunch
@@ -952,19 +953,7 @@ class ProcessADCP:
         )
 
         self._ave2nc()
-
-        # Add some more info.
-        self.ds.attrs["orientation"] = self.orientation
-        self.ds.attrs["magdec"] = self.magdec
-        for att in ["max_e", "max_e_deviation", "min_correlation"]:
-            self.ds.attrs[att] = self.editparams[att]
-
-        # Add meta data if provided.
-        if self.meta_data is not None:
-            for k, v in self.meta_data.items():
-                self.ds.attrs[k] = v
-        self.ds.attrs["proc time"] = np.datetime64("now").astype("str")
-
+        self._add_meta_data_to_ds()
         self._log_processing_params()
 
     def burst_average_ensembles(self, start=None, stop=None, interpolate_bin=None):
@@ -1114,19 +1103,7 @@ class ProcessADCP:
         )
 
         self._ave2nc()
-
-        # Add some more info.
-        self.ds.attrs["orientation"] = self.orientation
-        self.ds.attrs["magdec"] = self.magdec
-        for att in ["max_e", "max_e_deviation", "min_correlation"]:
-            self.ds.attrs[att] = self.editparams[att]
-
-        # Add meta data if provided.
-        if self.meta_data is not None:
-            for k, v in self.meta_data.items():
-                self.ds.attrs[k] = v
-        self.ds.attrs["proc time"] = np.datetime64("now").astype("str")
-
+        self._add_meta_data_to_ds()
         self._log_processing_params()
 
     def _safely_add_attribute_from_params(self, key, d):
@@ -1294,6 +1271,23 @@ class ProcessADCP:
         ds.temperature.attrs = dict(long_name="temperature", units="°C")
         ds.pressure.attrs = dict(long_name="pressure", units="dbar")
         return ds
+
+    def _add_meta_data_to_ds(self):
+        # Add some more info.
+        self.ds.attrs["orientation"] = self.orientation
+        self.ds.attrs["magdec"] = self.magdec
+        for att in ["max_e", "max_e_deviation", "min_correlation"]:
+            self.ds.attrs[att] = self.editparams[att]
+
+        # Add meta data if provided.
+        if self.meta_data is not None:
+            for k, v in self.meta_data.items():
+                self.ds.attrs[k] = v
+        self.ds.attrs["proc time"] = np.datetime64("now").astype("str")
+
+        # Calculate transducer depth from pressure
+        self.ds['xducer_depth'] = -gsw.z_from_p(self.ds.pressure, self.lat)
+        self.ds.xducer_depth.attrs = dict(long_name='transducer depth', units='m')
 
     def plot_echo_stats(self):
         """Plot beam statistics (correlation and amplitude) from raw ADCP data."""
