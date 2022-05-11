@@ -48,8 +48,6 @@ from pycurrents.data import seawater
 # from gadcp.mcm_avg import MCM, Pingavg
 from . import io
 
-import gvpy as gv
-
 # Standard logging
 logger = logging.getLogger(__name__)
 
@@ -1287,8 +1285,8 @@ class ProcessADCP:
         self.ds.attrs["proc time"] = np.datetime64("now").astype("str")
 
         # Calculate transducer depth from pressure
-        self.ds['xducer_depth'] = -gsw.z_from_p(self.ds.pressure, self.lat)
-        self.ds.xducer_depth.attrs = dict(long_name='transducer depth', units='m')
+        self.ds["xducer_depth"] = -gsw.z_from_p(self.ds.pressure, self.lat)
+        self.ds.xducer_depth.attrs = dict(long_name="transducer depth", units="m")
 
     def plot_echo_stats(self):
         """Plot beam statistics (correlation and amplitude) from raw ADCP data."""
@@ -1311,11 +1309,16 @@ class ProcessADCP:
         ax[1].set(ylabel="")
         ax[0].set_yticks(r.bin.data)
         for axi in ax:
-            gv.plot.axstyle(axi)
+            axi.grid(True)
 
     def plot_pressure(self):
         """Plot pressure time series and mark time at depth."""
-        fig, ax = gv.plot.quickfig(fgs=(6, 2.5))
+        fig, ax = plt.subplots(
+            nrows=1,
+            ncols=1,
+            figsize=(6, 2.5),
+            constrained_layout=True,
+        )
         self.raw.pressure.plot(ax=ax, label="all")
         self.raw.pressure.where(self.raw.pressure > 50).plot(ax=ax, label="subsurface")
         ax.invert_yaxis()
