@@ -4,7 +4,8 @@
 
 import os
 import matplotlib.pyplot as plt
-import gvpy as gv
+import matplotlib.dates as mdates
+import numpy as np
 
 
 def plot_raw_adcp(adcp, figsize=(17, 20)):
@@ -14,7 +15,7 @@ def plot_raw_adcp(adcp, figsize=(17, 20)):
     Parameters
     ----------
     adcp : xarray.Dataset
-        Raw RDI ADCP data read using gvpy.io.read_raw_rdi()
+        Raw RDI ADCP data read using gadcp.io.read_raw_rdi()
     figsize : tuple
         Provide figure size (default (17, 20))
     """
@@ -28,7 +29,7 @@ def plot_raw_adcp(adcp, figsize=(17, 20)):
         if isinstance(v, list):
             for vi in v:
                 adcp[vi].plot(ax=tsax[-1], yincrease=yincrease, label=vi)
-                gv.plot.ysym()
+                _ysym()
             tsax[-1].legend()
         else:
             adcp[v].plot(ax=tsax[-1], yincrease=yincrease)
@@ -63,7 +64,7 @@ def plot_raw_adcp(adcp, figsize=(17, 20)):
             axi.set(xlabel="", title="")
         for axi in velax:
             axi.tick_params(labelbottom=False)
-        gv.plot.concise_date(velax[-1], show_offset=False)
+        _concise_date(velax[-1], show_offset=False)
 
         return velax
 
@@ -92,7 +93,7 @@ def plot_raw_adcp(adcp, figsize=(17, 20)):
     plot_time_mean_beam_quantity(4, "cor")
     plot_time_mean_beam_quantity(8, "amp")
 
-    gv.plot.concise_date(tsax[-1])
+    _concise_date(tsax[-1])
     tsax[-1].tick_params(labelbottom=True)
     for axi in tsax[:-1]:
         axi.tick_params(labelbottom=False)
@@ -118,7 +119,7 @@ def plot_raw_adcp_auxillary(adcp, figsize=(12, 5)):
     Parameters
     ----------
     adcp : xarray.Dataset
-        Raw RDI ADCP data read using gvpy.io.read_raw_rdi()
+        Raw RDI ADCP data read using gadcp.io.read_raw_rdi()
     figsize : tuple
         Provide figure size (default (17, 20))
     """
@@ -131,7 +132,7 @@ def plot_raw_adcp_auxillary(adcp, figsize=(12, 5)):
         if isinstance(v, list):
             for vi in v:
                 adcp[vi].plot(ax=tsax[-1], yincrease=yincrease, label=vi)
-                gv.plot.ysym()
+                _ysym()
             tsax[-1].legend()
         else:
             adcp[v].plot(ax=tsax[-1], yincrease=yincrease)
@@ -162,7 +163,7 @@ def plot_raw_adcp_auxillary(adcp, figsize=(12, 5)):
     plot_time_mean_beam_quantity(8, "cor")
     plot_time_mean_beam_quantity(12, "amp")
 
-    gv.plot.concise_date(tsax[-1])
+    _concise_date(tsax[-1])
     tsax[-1].tick_params(labelbottom=True)
     for axi in tsax[:-1]:
         axi.tick_params(labelbottom=False)
@@ -179,3 +180,53 @@ def plot_raw_adcp_auxillary(adcp, figsize=(12, 5)):
         transform=infoax.transAxes,
     )
     infoax.axis("off")
+
+
+def _ysym(ax=None):
+    """
+    Set ylim symmetric around zero based on current axis limits
+
+    Parameters
+    ----------
+    ax : axis handle
+        Handle to axis (optional).
+    """
+    if ax is None:
+        ax = plt.gca()
+    ylims = ax.get_ylim()
+    absmax = np.max(np.abs(ylims))
+    ax.set_ylim([-absmax, absmax])
+
+
+def _concise_date(ax=None, minticks=3, maxticks=10, show_offset=True, **kwargs):
+    """
+    Better date ticks using matplotlib's ConciseDateFormatter.
+
+    Parameters
+    ----------
+    ax : axis handle
+        Handle to axis (optional).
+    minticks : int
+        Minimum number of ticks (optional, default 6).
+    maxticks : int
+        Maximum number of ticks (optional, default 10).
+    show_offset : bool, optional
+        Show offset string to the right (default True).
+
+    Note
+    ----
+    Currently only works for x-axis
+
+    See Also
+    --------
+    matplotlib.mdates.ConciseDateFormatter : For formatting options that
+      can be used here.
+    """
+    if ax is None:
+        ax = plt.gca()
+    locator = mdates.AutoDateLocator(minticks=minticks, maxticks=maxticks)
+    formatter = mdates.ConciseDateFormatter(
+        locator, show_offset=show_offset, **kwargs
+    )
+    ax.xaxis.set_major_locator(locator)
+    ax.xaxis.set_major_formatter(formatter)
