@@ -376,8 +376,6 @@ def cf_conventions():
             standard_name="proportion_of_acceptable_signal_returns_from_acoustic_instrument_in_sea_water",
             units="percent",
             ancillary_variables="npings",
-            standard_name="proportion_of_acceptable_signal_returns_from_acoustic_instrument_in_sea_water",
-            ancillary_variables="npings",
         ),
         amp=dict(
             long_name="amplitude",
