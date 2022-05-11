@@ -373,6 +373,7 @@ def cf_conventions():
         pg=dict(
             long_name="percent good",
             standard_name="proportion_of_acceptable_signal_returns_from_acoustic_instrument_in_sea_water",
+            units="percent",
             ancillary_variables="npings",
         ),
         amp=dict(
