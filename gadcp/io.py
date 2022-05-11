@@ -266,6 +266,7 @@ def cf_conventions():
         ),
         xducer_depth=dict(
             long_name="transducer depth",
+            standard_name="depth",
             units="m",
             positive="down",
         ),
