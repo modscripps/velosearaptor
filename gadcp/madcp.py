@@ -21,29 +21,28 @@ Long Ranger ADCPs Commands and Output Data Format*:
 
 """
 
-import os
-from subprocess import Popen, PIPE  # for magdec
+import datetime
 import logging
+import os
+import pathlib
+from pathlib import Path
 from shutil import which
+from subprocess import PIPE, Popen  # for magdec
 from warnings import warn
 
-import datetime
+import gsw
 import matplotlib.pyplot as plt
 import numpy as np
 import scipy as sp
 import xarray as xr
-import pathlib
-from pathlib import Path
-from tqdm import tqdm
-import gsw
-
 from pycurrents.adcp.rdiraw import Multiread
-from pycurrents.system import Bunch
-from pycurrents.num.nptools import rangeslice
-from pycurrents.num import interp1
-from pycurrents.codas import to_date, to_day
 from pycurrents.adcp.transform import Transform, rdi_xyz_enu
+from pycurrents.codas import to_date, to_day
 from pycurrents.data import seawater
+from pycurrents.num import interp1
+from pycurrents.num.nptools import rangeslice
+from pycurrents.system import Bunch
+from tqdm import tqdm
 
 # from gadcp.mcm_avg import MCM, Pingavg
 from . import io
