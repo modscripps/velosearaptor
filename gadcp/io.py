@@ -3,9 +3,9 @@
 """Module gadcp.io with in/out functions. Mostly provides wrapper functions to UHs `Multiread`."""
 
 import datetime
+
 import numpy as np
 import xarray as xr
-
 from pycurrents.adcp.rdiraw import Multiread, extract_raw
 
 
@@ -63,9 +63,7 @@ def read_raw_rdi(file, auxillary_only=False):
         "XducerDepth",
     ]
 
-    out = xr.Dataset(
-        data_vars={"dummy": (["z", "time"], np.ones((jj, ii)) * np.nan)}
-    )
+    out = xr.Dataset(data_vars={"dummy": (["z", "time"], np.ones((jj, ii)) * np.nan)})
 
     # get 1d variables
     for v in varsii:
@@ -147,7 +145,7 @@ def read_raw_rdi_uh(file, auxillary_only=False):
     return radcp
 
 
-def extract_raw_rdi(file, i0, i1, outfile, inst='wh'):
+def extract_raw_rdi(file, i0, i1, outfile, inst="wh"):
     """Extract ping range from raw RDI file and save to new raw file.
 
     Parameters

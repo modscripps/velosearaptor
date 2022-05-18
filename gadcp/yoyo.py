@@ -42,9 +42,7 @@ class LADCPYoYoSplit(object):
 
     # plot both pressure time series
     def plot_pressure(self):
-        fig, (ax1, ax2) = plt.subplots(
-            nrows=2, ncols=1, figsize=(10, 4), sharex=True
-        )
+        fig, (ax1, ax2) = plt.subplots(nrows=2, ncols=1, figsize=(10, 4), sharex=True)
         self.ts_plot(self.up, "pressure", ax1)
         self.ts_plot(self.dn, "pressure", ax2)
 
@@ -89,12 +87,8 @@ class LADCPYoYoSplit(object):
         # cut start/end if needed and save to current working directory.
         # we will delete this temporary file later on.
         print("\nsaving temporary files to current working directory\n")
-        extract_raw(
-            self.dnraw, "wh", dnii0, dnii1, outfile="tmpdn.rdi", verbose=False
-        )
-        extract_raw(
-            self.upraw, "wh", upii0, upii1, outfile="tmpup.rdi", verbose=False
-        )
+        extract_raw(self.dnraw, "wh", dnii0, dnii1, outfile="tmpdn.rdi", verbose=False)
+        extract_raw(self.upraw, "wh", upii0, upii1, outfile="tmpup.rdi", verbose=False)
         print("reading temporary files\n")
         self.dn = gv.io.read_raw_rdi_uh("tmpdn.rdi", auxillary_only=True)
         self.up = gv.io.read_raw_rdi_uh("tmpup.rdi", auxillary_only=True)
@@ -121,9 +115,7 @@ class LADCPYoYoSplit(object):
         tmpmin = sp.signal.argrelmin(lptmp, order=dx)[0]
 
         allmaxmin = np.concatenate((tmpmax, tmpmin))
-        allmaxminind = np.concatenate(
-            (np.ones_like(tmpmax), np.zeros_like(tmpmin))
-        )
+        allmaxminind = np.concatenate((np.ones_like(tmpmax), np.zeros_like(tmpmin)))
 
         allmaxminsortedind = np.argsort(allmaxmin)
         allmaxminsorted = allmaxmin[allmaxminsortedind]
@@ -189,6 +181,4 @@ class LADCPYoYoSplit(object):
                 )
                 outfile = os.path.join(outdir, filename)
                 rawfile = "tmp{}.rdi".format(dnup)
-                extract_raw(
-                    rawfile, "wh", i0, i1, outfile=outfile, verbose=False
-                )
+                extract_raw(rawfile, "wh", i0, i1, outfile=outfile, verbose=False)

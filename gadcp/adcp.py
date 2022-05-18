@@ -3,8 +3,9 @@
 """Module gadcp.adcp with general adcp functions"""
 
 import os
-import matplotlib.pyplot as plt
+
 import matplotlib.dates as mdates
+import matplotlib.pyplot as plt
 import numpy as np
 
 
@@ -23,7 +24,6 @@ def plot_raw_adcp(adcp, figsize=(17, 20)):
     fig1 = plt.figure(figsize=figsize)
     gs0 = fig1.add_gridspec(nrows=16, ncols=90)
 
-
     def plot_time_series(v, rowid, yincrease=False):
         tsax.append(fig1.add_subplot(gs0[rowid, 0:70]))
         if isinstance(v, list):
@@ -35,13 +35,11 @@ def plot_raw_adcp(adcp, figsize=(17, 20)):
             adcp[v].plot(ax=tsax[-1], yincrease=yincrease)
         return tsax
 
-
     tsax = []
     tsax = plot_time_series("pressure", 0)
     tsax = plot_time_series(["pitch", "roll"], 13, True)
     tsax = plot_time_series("heading", 14, True)
     tsax = plot_time_series("temperature", 15, True)
-
 
     def plot_beam_quantity(startrow, v, vmin, vmax, cmap, clabel):
         velcax = fig1.add_subplot(gs0[startrow + 1 : startrow + 5, 70])
@@ -50,7 +48,12 @@ def plot_raw_adcp(adcp, figsize=(17, 20)):
             velax.append(fig1.add_subplot(gs0[i + startrow + 1, 0:70]))
         for axi, (g, b) in zip(velax, adcp[v].groupby("beam")):
             h = b.plot(
-                ax=axi, add_colorbar=False, vmin=vmin, vmax=vmax, cmap=cmap, yincrease=False
+                ax=axi,
+                add_colorbar=False,
+                vmin=vmin,
+                vmax=vmax,
+                cmap=cmap,
+                yincrease=False,
             )
             axi.text(
                 0.01,
@@ -68,7 +71,6 @@ def plot_raw_adcp(adcp, figsize=(17, 20)):
 
         return velax
 
-
     def plot_time_mean_beam_quantity(startrow, v):
         meanax = fig1.add_subplot(gs0[startrow + 1 : startrow + 4, 80:90])
         cors = [vb.mean(dim="time") for (g, vb) in adcp[v].groupby("beam")]
@@ -84,7 +86,6 @@ def plot_raw_adcp(adcp, figsize=(17, 20)):
             )
         meanax.set(title="")
         meanax.legend()
-
 
     velax = plot_beam_quantity(0, "vel", -1.5, 1.5, "RdBu_r", "velocity [m/s]")
     corax = plot_beam_quantity(0 + 4, "cor", 0, 150, "viridis", "correlation")
@@ -105,7 +106,10 @@ def plot_raw_adcp(adcp, figsize=(17, 20)):
         -0.2,
         0.7,
         "instrument: {}\nping type: {}\ncoordinate system: {}\nbin size: {}".format(
-            adcp.attrs["sonar"], adcp.attrs["pingtype"], adcp.attrs["coordsystem"], adcp.attrs["cellsize"]
+            adcp.attrs["sonar"],
+            adcp.attrs["pingtype"],
+            adcp.attrs["coordsystem"],
+            adcp.attrs["cellsize"],
         ),
         transform=infoax.transAxes,
     )
@@ -126,7 +130,6 @@ def plot_raw_adcp_auxillary(adcp, figsize=(12, 5)):
     fig1 = plt.figure(figsize=figsize)
     gs0 = fig1.add_gridspec(nrows=4, ncols=15)
 
-
     def plot_time_series(v, rowid, yincrease=False):
         tsax.append(fig1.add_subplot(gs0[rowid, 0:7]))
         if isinstance(v, list):
@@ -139,20 +142,20 @@ def plot_raw_adcp_auxillary(adcp, figsize=(12, 5)):
         return tsax
 
     def plot_time_mean_beam_quantity(startcol, v):
-            meanax = fig1.add_subplot(gs0[1:, startcol:startcol+3])
-            cors = [vb.mean(dim="time") for (g, vb) in adcp[v].groupby("beam")]
-            for b, ai in enumerate(cors):
-                ai.plot(
-                    ax=meanax,
-                    y="z",
-                    label="beam{}".format(b + 1),
-                    yincrease=False,
-                    marker="o",
-                    linestyle="",
-                    alpha=0.8,
-                )
-            meanax.set(title="")
-            meanax.legend()
+        meanax = fig1.add_subplot(gs0[1:, startcol : startcol + 3])
+        cors = [vb.mean(dim="time") for (g, vb) in adcp[v].groupby("beam")]
+        for b, ai in enumerate(cors):
+            ai.plot(
+                ax=meanax,
+                y="z",
+                label="beam{}".format(b + 1),
+                yincrease=False,
+                marker="o",
+                linestyle="",
+                alpha=0.8,
+            )
+        meanax.set(title="")
+        meanax.legend()
 
     tsax = []
     tsax = plot_time_series("pressure", 0)
@@ -225,8 +228,6 @@ def _concise_date(ax=None, minticks=3, maxticks=10, show_offset=True, **kwargs):
     if ax is None:
         ax = plt.gca()
     locator = mdates.AutoDateLocator(minticks=minticks, maxticks=maxticks)
-    formatter = mdates.ConciseDateFormatter(
-        locator, show_offset=show_offset, **kwargs
-    )
+    formatter = mdates.ConciseDateFormatter(locator, show_offset=show_offset, **kwargs)
     ax.xaxis.set_major_locator(locator)
     ax.xaxis.set_major_formatter(formatter)

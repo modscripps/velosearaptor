@@ -25,6 +25,18 @@ BROWSER := python -c "$$BROWSER_PYSCRIPT"
 
 help:
 	@python -c "$$PRINT_HELP_PYSCRIPT" < $(MAKEFILE_LIST)
+    
+style: ## style code using isort & black, then check style using flake8
+	isort gadcp/*.py
+	isort gadcp/tests/*.py
+	black gadcp
+	flake8 gadcp 
+
+style-check: ## check code style using isort & black, then check style using flake8
+	isort -c gadcp/*.py
+	isort -c gadcp/tests/*.py
+	black --check gadcp
+	flake8 gadcp 
 
 test: ## run tests quickly with the default Python
 	pytest -W ignore::DeprecationWarning
