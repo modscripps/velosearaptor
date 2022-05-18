@@ -940,8 +940,8 @@ class ProcessADCP:
             ens[f"amp{beam_number}"] = ampi
             ens[f"cor{beam_number}"] = cori
 
-    def _recalculate_xyze(self, ens, ibad=None):
-        """Recalculate xyze from along-mean data. Useful if beam data are bin mapped."""
+    def _calculate_xyze(self, ens, ibad=None):
+        """Calculate xyze from along-beam data."""
         if ens.sysconfig.convex:
             geom = "convex"
         else:
@@ -998,8 +998,8 @@ class ProcessADCP:
 
         dday = self.dday[idx_start:idx_stop]
 
+        # Loop over ensembles
         for i in tqdm(range(nens)):
-
             ens = self.m.read(start=ens_idxs[i], stop=ens_idxs[i + 1])
             idx0 = write_idxs[i]
             idx1 = write_idxs[i + 1]
@@ -1019,9 +1019,10 @@ class ProcessADCP:
 
                 if binmap:
                     self._binmap_all_beams(ens)
-                    self._recalculate_xyze(ens)
+                    # Now we have to recalculate xyze with the binmapped data.
+                    self._calculate_xyze(ens)
 
-                # self._edit(ens)  # modifies xyze
+                self._edit(ens)  # modifies xyze
                 self._to_enu(ens)  # transform to earth coords (east, north, up)
 
             else:
