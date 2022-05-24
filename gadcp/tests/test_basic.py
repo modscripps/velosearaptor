@@ -1,8 +1,9 @@
 import pathlib
 
-import gadcp
 import xarray as xr
 from pycurrents.adcp.rdiraw import Multiread, extract_raw
+
+import gadcp
 
 
 def test_success():

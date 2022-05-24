@@ -5,6 +5,9 @@ dependencies:
   - pip
   - mercurial
   - numpy
+  - black
+  - isort
+  - flake8
   - pip:
     - -r requirements.txt
     - -e .

@@ -1,8 +1,9 @@
 """A few examples"""
 import numpy as np
 import pytest
-from gadcp.madcp import ProcessADCP
 from pycurrents.system import Bunch
+
+from gadcp.madcp import ProcessADCP
 
 
 def test_binmap(rootdir):

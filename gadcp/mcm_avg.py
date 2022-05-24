@@ -2,20 +2,19 @@
 Edit and average the data from moored ADCPs.
 """
 
-import os
-from subprocess import Popen, PIPE  # for magdec
 import logging
+import os
+from subprocess import PIPE, Popen  # for magdec
 
 import numpy as np
-
-from pycurrents.system import Bunch
-from pycurrents.num.nptools import rangeslice
-from pycurrents.num import interp1
 from pycurrents.adcp.rdiraw import Multiread
-from pycurrents.codas import to_date, to_day
 from pycurrents.adcp.transform import rdi_xyz_enu
-from pycurrents.file import npzfile
+from pycurrents.codas import to_date, to_day
 from pycurrents.data import seawater
+from pycurrents.file import npzfile
+from pycurrents.num import interp1
+from pycurrents.num.nptools import rangeslice
+from pycurrents.system import Bunch
 
 # for the xyz_to_enu hotfix
 # from pycurrents.adcp._transform import _heading_rotate, _heading_rotate_m
@@ -83,9 +82,7 @@ class MCM:
         tsdat = self.m.read(varlist=["VariableLeader"])
         # Initial units: 10 Pa (about 1 mm or 0.001 decibar).
         # Converting to decibars.
-        tsdat.pressure = (
-            tsdat.VL["Pressure"] / 1000.0 * pressure_scale_factor
-        )
+        tsdat.pressure = tsdat.VL["Pressure"] / 1000.0 * pressure_scale_factor
         self.tsdat = tsdat
 
         self.yearbase = self.m.yearbase
@@ -107,17 +104,13 @@ class MCM:
         # a time when the instrument was in the water, so we
         # use the middle of the deployment.
         imid = len(tsdat.dday) // 2
-        middle = self.m.read(
-            varlist=["VariableLeader"], start=imid, stop=imid + 1
-        )
+        middle = self.m.read(varlist=["VariableLeader"], start=imid, stop=imid + 1)
         self.orientation = "up" if middle.sysconfig.up else "down"
 
     def correct_dday(self, orig_dday):
         return self.t0 + self.rate * (orig_dday - self.t0)
 
-    def make_start_ddays(
-        self, dday_start, dday_end, dt_hours, burst_average=False
-    ):
+    def make_start_ddays(self, dday_start, dday_end, dt_hours, burst_average=False):
         """
         Generate time stamps for time averaging in Pingavg.average_ensembles().
 
@@ -153,9 +146,7 @@ class MCM:
             dday_diff = np.diff(self.dday)
             # Determine ping interval within burst and time between bursts.
             burst_dt = np.median(dday_diff)
-            print(
-                f"time between pings within burst: {burst_dt * 24 * 60 * 60:1.1f} s"
-            )
+            print(f"time between pings within burst: {burst_dt * 24 * 60 * 60:1.1f} s")
             # It seems safe to assume that the time between bursts is at least
             # four times as long as the time between individual pings within a
             # burst.
@@ -237,9 +228,7 @@ class Pingavg:
             self.editparams.update_values(editparams, strict=True)
 
         self.p_median = np.median(mcm.tsdat.pressure)
-        default_dgridparams = dict(
-            dbot=int(self.p_median), dtop=10, d_interval=1
-        )
+        default_dgridparams = dict(dbot=int(self.p_median), dtop=10, d_interval=1)
         self.dgridparams = Bunch(default_dgridparams)
         if dgridparams is not None:
             self.dgridparams.update_values(dgridparams, strict=True)
@@ -259,9 +248,7 @@ class Pingavg:
 
         # Generate a set of default time gridding parameters and then update
         # from the input parameters provided.
-        default_tgridparams = dict(
-            dt_hours=0.5, t0=t0, t1=t1, burst_average=False
-        )
+        default_tgridparams = dict(dt_hours=0.5, t0=t0, t1=t1, burst_average=False)
         self.tgridparams = Bunch(default_tgridparams)
         if tgridparams is not None:
             self.tgridparams.update_values(tgridparams, strict=True)
@@ -475,9 +462,7 @@ class Pingavg:
         npzfile.savez(fpath, **self.ave)
 
 
-def rdi_xyz_enu_tmp(
-    vel, heading, pitch, roll, orientation="down", gimbal=False
-):
+def rdi_xyz_enu_tmp(vel, heading, pitch, roll, orientation="down", gimbal=False):
     """
     GV: I used this as a hotfix for a bug in the pycurrents package.
     The bug should be fixed now and this should not be needed anymore.
