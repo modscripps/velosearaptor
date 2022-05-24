@@ -12,4 +12,4 @@ __author__ = "Gunnar Voet"
 __email__ = "gvoet@ucsd.edu"
 __version__ = "0.2.0"
 
-from . import io, adcp, madcp
+from . import adcp, io, madcp
