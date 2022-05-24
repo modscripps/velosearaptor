@@ -5,6 +5,10 @@
 #### New Features
 - Install `magdec` via shell script.
 - Add an example notebook.
+- Read serial number from binary file and compare with SN in meta data ([PR13]( https://github.com/gunnarvoet/gadcp/pull/13)). By [Jesse Cusack](https://github.com/jessecusack/).
+- Add bin mapping for cases with large pitch and roll. This adds `gadcp.madcp.ProcessADCP.process_pings` ([PR17]( https://github.com/gunnarvoet/gadcp/pull/17)). By [Jesse Cusack](https://github.com/jessecusack/).
+- Add position to moored ADCP meta data ([PR21]( https://github.com/gunnarvoet/gadcp/pull/21)).
+- Allow for external input of pressure time series in `gadcp.madcp.ProcessADCP` ([PR12]( https://github.com/gunnarvoet/gadcp/pull/12)).
 
 <!-- #### Breaking Changes -->
 
@@ -14,7 +18,8 @@
 #### Documentation
 - Consolidate readme and history files.
 
-<!-- #### Internal Changes -->
+#### Internal Changes
+- Remove `gvpy` dependency ([PR27]( https://github.com/gunnarvoet/gadcp/pull/27)).
 
 
 

@@ -3,9 +3,9 @@
 """Module gadcp.io with in/out functions. Mostly provides wrapper functions to UHs `Multiread`."""
 
 import datetime
+
 import numpy as np
 import xarray as xr
-
 from pycurrents.adcp.rdiraw import Multiread, extract_raw
 
 
