@@ -56,7 +56,7 @@ jobs:
     - name: Build docs
       run: |
         pdoc --version
-        pdoc -d numpy -o ./docs ./gadcp
+        pdoc -d numpy --logo https://github.com/gunnarvoet/gadcp/raw/main/logo/velosearaptor.png -o ./docs ./gadcp
     # Add the .nojekyll file
     - name: nojekyll
       if: ${{ github.event_name == 'push' }}
