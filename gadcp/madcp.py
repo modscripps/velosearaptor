@@ -1061,19 +1061,7 @@ class ProcessADCP:
         )
 
         self._ave2nc()
-
-        # Add some more info.
-        self.ds.attrs["orientation"] = self.orientation
-        self.ds.attrs["magdec"] = self.magdec
-        for att in ["max_e", "max_e_deviation", "min_correlation"]:
-            self.ds.attrs[att] = self.editparams[att]
-
-        # Add meta data if provided.
-        if self.meta_data is not None:
-            for k, v in self.meta_data.items():
-                self.ds.attrs[k] = v
-        self.ds.attrs["proc time"] = np.datetime64("now").astype("str")
-
+        self._add_meta_data_to_ds()
         self._log_processing_params()
 
     def average_ensembles(self, start=None, stop=None):
