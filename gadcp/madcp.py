@@ -21,29 +21,28 @@ Long Ranger ADCPs Commands and Output Data Format*:
 
 """
 
-import os
-from subprocess import Popen, PIPE  # for magdec
+import datetime
 import logging
+import os
+import pathlib
+from pathlib import Path
 from shutil import which
+from subprocess import PIPE, Popen  # for magdec
 from warnings import warn
 
-import datetime
+import gsw
 import matplotlib.pyplot as plt
 import numpy as np
 import scipy as sp
 import xarray as xr
-import pathlib
-from pathlib import Path
-from tqdm import tqdm
-import gsw
-
 from pycurrents.adcp.rdiraw import Multiread
-from pycurrents.system import Bunch
-from pycurrents.num.nptools import rangeslice
-from pycurrents.num import interp1
+from pycurrents.adcp.transform import Transform, rdi_xyz_enu
 from pycurrents.codas import to_date, to_day
-from pycurrents.adcp.transform import rdi_xyz_enu
 from pycurrents.data import seawater
+from pycurrents.num import interp1
+from pycurrents.num.nptools import rangeslice
+from pycurrents.system import Bunch
+from tqdm import tqdm
 
 # from gadcp.mcm_avg import MCM, Pingavg
 from . import io
@@ -845,6 +844,225 @@ class ProcessADCP:
                 method=method,
             )
         ens.amp_grid = amp_grid
+
+    def _binmap_one_beam(self, ens, beam_number):
+        """Binmap single ping data for a single beam by linear interpolation.
+
+        Mapping is applied to velocity, amplitude and correlation.
+
+        Currently only works for 4 beam ADCP.
+
+        Parameters
+        ----------
+        ens : Bunch
+            An ADCP dataset read by Multiread.
+        beam_number : int
+            An integer from 1 to 4 representing the beam number.
+
+        Returns
+        -------
+        veli : ndarray
+            Mapped velocity.
+        ampi : ndarray
+            Mapped amplitude.
+        cori : ndarray
+            Mapped correlation.
+
+        """
+
+        if beam_number not in [1, 2, 3, 4]:
+            raise ValueError("Beam number must be 1, 2, 3 or 4.")
+
+        tba = np.tan(np.deg2rad(ens.sysconfig.angle))  # Tangent of beam angle
+        pitch = np.deg2rad(ens.pitch)
+        roll = np.deg2rad(ens.roll)
+
+        # The true bin distances
+        if beam_number == 1:
+            dep = (
+                ens.dep[None, :]
+                * ((np.cos(roll) - tba * np.sin(roll)) * np.cos(pitch))[:, None]
+            )  # None adds a new axis.
+        elif beam_number == 2:
+            dep = (
+                ens.dep[None, :]
+                * ((np.cos(roll) + tba * np.sin(roll)) * np.cos(pitch))[:, None]
+            )
+        elif beam_number == 3:
+            dep = (
+                ens.dep[None, :]
+                * ((np.cos(pitch) + tba * np.sin(pitch)) * np.cos(roll))[:, None]
+            )
+        elif beam_number == 4:
+            dep = (
+                ens.dep[None, :]
+                * ((np.cos(pitch) - tba * np.sin(pitch)) * np.cos(roll))[:, None]
+            )
+
+        vel = ens.vel[..., beam_number - 1]
+        amp = ens.amp[..., beam_number - 1]
+        cor = ens.cor[..., beam_number - 1]
+
+        # Calculate interpolating weights (this hogs RAM!)
+        dz = np.diff(dep, axis=1)
+        w = np.clip((ens.dep - dep[:, :-1, None]) / dz[:, :, None], 0, 1)
+
+        # Determine data above or below the deepest bins
+        above = (w == 1.0).all(axis=1)
+        below = (w == 0.0).all(axis=1)
+        bad = above | below
+
+        # Calculate differences
+        dvel = np.diff(vel, axis=1)
+        damp = np.diff(amp, axis=1)
+        dcor = np.diff(cor, axis=1)
+
+        veli = vel[:, [0]] + np.sum(w * dvel[:, :, None], axis=1)
+        veli[bad] = np.nan
+
+        ampi = amp[:, [0]] + np.sum(w * damp[:, :, None], axis=1)
+        ampi[bad] = np.nan
+
+        cori = cor[:, [0]] + np.sum(w * dcor[:, :, None], axis=1)
+        cori[bad] = np.nan
+
+        return veli, ampi, cori
+
+    def _binmap_all_beams(self, ens):
+        """Binmap single ping data for all beams."""
+
+        for beam_number in [1, 2, 3, 4]:
+            veli, ampi, cori = self._binmap_one_beam(ens, beam_number)
+            ens.vel[..., beam_number - 1] = veli
+            ens.amp[..., beam_number - 1] = ampi
+            ens.cor[..., beam_number - 1] = cori
+
+            ens[f"vel{beam_number}"] = veli
+            ens[f"amp{beam_number}"] = ampi
+            ens[f"cor{beam_number}"] = cori
+
+    def _calculate_xyze(self, ens, ibad=None):
+        """Calculate xyze from along-beam data."""
+        if ens.sysconfig.convex:
+            geom = "convex"
+        else:
+            geom = "concave"
+
+        trans = Transform(angle=ens.sysconfig.angle, geometry=geom)
+
+        ens.xyze = trans.beam_to_xyz(ens.vel, ibad=ibad)
+
+    def process_pings(self, start=None, stop=None, binmap=False, ens_size=50000):
+        """Process single ping data without averaging.
+
+        Adds results as dictionary under `ave` and as `xarray.Dataset` under `ds`.
+
+        Writes processing parameters to the log file.
+
+        Parameters
+        ----------
+        start : int, optional
+            Start processing at this ping number.
+        stop : int, optional
+            Stop processing at this ping number.
+        binmap : bool, optional
+            Do binmapping of along-beam data.
+        ens_size : int, optional
+            Pings are processed in ensembles to reduce memory usage.
+            This parameter sets how many pings are in an ensemble. The default is 50000.
+
+        """
+        if start is None:
+            idx_start = np.searchsorted(self.dday, self.dday_start)
+        if stop is None:
+            idx_stop = np.searchsorted(self.dday, self.dday_end)
+
+        ens_idxs = np.hstack((np.arange(idx_start, idx_stop, ens_size), idx_stop))
+        write_idxs = ens_idxs - ens_idxs[0]  # Arrays we write to start at index 0
+        npings = idx_stop - idx_start
+        nens = ens_idxs.size - 1
+        ndgrid = self.tsdat.dep.size
+
+        logger.info("Processing all pings")
+        logger.info(f"Binmapping is {binmap}")
+
+        uvwe = np.ma.zeros((npings, ndgrid, 4), dtype=np.float32)
+
+        pg = np.zeros((npings, ndgrid), dtype=np.int8)
+        amp = np.ma.zeros((npings, ndgrid), dtype=np.float32)
+
+        # temperature = np.ma.zeros((npings,), dtype=np.float32)
+        # pressure = np.ma.zeros((npings,), dtype=np.float32)
+
+        temperature = self.tsdat.temperature[idx_start:idx_stop]
+        pressure = self.tsdat.pressure[idx_start:idx_stop]
+
+        dday = self.dday[idx_start:idx_stop]
+
+        # Loop over ensembles
+        for i in tqdm(range(nens)):
+            ens = self.m.read(start=ens_idxs[i], stop=ens_idxs[i + 1])
+            idx0 = write_idxs[i]
+            idx1 = write_idxs[i + 1]
+
+            if ens is not None:
+                # I pulled this out of read_ensembles because we need to calculate depth for _ave2nc to work.
+                ens.dday_orig = ens.dday
+                ens.dday = self._correct_dday(ens.dday_orig)
+                if self._pressure_provided is not None:
+                    # Replace pressure if provided
+                    ens.pressure = self._external_pressure_to_dat(ens)
+                else:
+                    ens.pressure = self._scale_pycurrents_pressure(ens)
+                sign = -1 if self.orientation == "up" else 1
+                pdepth = seawater.depth2(ens.pressure, self.lat)
+                ens.depth = pdepth[:, np.newaxis] + sign * ens.dep
+
+                if binmap:
+                    self._binmap_all_beams(ens)
+                    # Now we have to recalculate xyze with the binmapped data.
+                    self._calculate_xyze(ens)
+
+                self._edit(ens)  # modifies xyze
+                self._to_enu(ens)  # transform to earth coords (east, north, up)
+
+            else:
+                uvwe[idx0:idx1] = np.ma.masked
+                amp[idx0:idx1] = np.ma.masked
+                # pressure[idx0:idx1] = np.ma.masked
+                # temperature[idx0:idx1] = np.ma.masked
+                continue
+
+            uvwe[idx0:idx1] = ens.enu
+
+            # pgi = 100 * ens.enu_grid[..., 0].count(axis=0) // nprofs
+            # pg[i] = pgi.astype(np.int8)
+            amp[idx0:idx1] = ens.amp.mean(axis=-1)  # Average over beams... why?
+
+        self.ave = Bunch(
+            u=uvwe[..., 0],
+            v=uvwe[..., 1],
+            w=uvwe[..., 2],
+            e=uvwe[..., 3],
+            pg=pg,
+            amp=amp,
+            temperature=temperature,
+            pressure=pressure,
+            # npings=npings,
+            dday=dday,
+            yearbase=self.yearbase,
+            dep=ens.dep,  # <<<<----- BAD!!! This a fudge because I don't want to calculated a depth vector. We use the depth vector from the last ensemble.
+            editparams=self.editparams,
+            tgridparams=self.tgridparams,
+            # dgridparams=self.dgridparams,
+            magdec=self.magdec,
+            lon=self.lon,
+            lat=self.lon,
+        )
+
+        self._ave2nc()
+        self._add_meta_data_to_ds()
+        self._log_processing_params()
 
     def average_ensembles(self, start=None, stop=None):
         """Time-averaging.
