@@ -1,8 +1,6 @@
 gadcp
 =====
 
-![logo](velosearaptor.png)
-
 Library of python modules for reading and processing raw RDI Teledyne ADCP data. The code interfaces the UH package [pycurrents](https://currents.soest.hawaii.edu/hgstage/pycurrents) and its `Multiread` for efficient reading of raw ADCP data.
 
 `gadcp.io` provides convenience functions for reading raw data either into an `xarray.Dataset` or into the output structure format provided by the UH software package.

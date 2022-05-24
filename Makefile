@@ -43,9 +43,9 @@ test: ## run tests quickly with the default Python
 
 docs: ## generate documentation using pdoc
 	rm -rf docs
-	pdoc -d numpy -o docs gadcp
+	pdoc -d numpy --logo https://github.com/gunnarvoet/gadcp/raw/main/logo/velosearaptor.png -o docs gadcp
 	$(BROWSER) docs/index.html
 
 servedocs: ## compile the docs & watch for changes
-	pdoc -d numpy gadcp
+	pdoc -d numpy --logo https://github.com/gunnarvoet/gadcp/raw/main/logo/velosearaptor.png gadcp
 	# $(BROWSER) http://localhost:8080
