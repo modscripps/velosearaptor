@@ -27,25 +27,25 @@ help:
 	@python -c "$$PRINT_HELP_PYSCRIPT" < $(MAKEFILE_LIST)
     
 style: ## style code using isort & black, then check style using flake8
-	isort gadcp/*.py
-	isort gadcp/tests/*.py
-	black gadcp
-	flake8 gadcp 
+	isort velosearaptor/*.py
+	isort velosearaptor/tests/*.py
+	black velosearaptor
+	flake8 velosearaptor 
 
 style-check: ## check code style using isort & black, then check style using flake8
-	isort -c gadcp/*.py
-	isort -c gadcp/tests/*.py
-	black --check gadcp
-	flake8 gadcp 
+	isort -c velosearaptor/*.py
+	isort -c velosearaptor/tests/*.py
+	black --check velosearaptor
+	flake8 velosearaptor 
 
 test: ## run tests quickly with the default Python
 	pytest -W ignore::DeprecationWarning
 
 docs: ## generate documentation using pdoc
 	rm -rf docs
-	pdoc -d numpy --logo https://github.com/gunnarvoet/gadcp/raw/main/logo/velosearaptor.png -o docs gadcp
+	pdoc -d numpy --logo https://github.com/modscripps/velosearaptor/raw/main/logo/velosearaptor.png -o docs velosearaptor
 	$(BROWSER) docs/index.html
 
 servedocs: ## compile the docs & watch for changes
-	pdoc -d numpy --logo https://github.com/gunnarvoet/gadcp/raw/main/logo/velosearaptor.png gadcp
+	pdoc -d numpy --logo https://github.com/modscripps/velosearaptor/raw/main/logo/velosearaptor.png velosearaptor
 	# $(BROWSER) http://localhost:8080

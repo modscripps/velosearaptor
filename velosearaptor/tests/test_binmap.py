@@ -3,7 +3,7 @@ import numpy as np
 import pytest
 from pycurrents.system import Bunch
 
-from gadcp.madcp import ProcessADCP
+from velosearaptor.madcp import ProcessADCP
 
 
 def test_binmap(rootdir):
