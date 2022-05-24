@@ -1,5 +1,4 @@
-# Note: Need to install pycurrents manually into this environment
-name: gadcp
+name: velosearaptor
 dependencies:
   - python
   - pip

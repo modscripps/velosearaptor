@@ -3,7 +3,7 @@ import pathlib
 import xarray as xr
 from pycurrents.adcp.rdiraw import Multiread, extract_raw
 
-import gadcp
+import velosearaptor
 
 
 def test_success():

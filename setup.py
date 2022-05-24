@@ -6,11 +6,11 @@ readme = (this_directory / "README.md").read_text()
 history = (this_directory / "HISTORY.md").read_text()
 
 setup(
-    name="gadcp",
+    name="velosearaptor",
     version="0.2.0",
-    author="Gunnar Voet",
-    author_email="gvoet@ucsd.edu",
-    url="https://github.com/gunnarvoet/gadcp/",
+    author="velosearaptor Developers",
+    author_email="",
+    url="https://github.com/gunnarvoet/velosearaptor/",
     license="",
     # Description
     description="Python functions for interfacing with RDI ADCP data, mostly based on pycurrents",
@@ -25,12 +25,12 @@ setup(
         "matplotlib",
     ],
     extras_require={
-    "test": [  # install these with: pip install gadcp[test]
+    "test": [  # install these with: pip install velosearaptor[test]
         "pytest>=3.8",
     ],
     },
     # Packaging
-    packages=find_packages(include=["gadcp", "gadcp.*"], exclude=["*.tests"]),
+    packages=find_packages(include=["velosearaptor", "velosearaptor.*"], exclude=["*.tests"]),
     include_package_data=True,
     zip_safe=False,
     platforms=["any"],  # or more specific, e.g. "win32", "cygwin", "osx"

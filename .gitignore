@@ -1,6 +1,6 @@
 *.pyc
 .DS_Store
-gadcp.egg-info
+velosearaptor.egg-info
 build/
 dist/
 .cache
@@ -11,5 +11,5 @@ docs
 notebooks/dev
 notebooks/log
 src
-gadcp/tests/data/rawfiles.cache
+velosearaptor/tests/data/rawfiles.cache
 geomag
