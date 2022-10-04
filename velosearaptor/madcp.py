@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""Module gadcp.madcp with functions for moored ADCPs.
+"""Module velosearaptor.madcp with functions for moored ADCPs.
 
 ### Notes
 Some general notes for this module.
@@ -44,7 +44,6 @@ from pycurrents.num.nptools import rangeslice
 from pycurrents.system import Bunch
 from tqdm import tqdm
 
-# from gadcp.mcm_avg import MCM, Pingavg
 from . import io
 
 # Standard logging
@@ -725,7 +724,7 @@ class ProcessADCP:
 
                 if not magdec_found:
                     raise FileNotFoundError(
-                        "Cannot find program magdec on the system path or paths within gadcp."
+                        "Cannot find program magdec on the system path or paths within velosearaptor."
                     )
 
                 logger.info(f"magdec found at {magdec_path}")

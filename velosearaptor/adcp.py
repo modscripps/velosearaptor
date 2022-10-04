@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""Module gadcp.adcp with general adcp functions"""
+"""Module velosearaptor.adcp with general adcp functions"""
 
 import os
 
@@ -16,7 +16,7 @@ def plot_raw_adcp(adcp, figsize=(17, 20)):
     Parameters
     ----------
     adcp : xarray.Dataset
-        Raw RDI ADCP data read using gadcp.io.read_raw_rdi()
+        Raw RDI ADCP data read using velosearaptor.io.read_raw_rdi()
     figsize : tuple
         Provide figure size (default (17, 20))
     """
@@ -123,7 +123,7 @@ def plot_raw_adcp_auxillary(adcp, figsize=(12, 5)):
     Parameters
     ----------
     adcp : xarray.Dataset
-        Raw RDI ADCP data read using gadcp.io.read_raw_rdi()
+        Raw RDI ADCP data read using velosearaptor.io.read_raw_rdi()
     figsize : tuple
         Provide figure size (default (17, 20))
     """
