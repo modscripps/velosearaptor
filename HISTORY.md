@@ -18,6 +18,7 @@
 
 #### Documentation
 - Consolidate readme and history files.
+- Add button with link to source code on GitHub ([PR43]( https://github.com/modscripps/velosearaptor/pull/43)).
 
 #### Internal Changes
 - Remove `gvpy` dependency ([PR27]( https://github.com/modscripps/velosearaptor/pull/27)).
