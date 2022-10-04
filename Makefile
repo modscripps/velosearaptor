@@ -47,5 +47,8 @@ docs: ## generate documentation using pdoc
 	$(BROWSER) docs/index.html
 
 servedocs: ## compile the docs & watch for changes
-	pdoc -d numpy --logo https://github.com/modscripps/velosearaptor/raw/main/logo/velosearaptor.png velosearaptor
+	pdoc -d numpy \
+		--logo https://github.com/modscripps/velosearaptor/raw/main/logo/velosearaptor.png \
+		-e velosearaptor=https://github.com/modscripps/velosearaptor/blob/main/velosearaptor/ \
+		velosearaptor 
 	# $(BROWSER) http://localhost:8080
