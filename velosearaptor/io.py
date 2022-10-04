@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""Module gadcp.io with in/out functions. Mostly provides wrapper functions to UHs `Multiread`."""
+"""Module velosearaptor.io with in/out functions. Mostly provides wrapper functions to UHs `Multiread`."""
 
 import datetime
 

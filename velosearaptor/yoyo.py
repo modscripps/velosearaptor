@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""Module gadcp.adcp with general adcp functions"""
+"""Module velosearaptor.yoyo with (so far undeveloped) code for LADCP yoyos and towyos."""
 
 
 class LADCPYoYoSplit(object):
