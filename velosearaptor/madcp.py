@@ -423,36 +423,54 @@ class ProcessADCP:
 
     @property
     def default_dgridparams(self):
-        """Default depth gridding parameters.
+        """Determine default depth gridding parameters.
 
-        This is based on median depth of the ADCP and the bin sizes.
-
+        The grid is centered on the  median depth of the ADCP (plus distance to
+        the center of the first bin) to avoid unnecessary binning into
+        neighboring depth cells. The default size of the depth bins mimicks the
+        size of ADCP bins.
         """
         if self._default_dgridparams is None:
-            self.p_median = np.median(self.tsdat.pressure)
+            # Only use pressure at depth, not on deck
+            ii = np.flatnonzero(self.tsdat.pressure > 15)
+            p = self.tsdat.pressure[ii]
+            # Determine limits of the pressure distribution but leave out the
+            # top 5 and bottom 2 percent of data points. This way we are hoping
+            # to avoid any outliers and a possible pressure record of ascent
+            # and/or descent.
+            p_top, p_bot = np.round(
+                seawater.depth2(np.percentile(p, [5, 98]), self.lat)
+            )
+            self.p_median = np.median(p)
             pdep_median = np.round(seawater.depth2(self.p_median, self.lat))
             n = self.meta_data.NCells + 2
             d_interval = self.meta_data.CellSize
             distance_to_first_bin = np.round(self.meta_data.Bin1Dist)
             distance_to_last_bin = distance_to_first_bin + n * d_interval
 
-            # TODO: if minimum/maximum pressure changes much from median, we need to do this differently
-            # see GitHub issue #1
             if self.sysconfig["up"]:
-                dtop = pdep_median - distance_to_last_bin
+                # Set minimum grid depth level. Anything shallower than 10m
+                # will be garbage anyways so let's throw this out.
+                dtop = p_top - distance_to_last_bin
                 if dtop < 10:
                     dtop = 10
-                self._default_dgridparams = dict(
-                    dbot=pdep_median - distance_to_first_bin + 2 * d_interval,
-                    dtop=dtop,
-                    d_interval=d_interval,
-                )
+                dbot = pdep_median - distance_to_first_bin
+                # Successively add bins until we reach maximum pressure. This
+                # will take care of mooring knockdowns.
+                while dbot < p_bot:
+                    dbot += d_interval
             else:
-                self._default_dgridparams = dict(
-                    dtop=pdep_median + distance_to_first_bin - 2 * d_interval,
-                    dbot=pdep_median + distance_to_last_bin,
-                    d_interval=d_interval,
-                )
+                dtop = pdep_median + distance_to_first_bin
+                while dtop > p_top:
+                    dtop -= d_interval
+                dbot = p_bot + distance_to_last_bin
+
+            self._default_dgridparams = dict(
+                dtop=dtop,
+                dbot=dbot,
+                d_interval=d_interval,
+            )
+
         return self._default_dgridparams
 
     def parse_dgridparams(self, dgridparams):
@@ -472,12 +490,24 @@ class ProcessADCP:
             logger.warning(
                 "No depth gridding parameters provided, using default values."
             )
-        self.dgrid = np.arange(
-            self.dgridparams.dtop,
-            self.dgridparams.dbot,
-            self.dgridparams.d_interval,
-            dtype=float,
-        )
+        # Default depth grid parameters are based on the median pressure to
+        # avoid binning into neighboring grid cells as much as possible.
+        # Therefore, we start assembling the depth grid from the bottom up for
+        # an uplooker and from the top down for a downlooker.
+        if self.orientation == "up":
+            self.dgrid = np.arange(
+                self.dgridparams.dbot,
+                self.dgridparams.dtop,
+                -self.dgridparams.d_interval,
+                dtype=float,
+            )
+        elif self.orientation == "down":
+            self.dgrid = np.arange(
+                self.dgridparams.dtop,
+                self.dgridparams.dbot,
+                self.dgridparams.d_interval,
+                dtype=float,
+            )
 
     def parse_tgridparams(self, tgridparams):
         """Parse time gridding parameters.
@@ -575,13 +605,20 @@ class ProcessADCP:
         return self.t0 + self.time_drift_rate * (dday_orig - self.t0)
 
     def _parse_sysconfig(self):
-        # We have to get the up/down reading from sysconfig for
-        # a time when the instrument was in the water, so we
-        # use the middle of the deployment.
-        imid = len(self.tsdat.dday) // 2
-        middle = self.m.read(varlist=["VariableLeader"], start=imid, stop=imid + 1)
-        self.orientation = "up" if middle.sysconfig.up else "down"
-        self.sysconfig = middle.sysconfig
+        # We have to get the up/down reading from sysconfig for a time when the
+        # instrument was in the water. Look at pressure and determine ensembles
+        # during time at depth.
+        ii = np.flatnonzero(self.tsdat.pressure > 15)
+        depth_ii = (ii[0] + ii[-1]) // 2
+        try:
+            self.tsdat.pressure[depth_ii] > 15
+        except ValueError:
+            print("could not determine ensemble index at depth for reading sysconfig")
+        at_depth = self.m.read(
+            varlist=["VariableLeader"], start=depth_ii, stop=depth_ii + 1
+        )
+        self.orientation = "up" if at_depth.sysconfig.up else "down"
+        self.sysconfig = at_depth.sysconfig
 
     def make_start_ddays(self):
         """Generate time stamps for ping averaging.
