@@ -9,12 +9,14 @@
 - Add bin mapping for cases with large pitch and roll. This adds `velosearaptor.madcp.ProcessADCP.process_pings` ([PR17]( https://github.com/modscripps/velosearaptor/pull/17)). By [Jesse Cusack](https://github.com/jessecusack/).
 - Add position to moored ADCP meta data ([PR21]( https://github.com/modscripps/velosearaptor/pull/21)).
 - Allow for external input of pressure time series in `velosearaptor.madcp.ProcessADCP` ([PR12]( https://github.com/modscripps/velosearaptor/pull/12)).
+- Improve default depth grid to also work well with mooring knockdowns ([PR44]( https://github.com/modscripps/velosearaptor/pull/44)).
 
 #### Breaking Changes
 - Transfer repository from [gunnarvoet](https://github.com/gunnarvoet/) to [modscripps](https://github.com/modscripps/) and rename from gadcp to velosearaptor. Legacy code still exists at [https://github.com/gunnarvoet/gadcp](https://github.com/gunnarvoet/gadcp).
 
 #### Bug Fixes
 - Fix conda/pip environment.
+- Read correct instrument orientation when a majority of the time series has been recorded outside the water ([PR44]( https://github.com/modscripps/velosearaptor/pull/44)).
 
 #### Documentation
 - Consolidate readme and history files.
