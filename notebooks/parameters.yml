@@ -1,0 +1,64 @@
+# Project-wide meta-data
+meta_data:
+  project: BLT
+
+# Project-wide processing parameters
+processing_parameters:
+  tgridparams:
+    burst_average: True
+  dgridparams:
+  editparams:
+    min_correlation: 64
+    max_e: 0.3
+    pg_limit: 50
+
+# Mooring- and instrument-specific parameters.
+# Several moorings can be added.
+mooring:
+  MAVS2:
+    lon: -11.843
+    lat: 54.182
+    # List all ADCPs on this mooring here.
+    # Any processing parameters added here will overwrite project-wide
+    # processing parameters. 
+    # Meta-data added for specific instruments will be joined with project-wide
+    # meta-data.
+    SN24606:
+      driftparams:
+        end_adcp: [2021, 10, 7, 12, 7, 12]
+        end_pc: [2021, 10, 7, 12, 8, 30]
+      data_dir: ../velosearaptor/tests/data/24606000.000
+      editparams:
+        maskbins: [16, 17, 18]
+        max_e: 0.2
+      meta_data:
+        nominal_depth: 1157m
+    SN24607:
+      driftparams:
+        end_adcp: [2021, 10, 7, 12, 7, 12]
+        end_pc: [2021, 10, 7, 12, 8, 30]
+      dgridparams:
+        dtop: 1000
+  # Instrument-specific parameters overview
+    #SNxxxx:
+    #  data_dir:
+    #  driftparams:
+    #    end_adcp:
+    #    end_pc:
+    #  editparams:
+    #    maskbins:
+    #    max_e:
+    #    max_e_deviation:
+    #    min_correlation:
+    #    pg_limit:
+    #  dgridparams:
+    #    dtop:
+    #    dbot:
+    #    d_interval:
+    #  tgridparams:
+    #    dt_hours:
+    #    t0:
+    #    t1:
+    #    burst_average:
+    #  meta_data:
+

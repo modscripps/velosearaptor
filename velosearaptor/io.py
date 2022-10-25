@@ -1,11 +1,13 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""Module velosearaptor.io with in/out functions. Mostly provides wrapper functions to UHs `Multiread`."""
+"""Module velosearaptor.io with in/out functions."""
 
 import datetime
+from pathlib import Path
 
 import numpy as np
 import xarray as xr
+import yaml
 from pycurrents.adcp.rdiraw import Multiread, extract_raw
 
 
@@ -161,7 +163,7 @@ def extract_raw_rdi(file, i0, i1, outfile, inst="wh"):
     inst : str
         One of ('wh','os','bb','ec'). Defaults to 'wh'.
     """
-    data = extract_raw(file, inst, i0, i1, outfile=outfile)
+    _ = extract_raw(file, inst, i0, i1, outfile=outfile)
 
 
 def yday0_to_datetime64(baseyear, yday):
@@ -185,6 +187,101 @@ def yday0_to_datetime64(baseyear, yday):
     # convert to numpy datetime64
     time64 = np.array([np.datetime64(ti, "ms") for ti in time])
     return time64
+
+
+def parse_yaml_input(yamlfile, mooring, sn):
+    """Read yaml settings file and parse for a specific instrument.
+
+    Returns will be of type `None` if not present in the yml parameter file.
+
+    Parameters
+    ----------
+    yamlfile : pathlib.Path() or str
+        Parameter file.
+    mooring : str
+        Mooring ID as used in the parameter file.
+    sn : int
+        Instrument serial number as used in the parameter file, without prepended SN.
+
+    Returns
+    -------
+    Dictionary with the following entries:
+    meta_data : dict
+        General meta data for the dataset.
+    dgridparams : dict
+        Depth gridding parameters.
+    tgridparams : dict
+        Time gridding parameters.
+    editparams : dict
+        Editing parameters.
+    driftparams : dict
+        Clock drift parameters.
+    data_dir : pathlib.Path
+        ADCP data directory
+    """
+    with open(yamlfile, "r") as file:
+        yp = yaml.safe_load(file)
+
+    try:
+        _ = yp["mooring"][mooring]
+    except KeyError:
+        print(f"Mooring {mooring} not found in .yml parameter file")
+        raise
+
+    snstr = f"SN{sn}"
+    try:
+        _ = yp["mooring"][mooring][snstr]
+    except KeyError:
+        print(f"Serial numer {sn} not found in .yml parameter file")
+        raise
+
+    # global meta-data
+    meta_data = yp["meta_data"]
+    meta_data["mooring"] = mooring
+    for ll in ["lon", "lat"]:
+        meta_data[ll] = yp["mooring"][mooring][ll]
+    meta_data["sn"] = sn
+    out = dict(meta_data=meta_data)
+
+    # global processing parameters
+    pp = yp["processing_parameters"]
+    #   initialize output variables as None types in case they are not provided
+    #   in the yaml file
+    out_vars = [
+        "dgridparams",
+        "tgridparams",
+        "editparams",
+        "driftparams",
+    ]
+    for var in out_vars:
+        out[var] = None
+    for var in out_vars:
+        if var in pp:
+            out[var] = pp[var]
+
+    # instrument-specific parameters
+    d = yp["mooring"][mooring][snstr]
+    for var in ["driftparams"]:
+        if var in d:
+            out[var] = d[var]
+    if "data_dir" in d:
+        data_dir = Path(d["data_dir"])
+    else:
+        data_dir = None
+    # update global parameters with instrument-specific parameters
+    for param in ["editparams", "tgridparams", "dgridparams"]:
+        if param in d:
+            if out[param] is None:
+                out[param] = dict()
+            for k, v in d[param].items():
+                out[param][k] = v
+    if "meta_data" in d:
+        for k, v in d["meta_data"].items():
+            out["meta_data"][k] = v
+
+    out["data_dir"] = data_dir
+
+    return out
 
 
 def _is_number(s):
