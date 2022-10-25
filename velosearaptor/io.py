@@ -326,41 +326,62 @@ def cf_conventions():
             positive="down",
         ),
         u=dict(
-            long_name="u", standard_name="eastward_sea_water_velocity", units="m s-1"
+            long_name="u",
+            standard_name="eastward_sea_water_velocity",
+            units="m s-1",
+            ancillary_variables="npings",
         ),
         v=dict(
-            long_name="v", standard_name="northward_sea_water_velocity", units="m s-1"
+            long_name="v",
+            standard_name="northward_sea_water_velocity",
+            units="m s-1",
+            ancillary_variables="npings",
         ),
-        w=dict(long_name="w", standard_name="upward_sea_water_velocity", units="m s-1"),
+        w=dict(
+            long_name="w",
+            standard_name="upward_sea_water_velocity",
+            units="m s-1",
+            ancillary_variables="npings",
+        ),
         e=dict(
             long_name="error velocity",
             standard_name="indicative_error_from_multibeam_acoustic_doppler_velocity_profiler_in_sea_water",
             units="m s-1",
+            ancillary_variables="npings",
         ),
         pressure=dict(
-            long_name="pressure", standard_name="sea_water_pressure", units="dbar"
+            long_name="pressure",
+            standard_name="sea_water_pressure",
+            units="dbar",
+            ancillary_variables="npings",
         ),
         temperature=dict(
             long_name="temperature",
             standard_name="sea_water_temperature",
-            units="degrees_Celsius",
+            units="degrees_C",
+            ancillary_variables="npings",
         ),
         xducer_depth=dict(
             long_name="transducer depth",
-            standard_name="transducer_depth",
+            standard_name="depth",
             units="m",
             positive="down",
+            ancillary_variables="npings",
         ),
         npings=dict(
             long_name="number of pings",
-            standard_name="number_of_pings",
+            standard_name="number_of_observations",
         ),
         pg=dict(
             long_name="percent good",
-            standard_name="percent_good_pings_in_ensemble_average",
+            standard_name="proportion_of_acceptable_signal_returns_from_acoustic_instrument_in_sea_water",
+            units="percent",
+            ancillary_variables="npings",
         ),
         amp=dict(
             long_name="amplitude",
+            standard_name="signal_intensity_from_multibeam_acoustic_doppler_velocity_sensor_in_sea_water",
+            ancillary_variables="npings",
         ),
     )
     return CF
