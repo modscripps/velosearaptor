@@ -1604,7 +1604,7 @@ class ProcessADCPyml(ProcessADCP):
     [`notebooks/parameters.yml`](https://github.com/modscripps/velosearaptor/tree/main/notebooks/parameters.yml)"""
 
     def __init__(self, parameter_file, mooring, sn, **kwargs):
-        p = io.parse_yaml_input(parameter_file, "MAVS2", 24606)
+        p = io.parse_yaml_input(parameter_file, mooring, sn)
         super().__init__(
             p["data_dir"],
             meta_data=p["meta_data"],
