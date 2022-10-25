@@ -2,6 +2,16 @@
 # -*- coding: utf-8 -*-
 """Module velosearaptor.madcp with functions for moored ADCPs.
 
+### General Use
+Processing a raw ADCP file from a moored deployment is a two-step process.
+- Instantiate a processing object with `ProcessADCP` or `ProcessADCPyml`. The
+  former expects the path to the raw data and a number of dictionaries with
+  processing parameters as input. The latter reads a .yml file containing the
+  processing parameters. See the respective docstrings for more information.
+- Process raw pings and possibly run a ping-averaging method on the data.
+  Options here are `ProcessADCP.process_pings`,
+  `ProcessADCP.average_ensembles`, and `ProcessADCP.burst_average_ensembles`.
+
 ### Notes
 Some general notes for this module.
 
@@ -99,6 +109,8 @@ class ProcessADCP:
         Mark beam with bad data (zero based). Defaults to None.
     logdir : str, optional
         Log file directory. Defaults to `log/`.
+    verbose : bool, optional
+        Output more processing info to screen.
     magdec : float, optional
         Magnetic declination in degrees.
     pressure : xr.DataArray, optional
@@ -296,7 +308,8 @@ class ProcessADCP:
 
         """
         self.m = Multiread(self.files, sonar="wh", ibad=self.ibad)
-        # Make some more meta data realily available by reading a single ping from the raw data.
+        # Make some more meta data realily available by reading a single ping
+        # from the raw data.
         ping = self.m.read(start=0, stop=1)
         self.meta_data.Bin1Dist = ping.FL.Bin1Dist / 100.0
         self.meta_data.NCells = ping.FL.NCells
@@ -1582,3 +1595,22 @@ class ProcessADCP:
         binmask = self.raw.bin.data < 0
         binmask[indices] = True
         return binmask
+
+
+class ProcessADCPyml(ProcessADCP):
+    """Moored ADCP processing with parameters provided via .yml file.
+
+    An example parameter file is included at
+    [`notebooks/parameters.yml`](https://github.com/modscripps/velosearaptor/tree/main/notebooks/parameters.yml)"""
+
+    def __init__(self, parameter_file, mooring, sn, **kwargs):
+        p = io.parse_yaml_input(parameter_file, "MAVS2", 24606)
+        super().__init__(
+            p["data_dir"],
+            meta_data=p["meta_data"],
+            driftparams=p["driftparams"],
+            tgridparams=p["tgridparams"],
+            dgridparams=p["dgridparams"],
+            editparams=p["editparams"],
+            **kwargs,
+        )
