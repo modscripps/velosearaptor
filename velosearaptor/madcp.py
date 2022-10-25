@@ -1511,7 +1511,7 @@ class ProcessADCP:
         out = out.dropna(how="all", dim="z")
 
         # Drop pressure_std and pressure_max
-        dropvars = ['pressure_std', 'pressure_max']
+        dropvars = ["pressure_std", "pressure_max"]
         for var in dropvars:
             out = out.drop(var)
 
