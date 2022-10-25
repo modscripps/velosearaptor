@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""Module velosearaptor.io with in/out functions. Mostly provides wrapper functions to UHs `Multiread`."""
+"""Module velosearaptor.io with in/out functions."""
 
 import datetime
 
@@ -161,7 +161,7 @@ def extract_raw_rdi(file, i0, i1, outfile, inst="wh"):
     inst : str
         One of ('wh','os','bb','ec'). Defaults to 'wh'.
     """
-    data = extract_raw(file, inst, i0, i1, outfile=outfile)
+    _ = extract_raw(file, inst, i0, i1, outfile=outfile)
 
 
 def yday0_to_datetime64(baseyear, yday):
