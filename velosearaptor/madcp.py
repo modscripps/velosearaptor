@@ -1510,10 +1510,15 @@ class ProcessADCP:
         # Drop depth levels with all nan
         out = out.dropna(how="all", dim="z")
 
-        # Drop pressure_std and pressure_max
-        dropvars = ["pressure_std", "pressure_max"]
+        # Drop pressure_std, pressure_max, and e_std
+        dropvars = ["pressure_std", "pressure_max", "e_std"]
         for var in dropvars:
             out = out.drop(var)
+
+        # Change u/v/w std to standard error by dividing by sqrt(npings)
+        for var in ['u', 'v', 'w']:
+            out = out.rename({f"{var}_std": f"{var}_error"})
+            out[f"{var}_error"] = out[f"{var}_error"] / np.sqrt(out["npings"])
 
         # add variable names and units for plotting
         out = self._add_names_and_units(out)

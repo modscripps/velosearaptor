@@ -349,6 +349,24 @@ def cf_conventions():
             units="m s-1",
             ancillary_variables="npings",
         ),
+        u_error=dict(
+            long_name="u standard error",
+            standard_name="eastward_sea_water_velocity_standard_error",
+            units="m s-1",
+            ancillary_variables="npings",
+        ),
+        v_error=dict(
+            long_name="v standard error",
+            standard_name="northward_sea_water_velocity_standard_error",
+            units="m s-1",
+            ancillary_variables="npings",
+        ),
+        w_error=dict(
+            long_name="w standard error",
+            standard_name="upward_sea_water_velocity_standard_error",
+            units="m s-1",
+            ancillary_variables="npings",
+        ),
         pressure=dict(
             long_name="pressure",
             standard_name="sea_water_pressure",
