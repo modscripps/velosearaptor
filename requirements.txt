@@ -1,6 +1,7 @@
 pytest
 pytest-runner
 pytest-datadir
+pyyaml
 numpy
 netcdf4
 xarray

@@ -56,7 +56,8 @@ jobs:
     - name: Build docs
       run: |
         pdoc --version
-        pdoc -d numpy --logo https://github.com/modscripps/velosearaptor/raw/main/logo/velosearaptor.png -o ./docs ./velosearaptor
+        pdoc -d numpy --logo https://github.com/modscripps/velosearaptor/raw/main/logo/velosearaptor.png	-e velosearaptor=https://github.com/modscripps/velosearaptor/blob/main/velosearaptor/ -o ./docs ./velosearaptor
+
     # Add the .nojekyll file
     - name: nojekyll
       if: ${{ github.event_name == 'push' }}
