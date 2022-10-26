@@ -1509,7 +1509,7 @@ class ProcessADCP:
 
         # Percent good is currently defined everywhere. Set to NaN where we
         # don't have any amplitude data (i.e. no data).
-        out['pg'] = out.pg.where(~np.isnan(out.amp), other=np.nan)
+        out["pg"] = out.pg.where(~np.isnan(out.amp), other=np.nan)
 
         # Drop depth levels with all nan
         out = out.dropna(how="all", dim="depth")
@@ -1520,7 +1520,7 @@ class ProcessADCP:
             out = out.drop(var)
 
         # Change u/v/w std to standard error by dividing by sqrt(npings)
-        for var in ['u', 'v', 'w']:
+        for var in ["u", "v", "w"]:
             out = out.rename({f"{var}_std": f"{var}_error"})
             out[f"{var}_error"] = out[f"{var}_error"] / np.sqrt(out["npings"])
 
