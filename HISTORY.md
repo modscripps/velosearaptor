@@ -10,10 +10,13 @@
 - Add position to moored ADCP meta data ([PR21]( https://github.com/modscripps/velosearaptor/pull/21)).
 - Allow for external input of pressure time series in `velosearaptor.madcp.ProcessADCP` ([PR12]( https://github.com/modscripps/velosearaptor/pull/12)).
 - Improve default depth grid to also work well with mooring knockdowns ([PR44]( https://github.com/modscripps/velosearaptor/pull/44)).
-- Optionally read processing parameters from .yml-file ([PR46]( https://github.com/modscripps/velosearaptor/pull/46)).
+- Optionally read processing parameters from .yml-file ([PR26]( https://github.com/modscripps/velosearaptor/pull/26)).
+- Add CF-compliant meta data to output dataset ([PR26]( https://github.com/modscripps/velosearaptor/pull/26)).
 
 #### Breaking Changes
 - Transfer repository from [gunnarvoet](https://github.com/gunnarvoet/) to [modscripps](https://github.com/modscripps/) and rename from gadcp to velosearaptor. Legacy code still exists at [https://github.com/gunnarvoet/gadcp](https://github.com/gunnarvoet/gadcp).
+- Change processed dataset coordinate `z` to `depth` ([PR48]( https://github.com/modscripps/velosearaptor/pull/48)).
+- Change `vel_std` variables in output dataset to `vel_error` by dividing the standard deviation of each average by the square root of the number of pings ([PR26]( https://github.com/modscripps/velosearaptor/pull/26)).
 
 #### Bug Fixes
 - Fix conda/pip environment.
