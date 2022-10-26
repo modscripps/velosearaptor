@@ -308,14 +308,19 @@ def _is_number(s):
 def cf_conventions():
     """Return dictionary with CF standard names and units.
 
-    See https://cfconventions.org/Data/cf-standard-names/current/build/cf-standard-name-table.html
-    and http://cfconventions.org/cf-conventions/cf-conventions.html
-    for further information.
-
     Returns
     -------
     CF : dict
         CF standard names in units.
+
+    Notes
+    -----
+    See https://cfconventions.org/Data/cf-standard-names/current/build/cf-standard-name-table.html
+    and http://cfconventions.org/cf-conventions/cf-conventions.html
+    for further information.
+
+    See also https://wiki.esipfed.org/Attribute_Convention_for_Data_Discovery_1-3 for meta data.
+
     """
 
     CF = dict(
@@ -324,60 +329,70 @@ def cf_conventions():
             standard_name="depth",
             units="m",
             positive="down",
+            coverage_content_type="coordinate",
         ),
         u=dict(
             long_name="u",
             standard_name="eastward_sea_water_velocity",
             units="m s-1",
             ancillary_variables="npings",
+            coverage_content_type="physicalMeasurement",
         ),
         v=dict(
             long_name="v",
             standard_name="northward_sea_water_velocity",
             units="m s-1",
             ancillary_variables="npings",
+            coverage_content_type="physicalMeasurement",
         ),
         w=dict(
             long_name="w",
             standard_name="upward_sea_water_velocity",
             units="m s-1",
             ancillary_variables="npings",
+            coverage_content_type="physicalMeasurement",
         ),
         e=dict(
             long_name="error velocity",
             standard_name="indicative_error_from_multibeam_acoustic_doppler_velocity_profiler_in_sea_water",
             units="m s-1",
             ancillary_variables="npings",
+            coverage_content_type="qualityInformation",
         ),
         u_error=dict(
             long_name="u standard error",
             standard_name="eastward_sea_water_velocity_standard_error",
             units="m s-1",
             ancillary_variables="npings",
+            coverage_content_type="qualityInformation",
         ),
         v_error=dict(
             long_name="v standard error",
             standard_name="northward_sea_water_velocity_standard_error",
             units="m s-1",
             ancillary_variables="npings",
+            coverage_content_type="qualityInformation",
         ),
         w_error=dict(
             long_name="w standard error",
             standard_name="upward_sea_water_velocity_standard_error",
             units="m s-1",
             ancillary_variables="npings",
+            coverage_content_type="qualityInformation",
         ),
         pressure=dict(
             long_name="pressure",
             standard_name="sea_water_pressure",
             units="dbar",
             ancillary_variables="npings",
+            coverage_content_type="physicalMeasurement",
         ),
         temperature=dict(
             long_name="temperature",
             standard_name="sea_water_temperature",
             units="degrees_C",
             ancillary_variables="npings",
+            coverage_content_type="physicalMeasurement",
         ),
         xducer_depth=dict(
             long_name="transducer depth",
@@ -389,17 +404,20 @@ def cf_conventions():
         npings=dict(
             long_name="number of pings",
             standard_name="number_of_observations",
+            coverage_content_type="auxiliaryInformation",
         ),
         pg=dict(
             long_name="percent good",
             standard_name="proportion_of_acceptable_signal_returns_from_acoustic_instrument_in_sea_water",
             units="percent",
             ancillary_variables="npings",
+            coverage_content_type="qualityInformation",
         ),
         amp=dict(
             long_name="amplitude",
             standard_name="signal_intensity_from_multibeam_acoustic_doppler_velocity_sensor_in_sea_water",
             ancillary_variables="npings",
+            coverage_content_type="physicalMeasurement",
         ),
     )
     return CF
