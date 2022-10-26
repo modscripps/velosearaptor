@@ -1498,17 +1498,21 @@ class ProcessADCP:
         adcptime = [np.datetime64(ti) for ti in time]
         # generate Dataset
         out = xr.Dataset(
-            {"pg": (["z", "time"], dat.pg.T)},
-            coords={"time": (["time"], adcptime), "z": (["z"], dat.dep)},
+            {"pg": (["depth", "time"], dat.pg.T)},
+            coords={"time": (["time"], adcptime), "depth": (["depth"], dat.dep)},
         )
         for vari in vars2d:
-            out[vari] = (["z", "time"], dat[vari].T)
+            out[vari] = (["depth", "time"], dat[vari].T)
         for vari in vars1d:
             if vari not in ["dep", "dday"]:
                 out[vari] = (["time"], dat[vari])
 
+        # Percent good is currently defined everywhere. Set to NaN where we
+        # don't have any amplitude data (i.e. no data).
+        out['pg'] = out.pg.where(~np.isnan(out.amp), other=np.nan)
+
         # Drop depth levels with all nan
-        out = out.dropna(how="all", dim="z")
+        out = out.dropna(how="all", dim="depth")
 
         # Drop pressure_std, pressure_max, and e_std
         dropvars = ["pressure_std", "pressure_max", "e_std"]
