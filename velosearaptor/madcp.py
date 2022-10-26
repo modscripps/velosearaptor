@@ -1498,17 +1498,34 @@ class ProcessADCP:
         adcptime = [np.datetime64(ti) for ti in time]
         # generate Dataset
         out = xr.Dataset(
-            {"pg": (["z", "time"], dat.pg.T)},
-            coords={"time": (["time"], adcptime), "z": (["z"], dat.dep)},
+            {"pg": (["depth", "time"], dat.pg.T)},
+            coords={"time": (["time"], adcptime), "depth": (["depth"], dat.dep)},
         )
         for vari in vars2d:
-            out[vari] = (["z", "time"], dat[vari].T)
+            out[vari] = (["depth", "time"], dat[vari].T)
         for vari in vars1d:
             if vari not in ["dep", "dday"]:
                 out[vari] = (["time"], dat[vari])
 
+        # Percent good is currently defined everywhere. Set to NaN where we
+        # don't have any amplitude data (i.e. no data).
+        out["pg"] = out.pg.where(~np.isnan(out.amp), other=np.nan)
+
         # Drop depth levels with all nan
-        out = out.dropna(how="all", dim="z")
+        out = out.dropna(how="all", dim="depth")
+
+        # Drop pressure_std, pressure_max, and e_std
+        dropvars = ["pressure_std", "pressure_max", "e_std"]
+        for var in dropvars:
+            out = out.drop(var)
+
+        # Change u/v/w std to standard error by dividing by sqrt(npings)
+        for var in ["u", "v", "w"]:
+            out = out.rename({f"{var}_std": f"{var}_error"})
+            out[f"{var}_error"] = out[f"{var}_error"] / np.sqrt(out["npings"])
+
+        # Calculate transducer depth from pressure
+        out["xducer_depth"] = -gsw.z_from_p(out.pressure, self.lat)
 
         # add variable names and units for plotting
         out = self._add_names_and_units(out)
@@ -1516,7 +1533,7 @@ class ProcessADCP:
         self.ds = out
 
     def _add_names_and_units(self, ds):
-        """Add variable meta-data to Dataset.
+        """Add variable attributes based on CF conventions.
 
         Parameters
         ----------
@@ -1527,14 +1544,10 @@ class ProcessADCP:
         ds : xarray.Dataset
 
         """
-
-        ds.u.attrs = dict(long_name="u", units="m/s")
-        ds.v.attrs = dict(long_name="v", units="m/s")
-        ds.w.attrs = dict(long_name="w", units="m/s")
-        ds.e.attrs = dict(long_name="error velocity", units="m/s")
-        ds.z.attrs = dict(long_name="depth", units="m")
-        ds.temperature.attrs = dict(long_name="temperature", units="°C")
-        ds.pressure.attrs = dict(long_name="pressure", units="dbar")
+        CF = io.cf_conventions()
+        for v in ds.variables:
+            if v in CF:
+                ds[v].attrs = CF[v]
         return ds
 
     def _add_meta_data_to_ds(self):
@@ -1549,10 +1562,6 @@ class ProcessADCP:
             for k, v in self.meta_data.items():
                 self.ds.attrs[k] = v
         self.ds.attrs["proc time"] = np.datetime64("now").astype("str")
-
-        # Calculate transducer depth from pressure
-        self.ds["xducer_depth"] = -gsw.z_from_p(self.ds.pressure, self.lat)
-        self.ds.xducer_depth.attrs = dict(long_name="transducer depth", units="m")
 
     def plot_echo_stats(self):
         """Plot beam statistics (correlation and amplitude) from raw ADCP data."""
