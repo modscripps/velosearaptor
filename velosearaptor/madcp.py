@@ -1524,6 +1524,9 @@ class ProcessADCP:
             out = out.rename({f"{var}_std": f"{var}_error"})
             out[f"{var}_error"] = out[f"{var}_error"] / np.sqrt(out["npings"])
 
+        # Calculate transducer depth from pressure
+        out["xducer_depth"] = -gsw.z_from_p(out.pressure, self.lat)
+
         # add variable names and units for plotting
         out = self._add_names_and_units(out)
 
@@ -1559,10 +1562,6 @@ class ProcessADCP:
             for k, v in self.meta_data.items():
                 self.ds.attrs[k] = v
         self.ds.attrs["proc time"] = np.datetime64("now").astype("str")
-
-        # Calculate transducer depth from pressure
-        self.ds["xducer_depth"] = -gsw.z_from_p(self.ds.pressure, self.lat)
-        self.ds.xducer_depth.attrs = dict(long_name="transducer depth", units="m")
 
     def plot_echo_stats(self):
         """Plot beam statistics (correlation and amplitude) from raw ADCP data."""
