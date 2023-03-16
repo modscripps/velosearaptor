@@ -3,6 +3,7 @@
 """Module velosearaptor.io with in/out functions."""
 
 import datetime
+import pathlib
 from pathlib import Path
 
 import numpy as np
@@ -17,8 +18,8 @@ def read_raw_rdi(file, auxillary_only=False):
 
     Parameters
     ----------
-    file : str or Path
-        Path to raw data file.
+    file : str or Path or list of str or Path
+        Path to raw data file(s).
     auxillary_only : bool
         Set to True to ignore 2d fields. (default False)
 
@@ -27,7 +28,15 @@ def read_raw_rdi(file, auxillary_only=False):
     rdi : xarray.Dataset
         Raw ADCP data in xarray Dataset format.
     """
+    # Multiread cannot deal with Path objects. Convert them to ascii.
+    if type(file) == list:
+        if type(file) == list:
+            file = [item.as_posix() if type(item) == pathlib.PosixPath else item for item in file ]
 
+    if type(file) == pathlib.PosixPath:
+        file = file.as_posix()
+
+    # Read file(s) using Multiread
     m = Multiread(file, "wh")
 
     if auxillary_only:
