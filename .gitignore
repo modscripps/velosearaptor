@@ -9,7 +9,10 @@ dist/
 html
 docs
 notebooks/dev
-notebooks/log
+log/
+notebooks/log/
+velosearaptor/tests/log/
+velosearaptor/tests/data/log/
 src
 velosearaptor/tests/data/rawfiles.cache
 geomag

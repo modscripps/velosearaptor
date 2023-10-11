@@ -1517,12 +1517,14 @@ class ProcessADCP:
         # Drop pressure_std, pressure_max, and e_std
         dropvars = ["pressure_std", "pressure_max", "e_std"]
         for var in dropvars:
-            out = out.drop(var)
+            if var in out:
+                out = out.drop(var)
 
         # Change u/v/w std to standard error by dividing by sqrt(npings)
         for var in ["u", "v", "w"]:
-            out = out.rename({f"{var}_std": f"{var}_error"})
-            out[f"{var}_error"] = out[f"{var}_error"] / np.sqrt(out["npings"])
+            if f"{var}_std" in out:
+                out = out.rename({f"{var}_std": f"{var}_error"})
+                out[f"{var}_error"] = out[f"{var}_error"] / np.sqrt(out["npings"])
 
         # Calculate transducer depth from pressure
         out["xducer_depth"] = -gsw.z_from_p(out.pressure, self.lat)
@@ -1610,7 +1612,8 @@ class ProcessADCPyml(ProcessADCP):
     """Moored ADCP processing with parameters provided via .yml file.
 
     An example parameter file is included at
-    [`notebooks/parameters.yml`](https://github.com/modscripps/velosearaptor/tree/main/notebooks/parameters.yml)"""
+    [`notebooks/parameters.yml`](https://github.com/modscripps/velosearaptor/tree/main/notebooks/parameters.yml)
+    """
 
     def __init__(self, parameter_file, mooring, sn, **kwargs):
         p = io.parse_yaml_input(parameter_file, mooring, sn)
