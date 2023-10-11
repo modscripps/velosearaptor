@@ -36,10 +36,8 @@ jobs:
       # ^-- This gives info on installing dependencies with pip
     - name: Install dependencies
       run: |
-        # python -m pip install --upgrade pip
-        # python -m pip install pdoc numpy
-        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-        python -m pip install .
+        pip install -r requirements.txt
+        pip install .
     - name: Debugging information
       run: |
         echo "github.ref:" ${{github.ref}}
