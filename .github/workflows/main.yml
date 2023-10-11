@@ -36,7 +36,8 @@ jobs:
       # ^-- This gives info on installing dependencies with pip
     - name: Install dependencies
       run: |
-        # pip install numpy
+        pip install wheel
+        pip install numpy
         pip install -r requirements.txt
         pip install .
     - name: Debugging information
