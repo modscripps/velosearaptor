@@ -1612,7 +1612,8 @@ class ProcessADCPyml(ProcessADCP):
     """Moored ADCP processing with parameters provided via .yml file.
 
     An example parameter file is included at
-    [`notebooks/parameters.yml`](https://github.com/modscripps/velosearaptor/tree/main/notebooks/parameters.yml)"""
+    [`notebooks/parameters.yml`](https://github.com/modscripps/velosearaptor/tree/main/notebooks/parameters.yml)
+    """
 
     def __init__(self, parameter_file, mooring, sn, **kwargs):
         p = io.parse_yaml_input(parameter_file, mooring, sn)

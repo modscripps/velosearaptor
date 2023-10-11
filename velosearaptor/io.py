@@ -31,7 +31,10 @@ def read_raw_rdi(file, auxillary_only=False):
     # Multiread cannot deal with Path objects. Convert them to ascii.
     if type(file) == list:
         if type(file) == list:
-            file = [item.as_posix() if type(item) == pathlib.PosixPath else item for item in file ]
+            file = [
+                item.as_posix() if type(item) == pathlib.PosixPath else item
+                for item in file
+            ]
 
     if type(file) == pathlib.PosixPath:
         file = file.as_posix()
