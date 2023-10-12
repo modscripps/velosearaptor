@@ -1495,7 +1495,7 @@ class ProcessADCP:
         # generate time vector
         base = datetime.datetime(dat.yearbase, 1, 1, 0, 0, 0)
         time = [base + datetime.timedelta(days=ti) for ti in dat.dday]
-        adcptime = [np.datetime64(ti) for ti in time]
+        adcptime = [np.datetime64(ti, "ns") for ti in time]
         # generate Dataset
         out = xr.Dataset(
             {"pg": (["depth", "time"], dat.pg.T)},

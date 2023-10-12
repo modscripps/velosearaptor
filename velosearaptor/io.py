@@ -197,7 +197,7 @@ def yday0_to_datetime64(baseyear, yday):
     base = datetime.datetime(baseyear, 1, 1, 0, 0, 0)
     time = [base + datetime.timedelta(days=ti) for ti in yday]
     # convert to numpy datetime64
-    time64 = np.array([np.datetime64(ti, "ms") for ti in time])
+    time64 = np.array([np.datetime64(ti, "ns") for ti in time])
     return time64
 
 
