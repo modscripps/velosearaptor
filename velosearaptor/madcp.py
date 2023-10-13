@@ -41,6 +41,7 @@ from subprocess import PIPE, Popen  # for magdec
 from warnings import warn
 
 import gsw
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 import scipy as sp
@@ -54,7 +55,7 @@ from pycurrents.num.nptools import rangeslice
 from pycurrents.system import Bunch
 from tqdm import tqdm
 
-from . import io
+from . import io, tools
 
 # Standard logging
 logger = logging.getLogger(__name__)
@@ -114,7 +115,18 @@ class ProcessADCP:
     magdec : float, optional
         Magnetic declination in degrees.
     pressure : xr.DataArray, optional
-        Pressure time series in dbar as xr.DataAarray with coordinate `time`.
+        Supply external pressure time series in dbar as xr.DataAarray with
+        coordinate `time`.
+    use_raw_pressure : bool, optional
+        Pressure time series is low-pass filtered at 30 minutes or 50 ping
+        cutoff period, whatever is shorter. Set this to True to use raw
+        pressure. Defaults to False. Does not matter for burst-averaging
+        (pressure is averaged over full burst) or when supplying external
+        pressure time series.
+    pressure_scale_factor : float, optional
+        Can be used to scale a (likely broken) pressure time series. Defaults
+        to 1 (no scaling).
+
 
     Attributes
     ----------
@@ -216,9 +228,10 @@ class ProcessADCP:
         logdir="log",
         verbose=False,
         plot=False,
-        pressure_scale_factor=1,
         magdec=None,
         pressure=None,
+        use_raw_pressure=False,
+        pressure_scale_factor=1,
     ):
         self.meta_data = Bunch(meta_data.copy())
         self.ibad = ibad
@@ -230,6 +243,7 @@ class ProcessADCP:
 
         self._pressure_provided = pressure
         self._pressure_scale_factor = pressure_scale_factor
+        self._use_raw_pressure = use_raw_pressure
 
         self._raw = None
         self._default_dgridparams = None
@@ -308,7 +322,7 @@ class ProcessADCP:
 
         """
         self.m = Multiread(self.files, sonar="wh", ibad=self.ibad)
-        # Make some more meta data realily available by reading a single ping
+        # Make some more meta data readily available by reading a single ping
         # from the raw data.
         ping = self.m.read(start=0, stop=1)
         self.meta_data.Bin1Dist = ping.FL.Bin1Dist / 100.0
@@ -389,6 +403,24 @@ class ProcessADCP:
         # Initial pressure units: 10 Pa (about 1 mm or 0.001 decibar).
         # Converting to decibars.
         return dat.VL["Pressure"] / 1000.0 * self._pressure_scale_factor
+
+    @property
+    def pressure_lp(self):
+        """Low-pass filtered pressure time series"""
+        if "pressure_lp" not in self.tsdat:
+            self.tsdat.pressure_lp = self._lowpassfilter_pressure()
+        return self.tsdat.pressure_lp
+
+    def _lowpassfilter_pressure(self):
+        t64 = io.yday0_to_datetime64(self.tsdat.yearbase, self.tsdat.dday)
+        fs = 1 / tools.dominant_period_in_s(t64)
+        # Make cutoff period either 30 minutes or 50 data points,
+        # whatever is shorter.
+        cutoff = 50 * (1 / fs)
+        if cutoff > 1800:
+            cutoff = 1800
+        pressure = self.tsdat.pressure * self._pressure_scale_factor
+        return tools.lowpassfilter(pressure, 1 / cutoff, fs)
 
     def _read_auxiliary_data(self):
         """Read auxiliary data.
@@ -542,8 +574,10 @@ class ProcessADCP:
         else:
             at_depth = np.nonzero(p > self.p_median)[0][0]
             t0 = self.dday[at_depth]
-            in_water = np.nonzero(p > self.p_median / 2)[0][-1]
-            t1 = self.dday[in_water]
+            # in_water = np.nonzero(p > self.p_median / 2)[0][-1]
+            # t1 = self.dday[in_water]
+            at_depth_last = np.nonzero(p > self.p_median / 1.05)[0][-1]
+            t1 = self.dday[at_depth_last]
 
         # Generate a set of default time gridding parameters and then update
         # from the input parameters provided.
@@ -716,11 +750,11 @@ class ProcessADCP:
         if iens > len(self.start_ddays) - 1:
             raise ValueError("ens num %d is out of range" % iens)
 
-        # Get indices within the interval.
+        # Get indices within the interval
         sl = rangeslice(
             self.dday, self.start_ddays[iens], self.start_ddays[iens] + self.dt
         )
-        # Use the indices to extract data.
+        # Use the indices to extract data
         dat = self.m.read(start=sl.start, stop=sl.stop)
         if dat is None:
             return None
@@ -729,8 +763,19 @@ class ProcessADCP:
         if self._pressure_provided is not None:
             # Replace pressure if provided
             dat.pressure = self._external_pressure_to_dat(dat)
-        else:
+        elif self.is_burst_average:
+            # Use raw pressure
             dat.pressure = self._scale_pycurrents_pressure(dat)
+        elif self._use_raw_pressure:
+            # Use raw pressure
+            dat.pressure = self._scale_pycurrents_pressure(dat)
+        else:
+            # Use low-pass filtered pressure
+            mask = (self.tsdat.ens_num >= dat.ens_num[0]) & (
+                self.tsdat.ens_num <= dat.ens_num[-1]
+            )
+            dat.pressure = self.pressure_lp[mask]
+
         sign = -1 if self.orientation == "up" else 1
         pdepth = seawater.depth2(dat.pressure, self.lat)
         dat.depth = pdepth[:, np.newaxis] + sign * dat.dep
@@ -1055,7 +1100,8 @@ class ProcessADCP:
             idx1 = write_idxs[i + 1]
 
             if ens is not None:
-                # I pulled this out of read_ensembles because we need to calculate depth for _ave2nc to work.
+                # I pulled this out of read_ensembles because we need to
+                # calculate depth for _ave2nc to work.
                 ens.dday_orig = ens.dday
                 ens.dday = self._correct_dday(ens.dday_orig)
                 if self._pressure_provided is not None:
@@ -1572,19 +1618,25 @@ class ProcessADCP:
         fig, ax = plt.subplots(
             nrows=1,
             ncols=2,
-            figsize=(5, r.bin.max().data * 0.3),
+            figsize=(5, r.bin.max().data * 0.15),
             constrained_layout=True,
             sharey=True,
         )
         r.cor.mean(dim="time").plot(
-            hue="beam", y="bin", marker="o", linestyle="", ax=ax[0]
+            hue="beam", y="bin", marker="o", markersize=5, linestyle="", ax=ax[0]
         )
         r.amp.mean(dim="time").plot(
-            hue="beam", y="bin", marker="o", linestyle="", ax=ax[1]
+            hue="beam",
+            y="bin",
+            marker="o",
+            markersize=5,
+            linestyle="",
+            ax=ax[1],
+            add_legend=False,
         )
         ax[0].invert_yaxis()
         ax[1].set(ylabel="")
-        ax[0].set_yticks(r.bin.data)
+        ax[0].yaxis.set_major_locator(mpl.ticker.MultipleLocator(base=2))
         for axi in ax:
             axi.grid(True)
 
