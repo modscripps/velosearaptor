@@ -203,7 +203,8 @@ class ProcessADCP:
       convenience method `generate_binmask`.
     - `pg_limit` : float or int or None.
             Percent good limit applied prior to interpolating to the universal
-            depth grid in `burst_average_ensembles`.
+            depth grid in `burst_average_ensembles`. Not applied in
+            `average_ensembles` as the user can filter based on pg later.
 
     """
 
@@ -584,6 +585,14 @@ class ProcessADCP:
         default_tgridparams = dict(dt_hours=0.5, t0=t0, t1=t1, burst_average=False)
         self.tgridparams = Bunch(default_tgridparams)
         if tgridparams is not None:
+            # convert time to dday if provided as str
+            for time in ["t0", "t1"]:
+                if time in tgridparams:
+                    if isinstance(tgridparams[time], str):
+                        t64 = np.datetime64(tgridparams[time])
+                        year, dday = io.datetime64_to_yday0(t64)
+                        tgridparams[time] = dday
+            # update parameters in processing object
             self.tgridparams.update_values(tgridparams, strict=True)
         else:
             logger.warning(
