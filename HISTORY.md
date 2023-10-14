@@ -17,6 +17,7 @@
 - Transfer repository from [gunnarvoet](https://github.com/gunnarvoet/) to [modscripps](https://github.com/modscripps/) and rename from gadcp to velosearaptor. Legacy code still exists at [https://github.com/gunnarvoet/gadcp](https://github.com/gunnarvoet/gadcp).
 - Change processed dataset coordinate `z` to `depth` ([PR48]( https://github.com/modscripps/velosearaptor/pull/48)).
 - Change `vel_std` variables in output dataset to `vel_error` by dividing the standard deviation of each average by the square root of the number of pings ([PR26]( https://github.com/modscripps/velosearaptor/pull/26)).
+- Low-pass filter (inherently noisy) pressure before ensemble-averaging continuous ping data ([PR61]( https://github.com/modscripps/velosearaptor/pull/61)). By [Gunnar Voet](https://github.com/gunnarvoet/).
 
 #### Bug Fixes
 - Fix conda/pip environment.
