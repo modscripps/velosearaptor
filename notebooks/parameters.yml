@@ -59,6 +59,8 @@ mooring:
     #    dt_hours:
     #    t0:
     #    t1:
+    #    # note: t0 and t1 can be given in dday or
+    #    # as string that can be read by np.datetime64
     #    burst_average:
     #  meta_data:
 

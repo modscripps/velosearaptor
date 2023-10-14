@@ -11,6 +11,7 @@
 - Allow for external input of pressure time series in `velosearaptor.madcp.ProcessADCP` ([PR12]( https://github.com/modscripps/velosearaptor/pull/12)).
 - Improve default depth grid to also work well with mooring knockdowns ([PR44]( https://github.com/modscripps/velosearaptor/pull/44)).
 - Optionally read processing parameters from .yml-file ([PR26]( https://github.com/modscripps/velosearaptor/pull/26)).
+- Allow for string format when supplying start and end time in .yml parameter file ([PR63]( https://github.com/modscripps/velosearaptor/pull/63)).
 - Add CF-compliant meta data to output dataset ([PR26]( https://github.com/modscripps/velosearaptor/pull/26)).
 
 #### Breaking Changes

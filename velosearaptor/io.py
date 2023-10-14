@@ -8,6 +8,7 @@ from pathlib import Path
 
 import numpy as np
 import xarray as xr
+import pandas as pd
 import yaml
 from pycurrents.adcp.rdiraw import Multiread, extract_raw
 
@@ -195,10 +196,52 @@ def yday0_to_datetime64(baseyear, yday):
         Time in numpy datetime64 format
     """
     base = datetime.datetime(baseyear, 1, 1, 0, 0, 0)
+    if isinstance(yday, float):
+        yday = [yday]
+        single_value = True
+    else:
+        single_value = False
     time = [base + datetime.timedelta(days=ti) for ti in yday]
     # convert to numpy datetime64
     time64 = np.array([np.datetime64(ti, "ns") for ti in time])
+    if single_value:
+        time64 = time64[0]
     return time64
+
+
+def datetime64_to_yday0(time64):
+    """Convert numpy's datetime64 format to year day (starting at yday 0).
+
+    Parameters
+    ----------
+    time64 : np.datetime64
+        Time in numpy datetime64 format
+
+    Returns
+    -------
+    baseyear : int
+        Base year
+    yday : float
+        Year day
+    """
+    # convert single value to list
+    if type(time64) == np.datetime64:
+        time64 = [time64]
+    # base year
+    pt = pd.to_datetime(time64)
+    baseyears = pt.year.to_numpy()
+    baseyear = baseyears[0]
+    # year day
+    base64 = np.datetime64(f'{baseyear}-01-01 00:00:00')
+    delta64 = time64 - base64
+    delta64ns = delta64.astype('timedelta64[ns]')
+    delta = delta64ns.astype(float)
+    yday = delta / 1e9 / 3600 / 24
+    # convert back to single value if needed
+    if len(yday) == 1:
+        yday = yday[0]
+
+    return baseyear, yday
 
 
 def parse_yaml_input(yamlfile, mooring, sn):
