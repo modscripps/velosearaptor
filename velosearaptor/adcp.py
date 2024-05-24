@@ -46,7 +46,7 @@ def plot_raw_adcp(adcp, figsize=(17, 20)):
         velax = []
         for i in range(4):
             velax.append(fig1.add_subplot(gs0[i + startrow + 1, 0:70]))
-        for axi, (g, b) in zip(velax, adcp[v].groupby("beam")):
+        for axi, (g, b) in zip(velax, adcp[v].groupby("beam", squeeze=False)):
             h = b.plot(
                 ax=axi,
                 add_colorbar=False,
@@ -73,7 +73,7 @@ def plot_raw_adcp(adcp, figsize=(17, 20)):
 
     def plot_time_mean_beam_quantity(startrow, v):
         meanax = fig1.add_subplot(gs0[startrow + 1 : startrow + 4, 80:90])
-        cors = [vb.mean(dim="time") for (g, vb) in adcp[v].groupby("beam")]
+        cors = [vb.mean(dim="time") for (g, vb) in adcp[v].groupby("beam", squeeze=False)]
         for b, ai in enumerate(cors):
             ai.plot(
                 ax=meanax,
@@ -143,7 +143,7 @@ def plot_raw_adcp_auxillary(adcp, figsize=(12, 5)):
 
     def plot_time_mean_beam_quantity(startcol, v):
         meanax = fig1.add_subplot(gs0[1:, startcol : startcol + 3])
-        cors = [vb.mean(dim="time") for (g, vb) in adcp[v].groupby("beam")]
+        cors = [vb.mean(dim="time") for (g, vb) in adcp[v].groupby("beam", squeeze=False)]
         for b, ai in enumerate(cors):
             ai.plot(
                 ax=meanax,
