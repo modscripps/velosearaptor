@@ -24,6 +24,7 @@
 - Fix conda/pip environment.
 - Read correct instrument orientation when a majority of the time series has been recorded outside the water ([PR44]( https://github.com/modscripps/velosearaptor/pull/44)).
 - Read paths provided via pathlib.PosixPath objects ([PR55]( https://github.com/modscripps/velosearaptor/pull/55)). By [Gunnar Voet](https://github.com/gunnarvoet/).
+- Fix xarray warning in `groupby` ([PR55]( https://github.com/modscripps/velosearaptor/pull/64)). By [Gunnar Voet](https://github.com/gunnarvoet/).
 
 #### Documentation
 - Consolidate readme and history files.
