@@ -76,5 +76,6 @@ def dominant_period_in_s(dt64):
         Dominant period in seconds.
     """
 
-    res = scipy.stats.mode(np.diff(dt64))
-    return timedelta64_to_s(res.mode)
+    diffs = np.diff(dt64)
+    values, counts = np.unique(diffs, return_counts=True)
+    return timedelta64_to_s(values[np.argmax(counts)])
