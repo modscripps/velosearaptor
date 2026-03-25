@@ -1161,7 +1161,7 @@ class ProcessADCP:
             # dgridparams=self.dgridparams,
             magdec=self.magdec,
             lon=self.lon,
-            lat=self.lon,
+            lat=self.lat,
         )
 
         self._ave2nc()
@@ -1269,7 +1269,7 @@ class ProcessADCP:
             dgridparams=self.dgridparams,
             magdec=self.magdec,
             lon=self.lon,
-            lat=self.lon,
+            lat=self.lat,
         )
 
         self._ave2nc()
@@ -1419,7 +1419,7 @@ class ProcessADCP:
             dgridparams=self.dgridparams,
             magdec=self.magdec,
             lon=self.lon,
-            lat=self.lon,
+            lat=self.lat,
         )
 
         self._ave2nc()
