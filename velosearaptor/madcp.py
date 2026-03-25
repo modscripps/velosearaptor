@@ -1222,16 +1222,16 @@ class ProcessADCP:
             logger.info(f"Averaging ensembles {indices[0]} to {indices[-1]}")
         nens = len(indices)
         ndgrid = len(self.dgrid)
-        uvwe = np.ma.zeros((nens, ndgrid, 4), dtype=np.float32)
-        uvwe_std = np.ma.zeros((nens, ndgrid, 4), dtype=np.float32)
+        uvwe = np.full((nens, ndgrid, 4), np.nan, dtype=np.float32)
+        uvwe_std = np.full((nens, ndgrid, 4), np.nan, dtype=np.float32)
 
         pg = np.zeros((nens, ndgrid), dtype=np.int8)
-        amp = np.ma.zeros((nens, ndgrid), dtype=np.float32)
+        amp = np.full((nens, ndgrid), np.nan, dtype=np.float32)
 
-        temperature = np.ma.zeros((nens,), dtype=np.float32)
-        pressure = np.ma.zeros((nens,), dtype=np.float32)
-        pressure_std = np.ma.zeros((nens,), dtype=np.float32)
-        pressure_max = np.ma.zeros((nens,), dtype=np.float32)
+        temperature = np.full((nens,), np.nan, dtype=np.float32)
+        pressure = np.full((nens,), np.nan, dtype=np.float32)
+        pressure_std = np.full((nens,), np.nan, dtype=np.float32)
+        pressure_max = np.full((nens,), np.nan, dtype=np.float32)
 
         npings = np.zeros((nens,), dtype=np.int16)
 
@@ -1242,35 +1242,30 @@ class ProcessADCP:
             if ens is not None:
                 self._edit(ens)  # modifies xyze
                 self._to_enu(ens)  # transform to earth coords (east, north, up)
-                self._regrid_enu(ens)
-                self._regrid_amp(ens)
+                self._regrid_enu_amp(ens)
 
                 nprofs = ens.enu_grid.shape[0]
             else:
                 nprofs = 0
             npings[i] = nprofs
             if nprofs < 2:
-                uvwe[i] = np.ma.masked
-                uvwe_std[i] = np.ma.masked
-                # (pg is not a masked array)
-                amp[i] = np.ma.masked
-                pressure[i] = np.ma.masked
-                pressure_std[i] = np.ma.masked
-                pressure_max[i] = np.ma.masked
-                temperature[i] = np.ma.masked
                 continue
 
-            uvwe[i] = ens.enu_grid.mean(axis=0)
-            uvwe_std[i] = ens.enu_grid.std(axis=0)
+            with np.errstate(all="ignore"):
+                uvwe[i] = np.nanmean(ens.enu_grid, axis=0)
+                uvwe_std[i] = np.nanstd(ens.enu_grid, axis=0)
+                amp[i] = np.nanmean(ens.amp_grid, axis=0)
 
-            pgi = 100 * ens.enu_grid[..., 0].count(axis=0) // nprofs
+            pgi = 100 * np.sum(~np.isnan(ens.enu_grid[..., 0]), axis=0) // nprofs
             pg[i] = pgi.astype(np.int8)
-            amp[i] = ens.amp_grid.mean(axis=0)
 
-            pressure[i] = ens.pressure.mean()
-            pressure_std[i] = ens.pressure.std()
-            pressure_max[i] = ens.pressure.max()
-            temperature[i] = ens.temperature.mean()
+            p = np.ma.filled(ens.pressure, np.nan)
+            t = np.ma.filled(ens.temperature, np.nan)
+            with np.errstate(all="ignore"):
+                pressure[i] = np.nanmean(p)
+                pressure_std[i] = np.nanstd(p)
+                pressure_max[i] = np.nanmax(p)
+                temperature[i] = np.nanmean(t)
 
         self.ave = Bunch(
             u=uvwe[..., 0],
