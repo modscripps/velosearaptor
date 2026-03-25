@@ -948,6 +948,33 @@ class ProcessADCP:
             )
         ens.amp_grid = amp_grid
 
+    def _regrid_enu_amp(self, ens, method="linear"):
+        """Depth-grid ENU velocities and amplitudes in a single pass.
+
+        Combines the work of _regrid_enu and _regrid_amp, calling interp1
+        once per ping on a concatenated (nbins, 5) array instead of twice
+        on separate arrays. Output arrays use NaN instead of masked values.
+        """
+        npings = ens.dday.size
+        ndgrid = self.dgrid.size
+        ncols_enu = ens.enu.shape[-1]
+
+        enu_grid = np.full((npings, ndgrid, ncols_enu), np.nan)
+        amp_grid = np.full((npings, ndgrid), np.nan)
+
+        depth = self._burst_average_depth(ens)
+
+        for i in range(npings):
+            amp_col = ens.amp[i].mean(axis=-1, keepdims=True)
+            combined = np.ma.concatenate([ens.enu[i], amp_col], axis=-1)
+            result = interp1(depth[i], combined, self.dgrid, axis=0, method=method)
+            result_filled = np.ma.filled(result, np.nan)
+            enu_grid[i] = result_filled[:, :ncols_enu]
+            amp_grid[i] = result_filled[:, ncols_enu]
+
+        ens.enu_grid = enu_grid
+        ens.amp_grid = amp_grid
+
     def _binmap_one_beam(self, ens, beam_number):
         """Binmap single ping data for a single beam by linear interpolation.
 
