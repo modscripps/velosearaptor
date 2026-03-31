@@ -46,7 +46,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import scipy as sp
 import xarray as xr
-from pycurrents.adcp.rdiraw import Multiread
+from pycurrents.adcp.rdiraw import FileBBWHOS, Multiread
 from pycurrents.adcp.transform import Transform, rdi_xyz_enu
 from pycurrents.codas import to_date, to_day
 from pycurrents.data import seawater
@@ -322,7 +322,12 @@ class ProcessADCP:
         Adds attribute `m`.
 
         """
-        self.m = Multiread(self.files, sonar="wh", ibad=self.ibad)
+        # Auto-detect sonar type from the first file so that non-Workhorse
+        # instruments (e.g. Sentinel V) are handled correctly.
+        probe = FileBBWHOS(self.files[0], sonar=None, trim=False)
+        sonar = str(probe.sonar)
+        probe.close()
+        self.m = Multiread(self.files, sonar=sonar, ibad=self.ibad)
         # Make some more meta data readily available by reading a single ping
         # from the raw data.
         ping = self.m.read(start=0, stop=1)
