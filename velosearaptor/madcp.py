@@ -257,6 +257,7 @@ class ProcessADCP:
         self._set_up_logger()
 
         self.parse_driftparams(driftparams)
+        self._ensure_monotonic_dday()
         self._parse_sysconfig()
         self.parse_dgridparams(dgridparams)
         self.parse_tgridparams(tgridparams)
@@ -664,6 +665,91 @@ class ProcessADCP:
         """
 
         return self.t0 + self.time_drift_rate * (dday_orig - self.t0)
+
+    def _ensure_monotonic_dday(self):
+        """Detect and fix non-monotonic time vectors.
+
+        Three cases:
+
+        - Isolated non-monotonic pings (short runs of <= ``_max_interp_pings``
+          consecutive backward steps): replaced by linear interpolation from
+          the nearest valid neighbors.  Array length is preserved so
+          ``self.m`` index alignment is maintained.
+        - Segment overlap (backward jump where all remaining pings stay below
+          the pre-jump maximum): the array is truncated at the jump.  Only
+          tail removal is performed so index alignment is maintained.
+        - Ambiguous (longer non-monotonic stretch that eventually recovers):
+          raises ``ValueError`` so the caller can inspect and decide.
+
+        Called automatically from ``__init__`` after ``parse_driftparams``
+        sets ``self.dday``.
+        """
+        _max_interp_pings = 3
+
+        diffs = np.diff(self.dday)
+        bad = np.where(diffs <= 0)[0]
+        if len(bad) == 0:
+            return
+
+        # Classify: does the data after the first jump overlap the prior segment?
+        first_jump = bad[0]
+        pre_jump_max = self.dday[first_jump]
+        after = self.dday[first_jump + 1 :]
+        n_overlap = 0
+        for val in after:
+            if val < pre_jump_max:
+                n_overlap += 1
+            else:
+                break
+
+        if n_overlap <= _max_interp_pings:
+            # --- Isolated bad pings: interpolate dday values ---
+            fix_idx = bad + 1
+            logger.warning(
+                "Non-monotonic time: interpolating %d isolated "
+                "non-monotonic ping(s) at indices %s.",
+                len(fix_idx),
+                fix_idx,
+            )
+            for idx in fix_idx:
+                if idx == 0:
+                    self.dday[idx] = self.dday[idx + 1] - np.median(
+                        diffs[diffs > 0]
+                    )
+                elif idx >= len(self.dday) - 1:
+                    self.dday[idx] = self.dday[idx - 1] + np.median(
+                        diffs[diffs > 0]
+                    )
+                else:
+                    self.dday[idx] = (
+                        self.dday[idx - 1] + self.dday[idx + 1]
+                    ) / 2
+
+        elif n_overlap >= len(after):
+            # --- Segment overlap: all remaining pings below pre-jump max ---
+            n_total = len(self.dday)
+            keep = slice(None, first_jump + 1)
+            logger.warning(
+                "Non-monotonic time: backward jump at ping %d with %d "
+                "overlapping pings. Truncating to first %d pings.",
+                first_jump,
+                n_total - first_jump - 1,
+                first_jump + 1,
+            )
+            self.dday = self.dday[keep]
+            self.tsdat.dday = self.tsdat.dday[keep]
+            self.tsdat.pressure = self.tsdat.pressure[keep]
+            self.tsdat.temperature = self.tsdat.temperature[keep]
+            self.tsdat.ens_num = self.tsdat.ens_num[keep]
+
+        else:
+            # --- Ambiguous: long non-monotonic stretch that recovers ---
+            raise ValueError(
+                f"Non-monotonic time: backward jump at ping {first_jump} "
+                f"with {n_overlap} non-monotonic pings that eventually "
+                f"recover. Cannot auto-fix — inspect the time vector "
+                f"and handle manually."
+            )
 
     def _parse_sysconfig(self):
         # We have to get the up/down reading from sysconfig for a time when the
