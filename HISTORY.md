@@ -32,6 +32,7 @@
 
 #### Internal Changes
 - Remove `gvpy` dependency ([PR27]( https://github.com/modscripps/velosearaptor/pull/27)).
+- Auto-detect sonar type instead of hardcoding Workhorse ([PR65] (https://github.com/modscripps/velosearaptor/pull/65)).
 
 
 
