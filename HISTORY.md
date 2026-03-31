@@ -37,7 +37,6 @@
 - Speed up bin-averaging ([PR67] ( https://github.com/modscripps/velosearaptor/pull/67 ).
 
 
-
 ### v0.2.0 (2022 March)
 This release brings a major refactoring of the `velosearaptor.madcp` module with lots of breaking changes. The module now allows for improved ensemble averages for burst sampling schemes with better control of the editing parameters.
 
