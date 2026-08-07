@@ -46,6 +46,8 @@ jobs:
   # actions/deploy-pages holds the elevated permissions.
   deploy:
     needs: build
+    # Only the canonical repo has a Pages site; forks build but don't deploy.
+    if: github.repository == 'modscripps/velosearaptor'
     runs-on: ubuntu-latest
     permissions:
       pages: write
