@@ -33,6 +33,7 @@
 #### Documentation
 - Consolidate readme and history files.
 - Add button with link to source code on GitHub ([PR43]( https://github.com/modscripps/velosearaptor/pull/43)).
+- Describe the `z` coordinate of the raw output in its attributes ([#52](https://github.com/modscripps/velosearaptor/issues/52)). `z` is the distance from the transducer to each bin, not water depth, and keeps its name for that reason; the processed dataset provides actual depth as `depth`.
 
 #### Internal Changes
 - Remove `gvpy` dependency ([PR27]( https://github.com/modscripps/velosearaptor/pull/27)).

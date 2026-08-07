@@ -108,6 +108,10 @@ def read_raw_rdi(file, auxillary_only=False):
     out.attrs["pingtype"] = radcp.pingtype
     out.attrs["cellsize"] = radcp.CellSize
 
+    # Document the vertical coordinate. `z` is the distance from the
+    # transducer, not water depth - see cf_conventions().
+    out.z.attrs = cf_conventions()["z"]
+
     return out
 
 
@@ -385,6 +389,21 @@ def cf_conventions():
             "units": "m",
             "positive": "down",
             "coverage_content_type": "coordinate",
+        },
+        # No standard_name here: CF has no standard name for the range from an
+        # ADCP transducer to a bin. Note this is a distance, not a depth, and
+        # therefore carries no `positive` attribute either.
+        "z": {
+            "long_name": "distance from transducer",
+            "units": "m",
+            "coverage_content_type": "coordinate",
+            "comment": (
+                "Distance from the transducer to the center of each bin, "
+                "not water depth. Bin depth depends on the depth of the "
+                "instrument and whether it looks up or down, and varies in "
+                "time with mooring knockdown. The processed dataset provides "
+                "actual water depth as `depth`."
+            ),
         },
         "u": {
             "long_name": "u",
