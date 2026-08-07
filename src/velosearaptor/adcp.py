@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 """Module velosearaptor.adcp with general adcp functions"""
 
 import matplotlib.dates as mdates
@@ -57,7 +56,12 @@ def plot_raw_adcp(adcp, figsize=(17, 20)):
                 0.1,
                 f"beam {g}",
                 transform=axi.transAxes,
-                bbox=dict(fc="w", ec="0.3", alpha=0.7, boxstyle="Round, pad=0.2"),
+                bbox={
+                    "fc": "w",
+                    "ec": "0.3",
+                    "alpha": 0.7,
+                    "boxstyle": "Round, pad=0.2",
+                },
             )
         plt.colorbar(h, cax=velcax, label=clabel)
         for axi in velax:
@@ -87,8 +91,8 @@ def plot_raw_adcp(adcp, figsize=(17, 20)):
         meanax.legend()
 
     velax = plot_beam_quantity(0, "vel", -1.5, 1.5, "RdBu_r", "velocity [m/s]")
-    corax = plot_beam_quantity(0 + 4, "cor", 0, 150, "viridis", "correlation")
-    ampax = plot_beam_quantity(0 + 8, "amp", 50, 200, "magma", "amplitude")
+    plot_beam_quantity(0 + 4, "cor", 0, 150, "viridis", "correlation")
+    plot_beam_quantity(0 + 8, "amp", 50, 200, "magma", "amplitude")
 
     plot_time_mean_beam_quantity(4, "cor")
     plot_time_mean_beam_quantity(8, "amp")

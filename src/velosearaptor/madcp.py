@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 """Module velosearaptor.madcp with functions for moored ADCPs.
 
 ### General Use
@@ -36,6 +35,7 @@ import pathlib
 from pathlib import Path
 from shutil import which
 from subprocess import PIPE, Popen  # for magdec
+from typing import ClassVar
 from warnings import warn
 
 import gsw
@@ -239,14 +239,15 @@ class ProcessADCP:
 
     """
 
-    # Default editing parameters.
-    _editparams = dict(
-        max_e=0.2,  # absolute max e
-        max_e_deviation=2,  # max in terms of sigma
-        min_correlation=64,  # 64 is RDI default
-        maskbins=None,  # do not mask any bins
-        pg_limit=50,  # percent good limit applied in `burst_average_ensembles`
-    )
+    # Default editing parameters. Copied into a Bunch by `parse_editparams`,
+    # so this is only ever read, never mutated.
+    _editparams: ClassVar[dict] = {
+        "max_e": 0.2,  # absolute max e
+        "max_e_deviation": 2,  # max in terms of sigma
+        "min_correlation": 64,  # 64 is RDI default
+        "maskbins": None,  # do not mask any bins
+        "pg_limit": 50,  # percent good limit applied in `burst_average_ensembles`
+    }
 
     def __init__(
         self,
@@ -396,21 +397,19 @@ class ProcessADCP:
             first_few_good_median = np.median(p_interpolated[~nan_mask][:20])
             last_few_good_median = np.median(p_interpolated[~nan_mask][-20:])
 
-        if np.isnan(p_interpolated[0]):
-            if first_few_good_median < 1:
-                i_divide = np.flatnonzero(np.diff(i_nan) - 1) + 1
-                if i_divide.size == 0:
-                    p_interpolated[nan_mask] = first_few_good_median
-                else:
-                    p_interpolated[0:i_divide] = first_few_good_median
+        if np.isnan(p_interpolated[0]) and first_few_good_median < 1:
+            i_divide = np.flatnonzero(np.diff(i_nan) - 1) + 1
+            if i_divide.size == 0:
+                p_interpolated[nan_mask] = first_few_good_median
+            else:
+                p_interpolated[0:i_divide] = first_few_good_median
 
-        if np.isnan(p_interpolated[-1]):
-            if last_few_good_median < 1:
-                i_divide = np.flatnonzero(np.diff(i_nan) - 1) + 1
-                if i_divide.size == 0:
-                    p_interpolated[nan_mask] = last_few_good_median
-                else:
-                    p_interpolated[i_divide:] = last_few_good_median
+        if np.isnan(p_interpolated[-1]) and last_few_good_median < 1:
+            i_divide = np.flatnonzero(np.diff(i_nan) - 1) + 1
+            if i_divide.size == 0:
+                p_interpolated[nan_mask] = last_few_good_median
+            else:
+                p_interpolated[i_divide:] = last_few_good_median
 
         # Now generate an interpolation function that will take dday as input
         # for later per-ensemble interpolation.
@@ -546,11 +545,11 @@ class ProcessADCP:
                     dtop -= d_interval
                 dbot = p_bot + distance_to_last_bin
 
-            self._default_dgridparams = dict(
-                dtop=dtop,
-                dbot=dbot,
-                d_interval=d_interval,
-            )
+            self._default_dgridparams = {
+                "dtop": dtop,
+                "dbot": dbot,
+                "d_interval": d_interval,
+            }
 
         return self._default_dgridparams
 
@@ -617,16 +616,20 @@ class ProcessADCP:
 
         # Generate a set of default time gridding parameters and then update
         # from the input parameters provided.
-        default_tgridparams = dict(dt_hours=0.5, t0=t0, t1=t1, burst_average=False)
+        default_tgridparams = {
+            "dt_hours": 0.5,
+            "t0": t0,
+            "t1": t1,
+            "burst_average": False,
+        }
         self.tgridparams = Bunch(default_tgridparams)
         if tgridparams is not None:
             # convert time to dday if provided as str
             for time in ["t0", "t1"]:
-                if time in tgridparams:
-                    if isinstance(tgridparams[time], str):
-                        t64 = np.datetime64(tgridparams[time])
-                        year, dday = io.datetime64_to_yday0(t64)
-                        tgridparams[time] = dday
+                if time in tgridparams and isinstance(tgridparams[time], str):
+                    t64 = np.datetime64(tgridparams[time])
+                    _, dday = io.datetime64_to_yday0(t64)
+                    tgridparams[time] = dday
             # update parameters in processing object
             self.tgridparams.update_values(tgridparams, strict=True)
         else:
@@ -660,7 +663,7 @@ class ProcessADCP:
         driftparams : dict
 
         """
-        driftparams = dict() if driftparams is None else driftparams
+        driftparams = {} if driftparams is None else driftparams
         self.driftparams = driftparams
         self.yearbase = self.m.yearbase
         t0 = self.tsdat.dday[0]
@@ -779,11 +782,12 @@ class ProcessADCP:
         # instrument was in the water. Look at pressure and determine ensembles
         # during time at depth.
         ii = np.flatnonzero(self.tsdat.pressure > 15)
+        if ii.size == 0:
+            raise ValueError(
+                "Could not determine ensemble index at depth for reading "
+                "sysconfig: no pressure record exceeds 15 dbar."
+            )
         depth_ii = (ii[0] + ii[-1]) // 2
-        try:
-            self.tsdat.pressure[depth_ii] > 15
-        except ValueError:
-            print("could not determine ensemble index at depth for reading sysconfig")
         at_depth = self.m.read(
             varlist=["VariableLeader"], start=depth_ii, stop=depth_ii + 1
         )
@@ -871,7 +875,7 @@ class ProcessADCP:
         """
 
         if iens > len(self.start_ddays) - 1:
-            raise ValueError("ens num %d is out of range" % iens)
+            raise ValueError(f"ens num {iens} is out of range")
 
         # Get indices within the interval
         sl = rangeslice(
@@ -1601,9 +1605,7 @@ class ProcessADCP:
         logger.addHandler(ConsoleOutputHandler)
 
         # current date
-        datestr = np.datetime64(datetime.datetime.now()).astype(datetime.datetime)
-        strformat = "%Y-%m-%d"
-        datestr = datestr.strftime(strformat)
+        datestr = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d")
 
         if has_mooring_id:
             logger.info(f"Processing {mooring} SN {sn} on {datestr}")
@@ -1657,13 +1659,15 @@ class ProcessADCP:
                     vars1d.append(ki)
                 elif len(tmp) == 2:
                     vars2d.append(ki)
-            except:
+            except AttributeError:
+                # Scalars have no .shape; treat them as integer-valued entries.
                 tmp = None
                 varsint.append(ki)
             # print(ki, tmp)
 
         # generate time vector
-        base = datetime.datetime(dat.yearbase, 1, 1, 0, 0, 0)
+        # Naive on purpose, see velosearaptor.io.yday0_to_datetime64.
+        base = datetime.datetime(dat.yearbase, 1, 1, 0, 0, 0)  # noqa: DTZ001
         time = [base + datetime.timedelta(days=ti) for ti in dat.dday]
         adcptime = [np.datetime64(ti, "ns") for ti in time]
         # generate Dataset
@@ -1739,7 +1743,7 @@ class ProcessADCP:
         """Plot beam statistics (correlation and amplitude) from raw ADCP data."""
         r = self.raw
 
-        fig, ax = plt.subplots(
+        _, ax = plt.subplots(
             nrows=1,
             ncols=2,
             figsize=(5, r.bin.max().data * 0.15),
@@ -1766,7 +1770,7 @@ class ProcessADCP:
 
     def plot_pressure(self):
         """Plot pressure time series and mark time at depth."""
-        fig, ax = plt.subplots(
+        _, ax = plt.subplots(
             nrows=1,
             ncols=1,
             figsize=(6, 2.5),
