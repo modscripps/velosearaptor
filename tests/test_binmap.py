@@ -15,7 +15,11 @@ def test_binmap(rootdir):
         "lon": 0,
         "lat": 0,
     }
-    ADCP = ProcessADCP(adcpfile, meta_data)
+    # Provide magdec explicitly so the test does not shell out to the magdec
+    # executable, which is an optional external dependency. The value does not
+    # matter here: it only rotates u/v, and the binmap/no-binmap comparison
+    # below uses the same declination on both sides.
+    ADCP = ProcessADCP(adcpfile, meta_data, magdec=0.0)
 
     # Make some fake data
     ntime, ndepth, nbeam = 1, 5, 4  # data points in each axis
