@@ -36,17 +36,20 @@ format-check: ## check code style using ruff format --diff
 	uv run ruff format --diff src/velosearaptor/
 	uv run ruff format --diff tests/
 
+LOGO := https://github.com/modscripps/velosearaptor/raw/main/logo/velosearaptor.png
+PDOC_OPTS := -d numpy -t .pdoc-theme-gv --math --logo $(LOGO)
+
 test: ## run tests quickly with the default Python
 	uv run pytest
 
 docs: ## generate documentation using pdoc
 	rm -rf docs
-	uv run pdoc -d numpy -o docs -t .pdoc-theme-gv --math src/velosearaptor/
+	uv run pdoc $(PDOC_OPTS) -o docs src/velosearaptor/
 	$(BROWSER) docs/index.html
 
 ghdocs: ## generate documentation for GitHub Pages
 	rm -rf docs
-	PDOC_ALLOW_EXEC=1 pdoc -d numpy -o docs -t .pdoc-theme-gv --math src/velosearaptor/
+	PDOC_ALLOW_EXEC=1 pdoc $(PDOC_OPTS) -o docs src/velosearaptor/
 
 servedocs: ## compile the docs & watch for changes
-	uv run pdoc -d numpy -t .pdoc-theme-gv --math src/velosearaptor/
+	uv run pdoc $(PDOC_OPTS) src/velosearaptor/
