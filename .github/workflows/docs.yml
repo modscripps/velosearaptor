@@ -23,12 +23,13 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # `.pdoc-theme-gv` is a submodule needed by the build.
           submodules: 'true'
       - name: Install uv
-        uses: astral-sh/setup-uv@v6
+        # Pinned to an exact release: setup-uv publishes no floating `v9` tag.
+        uses: astral-sh/setup-uv@v9.0.0
         with:
           enable-cache: true
       - name: Install dependencies
@@ -38,7 +39,7 @@ jobs:
         # ghdocs invokes pdoc directly, so run it inside the uv-managed venv.
         run: uv run make ghdocs
       - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v5
         with:
           path: docs/
 
@@ -58,4 +59,4 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
