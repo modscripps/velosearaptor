@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 """Module velosearaptor.tools with various helper tools."""
 
 import numpy as np

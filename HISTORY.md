@@ -27,6 +27,8 @@
 - Fix xarray warning in `groupby` ([PR55]( https://github.com/modscripps/velosearaptor/pull/64)). By [Gunnar Voet](https://github.com/gunnarvoet/).
 - Replace scipy.stats.mode with np.unique for dominant period calculation ([#66] ( https://github.com/modscripps/velosearaptor/pull/66)).
 - Fix non-monotonic ADCP time vectors by interpolating isolated bad pings, truncating segment overlaps, or raising on ambiguous cases ([PR70](https://github.com/modscripps/velosearaptor/pull/70)).
+- Raise a clear error in `ProcessADCP._parse_sysconfig` when no pressure record exceeds 15 dbar. The existing guard could never fire, so this case surfaced as a confusing `IndexError`.
+- Stamp the processing date in the log header in UTC rather than local time.
 
 #### Documentation
 - Consolidate readme and history files.
@@ -39,8 +41,8 @@
 - Move to a modern `pyproject.toml` / [uv](https://docs.astral.sh/uv/) setup with a `src/` layout ([#69](https://github.com/modscripps/velosearaptor/issues/69)). Removes `setup.py`, `setup.cfg`, `requirements.txt`, and `environment.yml`; tests move to a top-level `tests/` directory.
 - Install `pycurrents` from its git snapshot instead of the retired Mercurial repository, which fixes the documentation build ([#68](https://github.com/modscripps/velosearaptor/issues/68)).
 - Point the `magdec` install at the new geomag git repository and drop the conda requirement ([#71](https://github.com/modscripps/velosearaptor/issues/71)).
-- Replace isort/black/flake8 with [ruff](https://docs.astral.sh/ruff/).
-- Run the test suite in CI on pull requests.
+- Replace isort/black/flake8 with [ruff](https://docs.astral.sh/ruff/), and clean up the findings so `make check` passes. Linting, format checking, and the test suite now all run in CI on pull requests.
+- Remove `velosearaptor.yoyo`. Every method referenced the `gv` (gvpy) and `plt` names that were dropped when the gvpy dependency was removed in [PR27](https://github.com/modscripps/velosearaptor/pull/27), so the module raised `NameError` on any call.
 
 
 ### v0.2.0 (2022 March)

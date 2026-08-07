@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 """Module velosearaptor.io with in/out functions."""
 
 import datetime
@@ -30,11 +29,10 @@ def read_raw_rdi(file, auxillary_only=False):
     """
     # Multiread cannot deal with Path objects. Convert them to ascii.
     if type(file) == list:
-        if type(file) == list:
-            file = [
-                item.as_posix() if type(item) == pathlib.PosixPath else item
-                for item in file
-            ]
+        file = [
+            item.as_posix() if type(item) == pathlib.PosixPath else item
+            for item in file
+        ]
 
     if type(file) == pathlib.PosixPath:
         file = file.as_posix()
@@ -96,7 +94,7 @@ def read_raw_rdi(file, auxillary_only=False):
     out.coords["z"] = (["z"], radcp.dep)
 
     # bottom tracking
-    if "bt_vel" in radcp.keys():
+    if "bt_vel" in radcp:
         out["bt_vel"] = (["time", "beam"], radcp.bt_vel)
         out["bt_depth"] = (["time", "beam"], radcp.bt_depth)
     out.coords["beam"] = np.array([1, 2, 3, 4])
@@ -194,7 +192,10 @@ def yday0_to_datetime64(baseyear, yday):
     time : np.datetime64
         Time in numpy datetime64 format
     """
-    base = datetime.datetime(baseyear, 1, 1, 0, 0, 0)
+    # Naive on purpose: ADCP times are UTC by convention, and np.datetime64 has
+    # no timezone representation - passing an aware datetime only warns and
+    # drops the zone.
+    base = datetime.datetime(baseyear, 1, 1, 0, 0, 0)  # noqa: DTZ001
     if isinstance(yday, float):
         yday = [yday]
         single_value = True
@@ -295,7 +296,7 @@ def parse_yaml_input(yamlfile, mooring, sn):
     for ll in ["lon", "lat"]:
         meta_data[ll] = yp["mooring"][mooring][ll]
     meta_data["sn"] = sn
-    out = dict(meta_data=meta_data)
+    out = {"meta_data": meta_data}
 
     # global processing parameters
     pp = yp["processing_parameters"]
@@ -326,7 +327,7 @@ def parse_yaml_input(yamlfile, mooring, sn):
     for param in ["editparams", "tgridparams", "dgridparams"]:
         if param in d:
             if out[param] is None:
-                out[param] = dict()
+                out[param] = {}
             for k, v in d[param].items():
                 out[param][k] = v
     if "meta_data" in d:
@@ -377,102 +378,102 @@ def cf_conventions():
 
     """
 
-    CF = dict(
-        depth=dict(
-            long_name="depth",
-            standard_name="depth",
-            units="m",
-            positive="down",
-            coverage_content_type="coordinate",
-        ),
-        u=dict(
-            long_name="u",
-            standard_name="eastward_sea_water_velocity",
-            units="m s-1",
-            coverage_content_type="physicalMeasurement",
-            ancillary_variables="npings",
-        ),
-        v=dict(
-            long_name="v",
-            standard_name="northward_sea_water_velocity",
-            units="m s-1",
-            coverage_content_type="physicalMeasurement",
-            ancillary_variables="npings",
-        ),
-        w=dict(
-            long_name="w",
-            standard_name="upward_sea_water_velocity",
-            units="m s-1",
-            coverage_content_type="physicalMeasurement",
-            ancillary_variables="npings",
-        ),
-        e=dict(
-            long_name="error velocity",
-            standard_name="indicative_error_from_multibeam_acoustic_doppler_velocity_profiler_in_sea_water",
-            units="m s-1",
-            coverage_content_type="qualityInformation",
-            ancillary_variables="npings",
-        ),
-        u_error=dict(
-            long_name="u standard error",
-            standard_name="eastward_sea_water_velocity_standard_error",
-            units="m s-1",
-            coverage_content_type="qualityInformation",
-            ancillary_variables="npings",
-        ),
-        v_error=dict(
-            long_name="v standard error",
-            standard_name="northward_sea_water_velocity_standard_error",
-            units="m s-1",
-            coverage_content_type="qualityInformation",
-            ancillary_variables="npings",
-        ),
-        w_error=dict(
-            long_name="w standard error",
-            standard_name="upward_sea_water_velocity_standard_error",
-            units="m s-1",
-            coverage_content_type="qualityInformation",
-            ancillary_variables="npings",
-        ),
-        pressure=dict(
-            long_name="pressure",
-            standard_name="sea_water_pressure",
-            units="dbar",
-            coverage_content_type="physicalMeasurement",
-            ancillary_variables="npings",
-        ),
-        temperature=dict(
-            long_name="temperature",
-            standard_name="sea_water_temperature",
-            units="degrees_C",
-            coverage_content_type="physicalMeasurement",
-            ancillary_variables="npings",
-        ),
-        xducer_depth=dict(
-            long_name="transducer depth",
-            standard_name="depth",
-            units="m",
-            positive="down",
-            coverage_content_type="physicalMeasurement",
-            ancillary_variables="npings",
-        ),
-        npings=dict(
-            long_name="number of pings",
-            standard_name="number_of_observations",
-            coverage_content_type="auxiliaryInformation",
-        ),
-        pg=dict(
-            long_name="percent good",
-            standard_name="proportion_of_acceptable_signal_returns_from_acoustic_instrument_in_sea_water",
-            units="percent",
-            ancillary_variables="npings",
-            coverage_content_type="qualityInformation",
-        ),
-        amp=dict(
-            long_name="amplitude",
-            standard_name="signal_intensity_from_multibeam_acoustic_doppler_velocity_sensor_in_sea_water",
-            coverage_content_type="physicalMeasurement",
-            ancillary_variables="npings",
-        ),
-    )
+    CF = {
+        "depth": {
+            "long_name": "depth",
+            "standard_name": "depth",
+            "units": "m",
+            "positive": "down",
+            "coverage_content_type": "coordinate",
+        },
+        "u": {
+            "long_name": "u",
+            "standard_name": "eastward_sea_water_velocity",
+            "units": "m s-1",
+            "coverage_content_type": "physicalMeasurement",
+            "ancillary_variables": "npings",
+        },
+        "v": {
+            "long_name": "v",
+            "standard_name": "northward_sea_water_velocity",
+            "units": "m s-1",
+            "coverage_content_type": "physicalMeasurement",
+            "ancillary_variables": "npings",
+        },
+        "w": {
+            "long_name": "w",
+            "standard_name": "upward_sea_water_velocity",
+            "units": "m s-1",
+            "coverage_content_type": "physicalMeasurement",
+            "ancillary_variables": "npings",
+        },
+        "e": {
+            "long_name": "error velocity",
+            "standard_name": "indicative_error_from_multibeam_acoustic_doppler_velocity_profiler_in_sea_water",
+            "units": "m s-1",
+            "coverage_content_type": "qualityInformation",
+            "ancillary_variables": "npings",
+        },
+        "u_error": {
+            "long_name": "u standard error",
+            "standard_name": "eastward_sea_water_velocity_standard_error",
+            "units": "m s-1",
+            "coverage_content_type": "qualityInformation",
+            "ancillary_variables": "npings",
+        },
+        "v_error": {
+            "long_name": "v standard error",
+            "standard_name": "northward_sea_water_velocity_standard_error",
+            "units": "m s-1",
+            "coverage_content_type": "qualityInformation",
+            "ancillary_variables": "npings",
+        },
+        "w_error": {
+            "long_name": "w standard error",
+            "standard_name": "upward_sea_water_velocity_standard_error",
+            "units": "m s-1",
+            "coverage_content_type": "qualityInformation",
+            "ancillary_variables": "npings",
+        },
+        "pressure": {
+            "long_name": "pressure",
+            "standard_name": "sea_water_pressure",
+            "units": "dbar",
+            "coverage_content_type": "physicalMeasurement",
+            "ancillary_variables": "npings",
+        },
+        "temperature": {
+            "long_name": "temperature",
+            "standard_name": "sea_water_temperature",
+            "units": "degrees_C",
+            "coverage_content_type": "physicalMeasurement",
+            "ancillary_variables": "npings",
+        },
+        "xducer_depth": {
+            "long_name": "transducer depth",
+            "standard_name": "depth",
+            "units": "m",
+            "positive": "down",
+            "coverage_content_type": "physicalMeasurement",
+            "ancillary_variables": "npings",
+        },
+        "npings": {
+            "long_name": "number of pings",
+            "standard_name": "number_of_observations",
+            "coverage_content_type": "auxiliaryInformation",
+        },
+        "pg": {
+            "long_name": "percent good",
+            "standard_name": "proportion_of_acceptable_signal_returns_from_acoustic_instrument_in_sea_water",
+            "units": "percent",
+            "ancillary_variables": "npings",
+            "coverage_content_type": "qualityInformation",
+        },
+        "amp": {
+            "long_name": "amplitude",
+            "standard_name": "signal_intensity_from_multibeam_acoustic_doppler_velocity_sensor_in_sea_water",
+            "coverage_content_type": "physicalMeasurement",
+            "ancillary_variables": "npings",
+        },
+    }
     return CF
