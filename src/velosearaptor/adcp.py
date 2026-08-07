@@ -1,8 +1,5 @@
 #!/usr/bin/env python
-# -*- coding: utf-8 -*-
 """Module velosearaptor.adcp with general adcp functions"""
-
-import os
 
 import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
@@ -58,7 +55,7 @@ def plot_raw_adcp(adcp, figsize=(17, 20)):
             axi.text(
                 0.01,
                 0.1,
-                "beam {}".format(g),
+                f"beam {g}",
                 transform=axi.transAxes,
                 bbox=dict(fc="w", ec="0.3", alpha=0.7, boxstyle="Round, pad=0.2"),
             )
@@ -73,12 +70,14 @@ def plot_raw_adcp(adcp, figsize=(17, 20)):
 
     def plot_time_mean_beam_quantity(startrow, v):
         meanax = fig1.add_subplot(gs0[startrow + 1 : startrow + 4, 80:90])
-        cors = [vb.mean(dim="time") for (g, vb) in adcp[v].groupby("beam", squeeze=False)]
+        cors = [
+            vb.mean(dim="time") for (g, vb) in adcp[v].groupby("beam", squeeze=False)
+        ]
         for b, ai in enumerate(cors):
             ai.plot(
                 ax=meanax,
                 y="z",
-                label="beam{}".format(b + 1),
+                label=f"beam{b + 1}",
                 yincrease=False,
                 marker="o",
                 linestyle="",
@@ -143,12 +142,14 @@ def plot_raw_adcp_auxillary(adcp, figsize=(12, 5)):
 
     def plot_time_mean_beam_quantity(startcol, v):
         meanax = fig1.add_subplot(gs0[1:, startcol : startcol + 3])
-        cors = [vb.mean(dim="time") for (g, vb) in adcp[v].groupby("beam", squeeze=False)]
+        cors = [
+            vb.mean(dim="time") for (g, vb) in adcp[v].groupby("beam", squeeze=False)
+        ]
         for b, ai in enumerate(cors):
             ai.plot(
                 ax=meanax,
                 y="z",
-                label="beam{}".format(b + 1),
+                label=f"beam{b + 1}",
                 yincrease=False,
                 marker="o",
                 linestyle="",

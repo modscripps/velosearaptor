@@ -1,4 +1,4 @@
-.PHONY: test docs servedocs help
+.PHONY: check format format-check test docs ghdocs servedocs help
 .DEFAULT_GOAL := help
 
 define BROWSER_PYSCRIPT
@@ -21,34 +21,32 @@ for line in sys.stdin:
 endef
 export PRINT_HELP_PYSCRIPT
 
-BROWSER := python -c "$$BROWSER_PYSCRIPT"
+BROWSER := uv run python -c "$$BROWSER_PYSCRIPT"
 
 help:
-	@python -c "$$PRINT_HELP_PYSCRIPT" < $(MAKEFILE_LIST)
-    
-style: ## style code using isort & black, then check style using flake8
-	isort velosearaptor/*.py
-	isort velosearaptor/tests/*.py
-	black velosearaptor
-	flake8 velosearaptor 
+	@uv run python -c "$$PRINT_HELP_PYSCRIPT" < $(MAKEFILE_LIST)
 
-style-check: ## check code style using isort & black, then check style using flake8
-	isort -c velosearaptor/*.py
-	isort -c velosearaptor/tests/*.py
-	black --check velosearaptor
-	flake8 velosearaptor 
+check: ## check style
+	uv run ruff check src/velosearaptor/ tests/
+
+format: ## format code using ruff
+	uv run ruff format src/velosearaptor/ tests/
+
+format-check: ## check code style using ruff format --diff
+	uv run ruff format --diff src/velosearaptor/
+	uv run ruff format --diff tests/
 
 test: ## run tests quickly with the default Python
-	pytest -W ignore::DeprecationWarning
+	uv run pytest
 
 docs: ## generate documentation using pdoc
 	rm -rf docs
-	pdoc -d numpy --logo https://github.com/modscripps/velosearaptor/raw/main/logo/velosearaptor.png -o docs velosearaptor
+	uv run pdoc -d numpy -o docs -t .pdoc-theme-gv --math src/velosearaptor/
 	$(BROWSER) docs/index.html
 
+ghdocs: ## generate documentation for GitHub Pages
+	rm -rf docs
+	PDOC_ALLOW_EXEC=1 pdoc -d numpy -o docs -t .pdoc-theme-gv --math src/velosearaptor/
+
 servedocs: ## compile the docs & watch for changes
-	pdoc -d numpy \
-		--logo https://github.com/modscripps/velosearaptor/raw/main/logo/velosearaptor.png \
-		-e velosearaptor=https://github.com/modscripps/velosearaptor/blob/main/velosearaptor/ \
-		velosearaptor 
-	# $(BROWSER) http://localhost:8080
+	uv run pdoc -d numpy -t .pdoc-theme-gv --math src/velosearaptor/

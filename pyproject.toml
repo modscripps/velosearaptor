@@ -1,0 +1,71 @@
+[build-system]
+requires = ["uv_build>=0.8.22,<0.10.0"]
+build-backend = "uv_build"
+
+[project]
+name = "velosearaptor"
+version = "0.3.0"
+authors = [
+    {name = "Gunnar Voet", email = "gvoet@ucsd.edu"},
+]
+description = "Python functions for interfacing with RDI ADCP data, based on pycurrents"
+readme = "README.md"
+license = "GPL-3.0-or-later"
+license-files = ["LICENSE"]
+keywords = ["physical oceanography", "adcp"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Natural Language :: English",
+    "Programming Language :: Python :: 3",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Oceanography",
+]
+requires-python = ">=3.12"
+dependencies = [
+    "numpy",
+    "scipy",
+    "xarray",
+    "matplotlib",
+    "pandas",
+    "netcdf4",
+    "gsw",
+    "pyyaml",
+    "tqdm",
+    "pycurrents",
+]
+
+[project.urls]
+Documentation = "https://modscripps.github.io/velosearaptor/velosearaptor.html"
+Repository = "https://github.com/modscripps/velosearaptor.git"
+Issues = "https://github.com/modscripps/velosearaptor/issues"
+Changelog = "https://github.com/modscripps/velosearaptor/blob/main/HISTORY.md"
+
+[tool.uv.sources]
+# pycurrents is not on PyPI. Resolve from the GitHub snapshot of the UH
+# Mercurial repo. For local work against a sibling checkout, overlay it into
+# the venv instead of editing this file:
+#   uv pip install -e ../pycurrents --no-deps
+pycurrents = { git = "https://github.com/gunnarvoet/pycurrents", branch = "main" }
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+    "ruff>=0.15.4",
+    "pdoc>=16.0.0",
+]
+
+[tool.pytest.ini_options]
+minversion = "6.0"
+testpaths = ["tests"]
+xfail_strict = true
+filterwarnings = [
+    "ignore:numpy.ndarray size changed:RuntimeWarning",
+]
+log_cli_level = "info"
+
+[tool.ruff]
+src = ["src"]
+line-length = 88
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]

@@ -1,0 +1,59 @@
+name: docs
+
+# Build the documentation whenever there are new commits on main and publish it
+# to GitHub Pages.
+on:
+  push:
+    branches:
+      - main
+  # Allow manual runs from the Actions tab.
+  workflow_dispatch:
+
+# Security: restrict permissions for CI jobs.
+permissions:
+  contents: read
+
+# Avoid overlapping deploys; let an in-progress run finish.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  # Build the documentation and upload the static HTML files as an artifact.
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # `.pdoc-theme-gv` is a submodule needed by the build.
+          submodules: 'true'
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - name: Install dependencies
+        # Resolves pycurrents from uv.lock (git), so no Mercurial is needed.
+        run: uv sync --frozen
+      - name: Build docs
+        # ghdocs invokes pdoc directly, so run it inside the uv-managed venv.
+        run: uv run make ghdocs
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs/
+
+  # Deploy the artifact to GitHub Pages. Separate job so that only
+  # actions/deploy-pages holds the elevated permissions.
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+      actions: read
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

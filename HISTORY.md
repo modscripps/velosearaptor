@@ -1,6 +1,6 @@
 ## History
 
-### v0.?? (unreleased)
+### v0.3.0 (2026 August)
 
 #### New Features
 - Install `magdec` via shell script.
@@ -36,6 +36,11 @@
 - Remove `gvpy` dependency ([PR27]( https://github.com/modscripps/velosearaptor/pull/27)).
 - Auto-detect sonar type instead of hardcoding Workhorse ([PR65] (https://github.com/modscripps/velosearaptor/pull/65)).
 - Speed up bin-averaging ([PR67] ( https://github.com/modscripps/velosearaptor/pull/67 ).
+- Move to a modern `pyproject.toml` / [uv](https://docs.astral.sh/uv/) setup with a `src/` layout ([#69](https://github.com/modscripps/velosearaptor/issues/69)). Removes `setup.py`, `setup.cfg`, `requirements.txt`, and `environment.yml`; tests move to a top-level `tests/` directory.
+- Install `pycurrents` from its git snapshot instead of the retired Mercurial repository, which fixes the documentation build ([#68](https://github.com/modscripps/velosearaptor/issues/68)).
+- Point the `magdec` install at the new geomag git repository and drop the conda requirement ([#71](https://github.com/modscripps/velosearaptor/issues/71)).
+- Replace isort/black/flake8 with [ruff](https://docs.astral.sh/ruff/).
+- Run the test suite in CI on pull requests.
 
 
 ### v0.2.0 (2022 March)

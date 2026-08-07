@@ -1,9 +1,8 @@
 #!/usr/bin/env python
-# -*- coding: utf-8 -*-
 """Module velosearaptor.yoyo with (so far undeveloped) code for LADCP yoyos and towyos."""
 
 
-class LADCPYoYoSplit(object):
+class LADCPYoYoSplit:
     """
     Split raw ADCP files from yoyo or towyo time series.
 
@@ -176,9 +175,7 @@ class LADCPYoYoSplit(object):
                     .replace("T", "_")
                     .replace(":", "")
                 )
-                filename = "{}_{}_cast{:03g}_yo{:03g}_{}_{}_{}.rdi".format(
-                    experiment, cruise, cast, ni, dnup, tbeg, tend
-                )
+                filename = f"{experiment}_{cruise}_cast{cast:03g}_yo{ni:03g}_{dnup}_{tbeg}_{tend}.rdi"
                 outfile = os.path.join(outdir, filename)
-                rawfile = "tmp{}.rdi".format(dnup)
+                rawfile = f"tmp{dnup}.rdi"
                 extract_raw(rawfile, "wh", i0, i1, outfile=outfile, verbose=False)

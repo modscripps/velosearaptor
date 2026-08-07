@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# -*- coding: utf-8 -*-
 """Module velosearaptor.io with in/out functions."""
 
 import datetime
@@ -7,8 +6,8 @@ import pathlib
 from pathlib import Path
 
 import numpy as np
-import xarray as xr
 import pandas as pd
+import xarray as xr
 import yaml
 from pycurrents.adcp.rdiraw import Multiread, extract_raw
 
@@ -232,9 +231,9 @@ def datetime64_to_yday0(time64):
     baseyears = pt.year.to_numpy()
     baseyear = baseyears[0]
     # year day
-    base64 = np.datetime64(f'{baseyear}-01-01 00:00:00')
+    base64 = np.datetime64(f"{baseyear}-01-01 00:00:00")
     delta64 = time64 - base64
-    delta64ns = delta64.astype('timedelta64[ns]')
+    delta64ns = delta64.astype("timedelta64[ns]")
     delta = delta64ns.astype(float)
     yday = delta / 1e9 / 3600 / 24
     # convert back to single value if needed

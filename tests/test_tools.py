@@ -1,6 +1,6 @@
 """Test tools."""
+
 import numpy as np
-import pytest
 
 import velosearaptor as vr
 
