@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# -*- coding: utf-8 -*-
 """Module velosearaptor.madcp with functions for moored ADCPs.
 
 ### General Use
@@ -33,7 +32,6 @@ Long Ranger ADCPs Commands and Output Data Format*:
 
 import datetime
 import logging
-import os
 import pathlib
 from pathlib import Path
 from shutil import which
@@ -61,6 +59,39 @@ from . import io, tools
 logger = logging.getLogger(__name__)
 
 
+def _find_magdec():
+    """Locate the magdec executable.
+
+    Looks on the system path first, then inside the package directory, then
+    for a `geomag/magdec` built by `install_magdec.sh` in any directory above
+    the package (the repository root of a source checkout).
+
+    Returns
+    -------
+    str or None
+        Path to the magdec executable, or None if it cannot be found.
+    """
+    magdec_path = which("magdec")
+    if magdec_path is not None:
+        return magdec_path
+
+    package_dir = Path(__file__).resolve().parent
+
+    candidate = package_dir / "magdec"
+    if candidate.is_file():
+        return str(candidate)
+
+    # Walk up from the package directory looking for geomag/magdec. This finds
+    # the repository root regardless of how deeply the package is nested, so it
+    # keeps working across layout changes (e.g. the move to src/).
+    for parent in package_dir.parents:
+        candidate = parent / "geomag" / "magdec"
+        if candidate.is_file():
+            return str(candidate)
+
+    return None
+
+
 class ProcessADCP:
     """Moored ADCP Processing.
 
@@ -71,7 +102,7 @@ class ProcessADCP:
 
     Magnetic declination is automatically calculated via a call to the command
     line tool
-    [magdec](https://currents.soest.hawaii.edu/hgstage/geomag/file/tip) that
+    [magdec](https://currents.soest.hawaii.edu/git/Oceanography_Tools/geomag) that
     must be installed. Once calculated, the magnetic declination is stored in
     `magdec` and automatically applied to the data.
 
@@ -291,7 +322,7 @@ class ProcessADCP:
 
         def list_dir(dir, min_file_size):
             # List all raw files.
-            all_raw_files = list(sorted(dir.glob("*.00*")))
+            all_raw_files = sorted(dir.glob("*.00*"))
             # only files larger than about 10kB
             files = [
                 file.as_posix()
@@ -424,8 +455,7 @@ class ProcessADCP:
         # Make cutoff period either 30 minutes or 50 data points,
         # whatever is shorter.
         cutoff = 50 * (1 / fs)
-        if cutoff > 1800:
-            cutoff = 1800
+        cutoff = min(cutoff, 1800)
         pressure = self.tsdat.pressure * self._pressure_scale_factor
         return tools.lowpassfilter(pressure, 1 / cutoff, fs)
 
@@ -504,8 +534,7 @@ class ProcessADCP:
                 # Set minimum grid depth level. Anything shallower than 10m
                 # will be garbage anyways so let's throw this out.
                 dtop = p_top - distance_to_last_bin
-                if dtop < 10:
-                    dtop = 10
+                dtop = max(dtop, 10)
                 dbot = pdep_median - distance_to_first_bin
                 # Successively add bins until we reach maximum pressure. This
                 # will take care of mooring knockdowns.
@@ -713,17 +742,11 @@ class ProcessADCP:
             )
             for idx in fix_idx:
                 if idx == 0:
-                    self.dday[idx] = self.dday[idx + 1] - np.median(
-                        diffs[diffs > 0]
-                    )
+                    self.dday[idx] = self.dday[idx + 1] - np.median(diffs[diffs > 0])
                 elif idx >= len(self.dday) - 1:
-                    self.dday[idx] = self.dday[idx - 1] + np.median(
-                        diffs[diffs > 0]
-                    )
+                    self.dday[idx] = self.dday[idx - 1] + np.median(diffs[diffs > 0])
                 else:
-                    self.dday[idx] = (
-                        self.dday[idx - 1] + self.dday[idx + 1]
-                    ) / 2
+                    self.dday[idx] = (self.dday[idx - 1] + self.dday[idx + 1]) / 2
 
         elif n_overlap >= len(after):
             # --- Segment overlap: all remaining pings below pre-jump max ---
@@ -863,10 +886,7 @@ class ProcessADCP:
         if self._pressure_provided is not None:
             # Replace pressure if provided
             dat.pressure = self._external_pressure_to_dat(dat)
-        elif self.is_burst_average:
-            # Use raw pressure
-            dat.pressure = self._scale_pycurrents_pressure(dat)
-        elif self._use_raw_pressure:
+        elif self.is_burst_average or self._use_raw_pressure:
             # Use raw pressure
             dat.pressure = self._scale_pycurrents_pressure(dat)
         else:
@@ -886,7 +906,7 @@ class ProcessADCP:
         """Magnetic declination.
 
         If not provided as input argument magdec is calculated using
-        [magdec](https://currents.soest.hawaii.edu/hgstage/geomag/file/tip)
+        [magdec](https://currents.soest.hawaii.edu/git/Oceanography_Tools/geomag)
         (must be installed) based on `lon` and `lat`.
 
         """
@@ -897,27 +917,9 @@ class ProcessADCP:
                 )
                 self._magdec = 0
             else:
-                # Look for magdec executable
-                magdec_found = True
-                magdec_path = which("magdec")
+                magdec_path = _find_magdec()
 
                 if magdec_path is None:
-                    magdec_found = False
-                    package_dir = os.path.dirname(__file__)
-
-                if not magdec_found:
-                    # Try this package directory
-                    magdec_path = os.path.join(package_dir, "magdec")
-                    magdec_found = os.path.isfile(magdec_path)
-
-                if not magdec_found:
-                    # Try the magdec installation directory
-                    magdec_path = os.path.abspath(
-                        os.path.join(package_dir, "../geomag/magdec")
-                    )
-                    magdec_found = os.path.isfile(magdec_path)
-
-                if not magdec_found:
                     raise FileNotFoundError(
                         "Cannot find program magdec on the system path or paths within velosearaptor."
                     )

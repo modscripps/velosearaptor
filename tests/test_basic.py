@@ -1,9 +1,6 @@
 import pathlib
 
-import xarray as xr
-from pycurrents.adcp.rdiraw import Multiread, extract_raw
-
-import velosearaptor
+from pycurrents.adcp.rdiraw import Multiread
 
 
 def test_success():

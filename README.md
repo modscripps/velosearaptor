@@ -1,35 +1,58 @@
 velosearaptor
 =============
 
-Library of python modules for reading and processing raw RDI Teledyne ADCP data. The code interfaces the UH package [pycurrents](https://currents.soest.hawaii.edu/hgstage/pycurrents) and its `Multiread` for efficient reading of raw ADCP data.
+Library of python modules for reading and processing raw RDI Teledyne ADCP data. The code interfaces the UH package [pycurrents](https://currents.soest.hawaii.edu/git/uh-currents-group/shipboard-adcp/pycurrents) and its `Multiread` for efficient reading of raw ADCP data.
 
 `velosearaptor.io` provides convenience functions for reading raw data either into an `xarray.Dataset` or into the output structure format provided by the UH software package.
 
 `velosearaptor.adcp` is a collection of functions that are useful to quickly analyze raw ADCP data.
 
-`velosearaptor.madcp` contains functions for processing moored ADCP data. Many thanks to Eric Fiering for sharing his code on moored ADCP data processing [mcm_avp.py](https://currents.soest.hawaii.edu/hgstage/pycurrents/file/tip/pycurrents/adcp/mcm_avg.py) that much of this is based on.
+`velosearaptor.madcp` contains functions for processing moored ADCP data. Many thanks to Eric Fiering for sharing his code on moored ADCP data processing [mcm_avg.py](https://currents.soest.hawaii.edu/git/uh-currents-group/shipboard-adcp/pycurrents/-/blob/main/pycurrents/adcp/mcm_avg.py) that much of this is based on.
 
 ## Installation
 
-### Installing pycurrents
+The project is managed with [uv](https://docs.astral.sh/uv/):
 
-This package depends on the [pycurrents](https://currents.soest.hawaii.edu/hgstage/pycurrents) package. Installation instructions can either be found [here](https://currents.soest.hawaii.edu/ocn_data_analysis/installation.html), or a conda environment including all necessary dependencies can be installed via `conda env create -f environment.yml`. Take a look at `environment.yml` and `requirements.txt` and copy the relevant parts if you would like to incude the package and its dependencies in other environments.
+```bash
+git clone https://github.com/modscripps/velosearaptor.git
+cd velosearaptor
+uv sync
+```
 
+This creates a virtual environment in `.venv/` with `velosearaptor` installed in
+editable mode. Run things inside it with `uv run`, e.g. `uv run pytest`, or see
+`make help` for the available development tasks.
+
+### pycurrents
+
+`velosearaptor` depends on [pycurrents](https://github.com/gunnarvoet/pycurrents),
+which is not on PyPI. `uv sync` installs it automatically from that GitHub
+snapshot of the [UH repository](https://currents.soest.hawaii.edu/git/uh-currents-group/shipboard-adcp/pycurrents).
+Since pycurrents builds a number of Cython/C extensions, **a C compiler is
+required** (on macOS run `xcode-select --install`).
+
+To develop against a local pycurrents checkout, overlay it into the environment
+rather than editing `pyproject.toml`:
+
+```bash
+uv pip install -e ../pycurrents --no-deps
+```
 
 ### Installing magdec
 
-Note that this method only works with the editable pip install of `velosearaptor` (e.g. `pip install -e .`) since it compiles `magdec` locally and does not do a system install. See note at bottom for system install.
+`magdec` computes magnetic declination and is optional; it is only needed when
+`lon`/`lat` are provided and no declination is passed in explicitly.
 
-**Requirements**:
--  A C compiler, e.g. in OSX with [homebrew](https://brew.sh/) use `brew install gcc`
-- [`conda` package manager](https://docs.conda.io/projects/conda/en/latest/user-guide/install/index.html)
-- The velosearaptor environment installed via conda, e.g. `conda env create -f environment.yml`
+**Requirements**: a C compiler and `make`.
 
-With the requirements satisfied, run the shell script:
 ```bash
 ./install_magdec.sh
 ```
 
-To remove, delete the `geomag/` directory.
+This clones and builds [geomag](https://currents.soest.hawaii.edu/git/Oceanography_Tools/geomag)
+into `geomag/` at the repository root, where `velosearaptor` finds it at
+runtime. Because this is a local build rather than a system install, it only
+works from a source checkout. To remove, delete the `geomag/` directory.
 
-For a system install you need to `cd geomag` and do something like `sudo make install`.
+For a system-wide install, `cd geomag` and do something like `sudo make
+install`; `magdec` is then picked up from your `PATH` instead.

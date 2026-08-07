@@ -1,9 +1,13 @@
 *.pyc
+__pycache__/
 .DS_Store
-velosearaptor.egg-info
+*.egg-info
 build/
 dist/
 .cache
+.pytest_cache/
+.ruff_cache/
+.venv/
 **.ipynb_checkpoints
 .vscode
 html
@@ -11,8 +15,7 @@ docs
 notebooks/dev
 log/
 notebooks/log/
-velosearaptor/tests/log/
-velosearaptor/tests/data/log/
-src
-velosearaptor/tests/data/rawfiles.cache
+tests/log/
+tests/data/log/
+tests/data/rawfiles.cache
 geomag

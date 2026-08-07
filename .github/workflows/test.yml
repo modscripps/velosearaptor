@@ -1,0 +1,25 @@
+name: test
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - name: Install dependencies
+        # Builds pycurrents' Cython extensions from git on the first run; the
+        # result is cached by setup-uv until uv.lock changes.
+        run: uv sync --frozen
+      - name: Run tests
+        run: uv run pytest
+        env:
+          MPLBACKEND: Agg
