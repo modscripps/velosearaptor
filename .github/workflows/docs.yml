@@ -28,7 +28,8 @@ jobs:
           # `.pdoc-theme-gv` is a submodule needed by the build.
           submodules: 'true'
       - name: Install uv
-        uses: astral-sh/setup-uv@v9
+        # Pinned to an exact release: setup-uv publishes no floating `v9` tag.
+        uses: astral-sh/setup-uv@v9.0.0
         with:
           enable-cache: true
       - name: Install dependencies
