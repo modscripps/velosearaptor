@@ -491,6 +491,17 @@ def cf_conventions():
                 "velocity standard errors."
             ),
         },
+        "max_e_applied": {
+            "long_name": "applied error velocity threshold",
+            "units": "m s-1",
+            "coverage_content_type": "qualityInformation",
+            "comment": (
+                "Error velocity threshold applied to this averaging "
+                "interval: the minimum of the absolute threshold max_e and "
+                "max_e_deviation times the standard deviation of error "
+                "velocity within the interval."
+            ),
+        },
         "pg": {
             "long_name": "percent good",
             "standard_name": "proportion_of_acceptable_signal_returns_from_acoustic_instrument_in_sea_water",

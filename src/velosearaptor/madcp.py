@@ -968,7 +968,10 @@ class ProcessADCP:
         ens.xyze[cond] = np.ma.masked
         e = ens.xyze[:, :, 3]
         max_e = min(ep.max_e, e.std() * ep.max_e_deviation)
-        ens.max_e_applied = max_e
+        # Store as plain float (NaN if the threshold could not be computed,
+        # e.g. for a fully masked ensemble) so it can be propagated to the
+        # output dataset.
+        ens.max_e_applied = float(max_e) if np.isfinite(max_e) else np.nan
         cond = np.abs(e) > max_e
         ens.xyze[cond] = np.ma.masked
         if ep.maskbins is not None:
@@ -1223,6 +1226,7 @@ class ProcessADCP:
 
         temperature = self.tsdat.temperature[idx_start:idx_stop]
         pressure = self.tsdat.pressure[idx_start:idx_stop]
+        max_e_applied = np.full((npings,), np.nan, dtype=np.float32)
 
         dday = self.dday[idx_start:idx_stop]
 
@@ -1252,6 +1256,7 @@ class ProcessADCP:
                     self._calculate_xyze(ens, ibad=self.ibad)
 
                 self._edit(ens)  # modifies xyze
+                max_e_applied[idx0:idx1] = ens.max_e_applied
                 self._to_enu(ens)  # transform to earth coords (east, north, up)
 
             else:
@@ -1280,6 +1285,7 @@ class ProcessADCP:
             amp=amp,
             temperature=temperature,
             pressure=pressure,
+            max_e_applied=max_e_applied,
             # npings=npings,
             dday=dday,
             yearbase=self.yearbase,
@@ -1336,6 +1342,7 @@ class ProcessADCP:
         pressure_max = np.full((nens,), np.nan, dtype=np.float32)
 
         npings = np.zeros((nens,), dtype=np.int16)
+        max_e_applied = np.full((nens,), np.nan, dtype=np.float32)
 
         dday = self.dday_mid[start:stop]
 
@@ -1343,6 +1350,7 @@ class ProcessADCP:
             ens = self.read_ensemble(iens)
             if ens is not None:
                 self._edit(ens)  # modifies xyze
+                max_e_applied[i] = ens.max_e_applied
                 self._to_enu(ens)  # transform to earth coords (east, north, up)
                 self._regrid_enu_amp(ens)
 
@@ -1387,6 +1395,7 @@ class ProcessADCP:
             pressure_std=pressure_std,
             pressure_max=pressure_max,
             npings=npings,
+            max_e_applied=max_e_applied,
             dday=dday,
             yearbase=self.yearbase,
             dep=self.dgrid,
@@ -1447,6 +1456,7 @@ class ProcessADCP:
         pressure_max = np.ma.zeros((nens,), dtype=np.float32)
 
         npings = np.zeros((nens,), dtype=np.int16)
+        max_e_applied = np.full((nens,), np.nan, dtype=np.float32)
 
         dday = self.dday_mid[start:stop]
 
@@ -1454,6 +1464,7 @@ class ProcessADCP:
             ens = self.read_ensemble(iens)
             if ens is not None:
                 self._edit(ens)  # modifies xyze
+                max_e_applied[i] = ens.max_e_applied
                 self._to_enu(ens)  # transform to earth coords (east, north, up)
                 self._regrid_enu(ens)
                 self._regrid_amp(ens)
@@ -1545,6 +1556,7 @@ class ProcessADCP:
             pressure_std=pressure_std,
             pressure_max=pressure_max,
             npings=npings,
+            max_e_applied=max_e_applied,
             dday=dday,
             yearbase=self.yearbase,
             dep=self.dgrid,
@@ -1752,8 +1764,14 @@ class ProcessADCP:
         # Add some more info.
         self.ds.attrs["orientation"] = self.orientation
         self.ds.attrs["magdec"] = self.magdec
-        for att in ["max_e", "max_e_deviation", "min_correlation"]:
-            self.ds.attrs[att] = self.editparams[att]
+        for att in ["max_e", "max_e_deviation", "min_correlation", "pg_limit"]:
+            value = self.editparams[att]
+            # netcdf attributes cannot hold None.
+            self.ds.attrs[att] = "none" if value is None else value
+        maskbins = self.editparams["maskbins"]
+        self.ds.attrs["maskbins"] = (
+            "none" if maskbins is None else np.flatnonzero(maskbins)
+        )
 
         # Add meta data if provided.
         if self.meta_data is not None:
