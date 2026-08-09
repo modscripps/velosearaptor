@@ -1249,7 +1249,7 @@ class ProcessADCP:
                 if binmap:
                     self._binmap_all_beams(ens)
                     # Now we have to recalculate xyze with the binmapped data.
-                    self._calculate_xyze(ens)
+                    self._calculate_xyze(ens, ibad=self.ibad)
 
                 self._edit(ens)  # modifies xyze
                 self._to_enu(ens)  # transform to earth coords (east, north, up)
