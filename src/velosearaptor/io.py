@@ -481,6 +481,16 @@ def cf_conventions():
             "standard_name": "number_of_observations",
             "coverage_content_type": "auxiliaryInformation",
         },
+        "ngood": {
+            "long_name": "number of good pings",
+            "standard_name": "number_of_observations",
+            "coverage_content_type": "qualityInformation",
+            "comment": (
+                "Number of pings per depth bin that passed editing and "
+                "entered the time average. The basis for pg and for the "
+                "velocity standard errors."
+            ),
+        },
         "pg": {
             "long_name": "percent good",
             "standard_name": "proportion_of_acceptable_signal_returns_from_acoustic_instrument_in_sea_water",

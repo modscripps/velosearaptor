@@ -1327,6 +1327,7 @@ class ProcessADCP:
         uvwe_std = np.full((nens, ndgrid, 4), np.nan, dtype=np.float32)
 
         pg = np.zeros((nens, ndgrid), dtype=np.int8)
+        ngood = np.zeros((nens, ndgrid), dtype=np.int16)
         amp = np.full((nens, ndgrid), np.nan, dtype=np.float32)
 
         temperature = np.full((nens,), np.nan, dtype=np.float32)
@@ -1357,7 +1358,8 @@ class ProcessADCP:
                 uvwe_std[i] = np.nanstd(ens.enu_grid, axis=0)
                 amp[i] = np.nanmean(ens.amp_grid, axis=0)
 
-            pgi = 100 * np.sum(~np.isnan(ens.enu_grid[..., 0]), axis=0) // nprofs
+            ngood[i] = np.sum(~np.isnan(ens.enu_grid[..., 0]), axis=0)
+            pgi = 100 * ngood[i] // nprofs
             pg[i] = pgi.astype(np.int8)
 
             p = np.ma.filled(ens.pressure, np.nan)
@@ -1378,6 +1380,7 @@ class ProcessADCP:
             w_std=uvwe_std[..., 2],
             e_std=uvwe_std[..., 3],
             pg=pg,
+            ngood=ngood,
             amp=amp,
             temperature=temperature,
             pressure=pressure,
@@ -1435,6 +1438,7 @@ class ProcessADCP:
         uvwe_std = np.ma.zeros((nens, ndgrid, 4), dtype=np.float32)
 
         pg = np.zeros((nens, ndgrid), dtype=np.int8)
+        ngood = np.zeros((nens, ndgrid), dtype=np.int16)
         amp = np.ma.zeros((nens, ndgrid), dtype=np.float32)
 
         temperature = np.ma.zeros((nens,), dtype=np.float32)
@@ -1477,7 +1481,8 @@ class ProcessADCP:
             uvwe_inst = ens.enu.mean(axis=0)
             uvwe_std_inst = ens.enu.std(axis=0)
 
-            pgi_inst = 100 * ens.enu[..., 0].count(axis=0) // nprofs
+            ngood_inst = ens.enu[..., 0].count(axis=0)
+            pgi_inst = 100 * ngood_inst // nprofs
 
             if pg_condition is not None:
                 pgi_index = pgi_inst < pg_condition
@@ -1509,6 +1514,11 @@ class ProcessADCP:
             # seems like that's what we need to do here.
             pgi_grid = interp1(depth, pgi_inst, self.dgrid, axis=0, method="linear")
             pg[i] = pgi_grid.astype(np.int8)
+            ngood_grid = np.ma.filled(
+                interp1(depth, ngood_inst, self.dgrid, axis=0, method="linear"),
+                np.nan,
+            )
+            ngood[i] = np.nan_to_num(ngood_grid).astype(np.int16)
 
             # Not changed to averaging in instrument-relative coordinates first.
             amp[i] = ens.amp_grid.mean(axis=0)
@@ -1528,6 +1538,7 @@ class ProcessADCP:
             w_std=uvwe_std[..., 2],
             e_std=uvwe_std[..., 3],
             pg=pg,
+            ngood=ngood,
             amp=amp,
             temperature=temperature,
             pressure=pressure,
@@ -1698,11 +1709,18 @@ class ProcessADCP:
             if var in out:
                 out = out.drop(var)
 
-        # Change u/v/w std to standard error by dividing by sqrt(npings)
-        for var in ["u", "v", "w"]:
-            if f"{var}_std" in out:
-                out = out.rename({f"{var}_std": f"{var}_error"})
-                out[f"{var}_error"] = out[f"{var}_error"] / np.sqrt(out["npings"])
+        # Change u/v/w std to standard error. Scale by the number of pings
+        # that actually entered the mean in each bin; fall back to the total
+        # ping count if the per-bin count is not available.
+        if any(f"{var}_std" in out for var in ["u", "v", "w"]):
+            if "ngood" in out:
+                n_samples = out["ngood"].where(out["ngood"] > 0)
+            else:
+                n_samples = out["npings"]
+            for var in ["u", "v", "w"]:
+                if f"{var}_std" in out:
+                    out = out.rename({f"{var}_std": f"{var}_error"})
+                    out[f"{var}_error"] = out[f"{var}_error"] / np.sqrt(n_samples)
 
         # Calculate transducer depth from pressure
         out["xducer_depth"] = -gsw.z_from_p(out.pressure, self.lat)
