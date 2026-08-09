@@ -964,7 +964,10 @@ class ProcessADCP:
     def _edit(self, ens):
         """Apply editing to xyze."""
         ep = self.editparams
-        cond = (ens.cor < ep.min_correlation).any(axis=-1)
+        # Beams excluded via `ibad` do not enter the velocity solution, so
+        # their correlation must not reject cells either (issue #90).
+        cor = ens.cor if self.ibad is None else np.delete(ens.cor, self.ibad, axis=-1)
+        cond = (cor < ep.min_correlation).any(axis=-1)
         ens.xyze[cond] = np.ma.masked
         e = ens.xyze[:, :, 3]
         max_e = min(ep.max_e, e.std() * ep.max_e_deviation)
