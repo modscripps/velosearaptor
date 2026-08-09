@@ -1,6 +1,7 @@
 """A few examples"""
 
 import numpy as np
+import xarray as xr
 from pycurrents.system import Bunch
 
 from velosearaptor.madcp import ProcessADCP
@@ -125,6 +126,9 @@ def test_binmap(rootdir):
     ds_binmap = ADCP.ds.copy()
     ADCP.process_pings(binmap=False)
     ds_no_binmap = ADCP.ds.copy()
+    # Binmapping NaNs out-of-range cells, so the binmapped run can carry
+    # fewer velocity-bearing depth levels. Compare on the common levels.
+    ds_binmap, ds_no_binmap = xr.align(ds_binmap, ds_no_binmap, join="inner")
     uclose = np.isclose(ds_binmap.u, ds_no_binmap.u)
     assert np.sum(uclose) / uclose.size < close_frac
     vclose = np.isclose(ds_binmap.v, ds_no_binmap.v)

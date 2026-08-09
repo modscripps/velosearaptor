@@ -1712,8 +1712,13 @@ class ProcessADCP:
         # don't have any amplitude data (i.e. no data).
         out["pg"] = out.pg.where(~np.isnan(out.amp), other=np.nan)
 
-        # Drop depth levels with all nan
-        out = out.dropna(how="all", dim="depth")
+        # Drop depth levels that carry no velocity. Keying the drop on the
+        # whole Dataset would keep levels alive on the strength of amp alone:
+        # editing masks velocities only, so amp can be finite in levels with
+        # zero finite velocity samples, and such levels should not define the
+        # product's depth axis.
+        has_velocity = np.isfinite(out.u).any(dim="time")
+        out = out.isel(depth=has_velocity.values)
 
         # Drop pressure_std, pressure_max, and e_std
         dropvars = ["pressure_std", "pressure_max", "e_std"]
