@@ -1263,8 +1263,12 @@ class ProcessADCP:
 
             uvwe[idx0:idx1] = ens.enu
 
-            # pgi = 100 * ens.enu_grid[..., 0].count(axis=0) // nprofs
-            # pg[i] = pgi.astype(np.int8)
+            # Percent good is binary for single-ping data: 100 where the ping
+            # survived editing, 0 where it was edited out. Binmapped data can
+            # carry unmasked NaN, so test for that as well as for the mask.
+            u = ens.enu[..., 0]
+            good = np.isfinite(np.ma.filled(u, np.nan)) & ~np.ma.getmaskarray(u)
+            pg[idx0:idx1] = 100 * good.astype(np.int8)
             amp[idx0:idx1] = ens.amp.mean(axis=-1)  # Average over beams... why?
 
         self.ave = Bunch(
