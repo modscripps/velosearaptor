@@ -6,7 +6,6 @@ the total number of pings in the averaging interval.
 """
 
 import numpy as np
-import pytest
 from pycurrents.system import Bunch
 
 from velosearaptor.madcp import ProcessADCP
