@@ -92,6 +92,26 @@ def _find_magdec():
     return None
 
 
+def _masked_bins(maskbins):
+    """Bin indices `maskbins` masks, whichever form it was given in.
+
+    `maskbins` is documented as a boolean array indexing into the bins (see
+    `ProcessADCP.generate_binmask`), but `_edit` applies it as a plain numpy
+    index, so an integer list of bin numbers masks exactly the same bins and
+    is the natural thing to write in a parameter file. `np.flatnonzero` on
+    such a list silently returns *positions* rather than bin numbers, and
+    drops bin 0 because it is falsy. Dispatch on dtype instead.
+
+    Returns an empty array for `None`, so callers can treat "no bins" once.
+    """
+    if maskbins is None:
+        return np.array([], dtype=int)
+    mb = np.asarray(maskbins)
+    if mb.dtype == bool:
+        return np.flatnonzero(mb)
+    return mb.astype(int).ravel()
+
+
 class ProcessADCP:
     """Moored ADCP Processing.
 
@@ -1666,7 +1686,7 @@ class ProcessADCP:
 
         for k, v in pd.items():
             if k == "maskbins" and v is not None:
-                logstr = (k, ":", np.flatnonzero(v))
+                logstr = (k, ":", _masked_bins(v))
                 logger.info(logstr)
             else:
                 logstr = (k, ":", v)
@@ -1776,10 +1796,9 @@ class ProcessADCP:
             value = self.editparams[att]
             # netcdf attributes cannot hold None.
             self.ds.attrs[att] = "none" if value is None else value
-        maskbins = self.editparams["maskbins"]
-        self.ds.attrs["maskbins"] = (
-            "none" if maskbins is None else np.flatnonzero(maskbins)
-        )
+        masked = _masked_bins(self.editparams["maskbins"])
+        # netcdf attributes cannot hold an empty array either.
+        self.ds.attrs["maskbins"] = "none" if masked.size == 0 else masked
 
         # Add meta data if provided.
         if self.meta_data is not None:
