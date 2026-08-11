@@ -82,6 +82,13 @@ def test_average_ensembles_outputs_ngood(rootdir):
     valid = np.isfinite(pg) & (npings > 0)
     assert valid.sum() > 0
     assert np.all(ngood[valid] <= np.broadcast_to(npings, pg.shape)[valid])
-    # pg is defined as floor(100 * ngood / npings).
-    expected_pg = 100 * ngood[valid] // np.broadcast_to(npings, pg.shape)[valid]
-    assert np.array_equal(pg[valid].astype(np.int64), expected_pg.astype(np.int64))
+    # pg is defined as floor(100 * ngood / npings). Widen ngood before
+    # multiplying: at more than 327 good pings `100 * ngood` overflows int16,
+    # so an int16 expectation would reproduce issue #94 rather than catch it.
+    expected_pg = (
+        100 * ngood[valid].astype(np.int64) // np.broadcast_to(npings, pg.shape)[valid]
+    )
+    assert np.array_equal(pg[valid].astype(np.int64), expected_pg)
+    # And the result is a percentage, so it must be in range.
+    assert pg[valid].min() >= 0
+    assert pg[valid].max() <= 100

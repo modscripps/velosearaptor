@@ -1390,7 +1390,9 @@ class ProcessADCP:
                 amp[i] = np.nanmean(ens.amp_grid, axis=0)
 
             ngood[i] = np.sum(~np.isnan(ens.enu_grid[..., 0]), axis=0)
-            pgi = 100 * ngood[i] // nprofs
+            # Widen before multiplying: ngood is int16, and 100 * ngood wraps
+            # once ngood > 327, which turns the best bins negative (issue #94).
+            pgi = 100 * ngood[i].astype(np.int32) // nprofs
             pg[i] = pgi.astype(np.int8)
 
             p = np.ma.filled(ens.pressure, np.nan)
@@ -1515,6 +1517,11 @@ class ProcessADCP:
             uvwe_inst = ens.enu.mean(axis=0)
             uvwe_std_inst = ens.enu.std(axis=0)
 
+            # `count` returns a platform int, so `100 * ngood_inst` is wide
+            # enough not to wrap. Do not "tidy" this to int16: at more than 327
+            # good pings the product overflows and pg goes negative, which is
+            # what issue #94 was in `average_ensembles`. The int16 storage array
+            # above is only written after pg is computed, so it is safe.
             ngood_inst = ens.enu[..., 0].count(axis=0)
             pgi_inst = 100 * ngood_inst // nprofs
 
