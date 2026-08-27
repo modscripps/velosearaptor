@@ -64,3 +64,84 @@ def test_bad_ping_at_end():
     # Should use median of positive diffs (0.1) added to previous value (0.3)
     assert obj.dday[4] == pytest.approx(0.4)
     assert len(obj.dday) == 5
+
+
+# --- issue #98: the repair must actually achieve monotonicity ---------------
+
+# Cases that the classification either repairs into a strictly increasing time
+# vector or gives up on with a ValueError.  Reporting success while leaving the
+# record non-monotonic is the bug.
+_NON_MONOTONIC_CASES = {
+    "forward_spike": [0.0, 0.1, 0.9, 0.3, 0.4],
+    "isolated_jump_then_segment_overlap": [
+        0.0,
+        0.1,
+        0.05,
+        0.2,
+        0.3,
+        0.4,
+        0.1,
+        0.11,
+        0.12,
+        0.13,
+    ],
+    "duplicate_timestamps": [0.0, 0.1, 0.1, 0.1, 0.2, 0.3],
+}
+
+
+@pytest.mark.parametrize("name", sorted(_NON_MONOTONIC_CASES))
+def test_repair_is_monotonic_or_raises(name):
+    obj = _make_stub(_NON_MONOTONIC_CASES[name])
+    try:
+        obj._ensure_monotonic_dday()
+    except ValueError:
+        return
+    assert np.all(np.diff(obj.dday) > 0), f"{name} left dday non-monotonic"
+
+
+def test_forward_spike_repairs_the_spike_not_its_neighbor():
+    # 0.9 is a forward clock spike; 0.3 and 0.4 are correct.  The repair must
+    # move 0.9, not rewrite the perfectly good timestamps that follow it.
+    dday = [0.0, 0.1, 0.9, 0.3, 0.4]
+    obj = _make_stub(dday)
+    obj._ensure_monotonic_dday()
+    assert np.all(np.diff(obj.dday) > 0)
+    assert obj.dday[3] == pytest.approx(0.3)
+    assert obj.dday[4] == pytest.approx(0.4)
+    assert obj.dday[2] == pytest.approx(0.2)
+    assert len(obj.dday) == 5
+
+
+def test_isolated_jump_then_segment_overlap():
+    # Every backward jump must be classified on its own: an isolated bad ping
+    # at index 2 and a genuine segment overlap starting at index 6.
+    dday = [0.0, 0.1, 0.05, 0.2, 0.3, 0.4, 0.1, 0.11, 0.12, 0.13]
+    obj = _make_stub(dday)
+    obj._ensure_monotonic_dday()
+    assert np.all(np.diff(obj.dday) > 0)
+    np.testing.assert_allclose(obj.dday, [0.0, 0.1, 0.15, 0.2, 0.3, 0.4])
+    assert len(obj.tsdat.pressure) == 6
+
+
+def test_duplicate_timestamps():
+    # Equal timestamps reach the isolated branch through ``diffs <= 0`` and
+    # neighbor averaging cannot repair them.
+    dday = [0.0, 0.1, 0.1, 0.1, 0.2, 0.3]
+    obj = _make_stub(dday)
+    obj._ensure_monotonic_dday()
+    assert np.all(np.diff(obj.dday) > 0)
+    # First occurrence of the repeated stamp is kept, the copies are spread out
+    # towards the next larger stamp.
+    assert obj.dday[0] == pytest.approx(0.0)
+    assert obj.dday[1] == pytest.approx(0.1)
+    assert obj.dday[4] == pytest.approx(0.2)
+    assert obj.dday[5] == pytest.approx(0.3)
+    assert len(obj.dday) == 6
+
+
+def test_long_duplicate_run_raises():
+    # A stalled clock cannot be repaired without fabricating data.
+    dday = [0.0, 0.1, 0.1, 0.1, 0.1, 0.1, 0.2, 0.3]
+    obj = _make_stub(dday)
+    with pytest.raises(ValueError, match="Cannot auto-fix"):
+        obj._ensure_monotonic_dday()

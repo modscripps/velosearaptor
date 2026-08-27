@@ -721,80 +721,160 @@ class ProcessADCP:
     def _ensure_monotonic_dday(self):
         """Detect and fix non-monotonic time vectors.
 
-        Three cases:
+        Backward and repeated time steps are located and each one is classified
+        and repaired on its own, walking the record from start to end.  Four
+        cases:
 
-        - Isolated non-monotonic pings (short runs of <= ``_max_interp_pings``
-          consecutive backward steps): replaced by linear interpolation from
-          the nearest valid neighbors.  Array length is preserved so
-          ``self.m`` index alignment is maintained.
+        - Repeated timestamps (a short run of identical values): the first
+          occurrence is kept and the copies are spread linearly towards the
+          next larger timestamp.  Neighbor averaging cannot repair these, so
+          they are handled separately from backward steps.
+        - Isolated non-monotonic pings (a short run of <= ``_max_interp_pings``
+          pings below the pre-jump value): replaced by linear interpolation
+          from the nearest valid neighbors.  The outlier may be the ping
+          *before* the backward step rather than the ping after it — a forward
+          clock spike — in which case the spike is the ping that gets moved and
+          the good timestamps following it are left alone.  Array length is
+          preserved so ``self.m`` index alignment is maintained.
         - Segment overlap (backward jump where all remaining pings stay below
-          the pre-jump maximum): the array is truncated at the jump.  Only
-          tail removal is performed so index alignment is maintained.
-        - Ambiguous (longer non-monotonic stretch that eventually recovers):
-          raises ``ValueError`` so the caller can inspect and decide.
+          the pre-jump value): the array is truncated at the jump.  Only tail
+          removal is performed so index alignment is maintained.
+        - Ambiguous (longer non-monotonic stretch that eventually recovers, or
+          a long run of repeated timestamps): raises ``ValueError`` so the
+          caller can inspect and decide.
+
+        The result is verified to be strictly increasing before returning; if
+        the repair did not achieve that, ``ValueError`` is raised rather than
+        passing a partly fabricated, still non-monotonic time vector on to the
+        rest of the processing.
 
         Called automatically from ``__init__`` after ``parse_driftparams``
         sets ``self.dday``.
         """
         _max_interp_pings = 3
 
-        diffs = np.diff(self.dday)
-        bad = np.where(diffs <= 0)[0]
-        if len(bad) == 0:
+        dday = self.dday
+        n = dday.size
+        if n < 2 or np.all(np.diff(dday) > 0):
             return
 
-        # Classify: does the data after the first jump overlap the prior segment?
-        first_jump = bad[0]
-        pre_jump_max = self.dday[first_jump]
-        after = self.dday[first_jump + 1 :]
-        n_overlap = 0
-        for val in after:
-            if val < pre_jump_max:
-                n_overlap += 1
+        positive = np.diff(dday)
+        positive = positive[positive > 0]
+        if positive.size == 0:
+            raise ValueError(
+                "Non-monotonic time: the time vector contains no forward step "
+                "at all. Cannot auto-fix — inspect the time vector and handle "
+                "manually."
+            )
+        median_dt = np.median(positive)
+
+        def _fill_between(i0, i1, count):
+            """Spread `count` pings linearly between dday[i0] and dday[i1]."""
+            if i1 < n and dday[i1] > dday[i0]:
+                step = (dday[i1] - dday[i0]) / (count + 1)
             else:
-                break
+                step = median_dt
+            dday[i0 + 1 : i0 + 1 + count] = dday[i0] + step * np.arange(1, count + 1)
 
-        if n_overlap <= _max_interp_pings:
-            # --- Isolated bad pings: interpolate dday values ---
-            fix_idx = bad + 1
-            logger.warning(
-                "Non-monotonic time: interpolating %d isolated "
-                "non-monotonic ping(s) at indices %s.",
-                len(fix_idx),
-                fix_idx,
+        i = 1
+        truncate_at = None
+        while i < n:
+            if dday[i] > dday[i - 1]:
+                i += 1
+                continue
+
+            if dday[i] == dday[i - 1]:
+                # --- repeated timestamps ---
+                j = i
+                while j < n and dday[j] == dday[i - 1]:
+                    j += 1
+                ndup = j - i
+                if ndup > _max_interp_pings:
+                    raise ValueError(
+                        f"Non-monotonic time: {ndup + 1} pings share the "
+                        f"timestamp at ping {i - 1}. Cannot auto-fix — inspect "
+                        f"the time vector and handle manually."
+                    )
+                logger.warning(
+                    "Non-monotonic time: spreading %d repeated timestamp(s) "
+                    "at indices %s.",
+                    ndup,
+                    np.arange(i, j),
+                )
+                _fill_between(i - 1, j, ndup)
+                i = j
+                continue
+
+            # --- strictly backward step at i ---
+            k = i
+            while k < n and dday[k] < dday[i - 1]:
+                k += 1
+            n_overlap = k - i
+
+            # Which side of the jump is the outlier?  If dropping the single
+            # ping before the jump restores order — the pings after it are
+            # increasing and start above dday[i - 2] — then dday[i - 1] is a
+            # forward clock spike.  Choose whichever hypothesis moves fewer
+            # pings; on a tie the ping after the jump is the one repaired.
+            spike_before = (i == 1 or dday[i] > dday[i - 2]) and np.all(
+                np.diff(dday[i:k]) > 0
             )
-            for idx in fix_idx:
-                if idx == 0:
-                    self.dday[idx] = self.dday[idx + 1] - np.median(diffs[diffs > 0])
-                elif idx >= len(self.dday) - 1:
-                    self.dday[idx] = self.dday[idx - 1] + np.median(diffs[diffs > 0])
+
+            if spike_before and n_overlap > 1:
+                logger.warning(
+                    "Non-monotonic time: interpolating forward clock spike at "
+                    "index %d.",
+                    i - 1,
+                )
+                if i == 1:
+                    dday[0] = dday[1] - median_dt
                 else:
-                    self.dday[idx] = (self.dday[idx - 1] + self.dday[idx + 1]) / 2
+                    dday[i - 1] = (dday[i - 2] + dday[i]) / 2
+                i += 1
+            elif n_overlap <= _max_interp_pings:
+                logger.warning(
+                    "Non-monotonic time: interpolating %d isolated "
+                    "non-monotonic ping(s) at indices %s.",
+                    n_overlap,
+                    np.arange(i, k),
+                )
+                _fill_between(i - 1, k, n_overlap)
+                i = k
+            elif k >= n:
+                # --- segment overlap: all remaining pings below pre-jump max ---
+                logger.warning(
+                    "Non-monotonic time: backward jump at ping %d with %d "
+                    "overlapping pings. Truncating to first %d pings.",
+                    i - 1,
+                    n - i,
+                    i,
+                )
+                truncate_at = i
+                break
+            else:
+                # --- ambiguous: long non-monotonic stretch that recovers ---
+                raise ValueError(
+                    f"Non-monotonic time: backward jump at ping {i - 1} "
+                    f"with {n_overlap} non-monotonic pings that eventually "
+                    f"recover. Cannot auto-fix — inspect the time vector "
+                    f"and handle manually."
+                )
 
-        elif n_overlap >= len(after):
-            # --- Segment overlap: all remaining pings below pre-jump max ---
-            n_total = len(self.dday)
-            keep = slice(None, first_jump + 1)
-            logger.warning(
-                "Non-monotonic time: backward jump at ping %d with %d "
-                "overlapping pings. Truncating to first %d pings.",
-                first_jump,
-                n_total - first_jump - 1,
-                first_jump + 1,
-            )
+        if truncate_at is not None:
+            keep = slice(None, truncate_at)
             self.dday = self.dday[keep]
             self.tsdat.dday = self.tsdat.dday[keep]
             self.tsdat.pressure = self.tsdat.pressure[keep]
             self.tsdat.temperature = self.tsdat.temperature[keep]
             self.tsdat.ens_num = self.tsdat.ens_num[keep]
 
-        else:
-            # --- Ambiguous: long non-monotonic stretch that recovers ---
+        if not np.all(np.diff(self.dday) > 0):
+            still_bad = np.flatnonzero(np.diff(self.dday) <= 0)
             raise ValueError(
-                f"Non-monotonic time: backward jump at ping {first_jump} "
-                f"with {n_overlap} non-monotonic pings that eventually "
-                f"recover. Cannot auto-fix — inspect the time vector "
-                f"and handle manually."
+                f"Non-monotonic time: the repair did not produce a strictly "
+                f"increasing time vector; {still_bad.size} bad step(s) remain, "
+                f"first at ping {still_bad[0]}. Inspect the time vector and "
+                f"handle manually."
             )
 
     def _parse_sysconfig(self):
