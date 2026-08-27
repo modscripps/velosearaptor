@@ -401,8 +401,13 @@ def cf_conventions():
                 "Distance from the transducer to the center of each bin, "
                 "not water depth. Bin depth depends on the depth of the "
                 "instrument and whether it looks up or down, and varies in "
-                "time with mooring knockdown. The processed dataset provides "
-                "actual water depth as `depth`."
+                "time with mooring knockdown. The averaging methods "
+                "`average_ensembles` and `burst_average_ensembles` regrid "
+                "onto water depth and publish that as their vertical "
+                "coordinate. The single-ping product of `process_pings` "
+                "keeps this transducer-relative axis; there bin depth is "
+                "reconstructed per ping as `xducer_depth` plus `z` for a "
+                "downlooker and `xducer_depth` minus `z` for an uplooker."
             ),
         },
         "u": {
