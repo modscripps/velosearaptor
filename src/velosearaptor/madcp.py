@@ -1181,11 +1181,36 @@ class ProcessADCP:
 
         return veli, ampi, cori
 
+    @staticmethod
+    def _mask_binmapped(x):
+        """Mask cells a binmapped field carries no data for (issue #78).
+
+        `_binmap_one_beam` marks cells outside the mapped beam range with
+        NaN. `ens.vel` is a masked array, so assigning NaN into it writes
+        data without setting the mask; `ens.amp` and `ens.cor` are integer
+        typed, so their NaN does not survive the assignment at all and is
+        cast to whatever the platform makes of `uint8(nan)` (0 on x86).
+        Convert the invalid cells into masked cells here, so that the mask,
+        not a NaN or a cast artifact, is what travels into `xyze`.
+        """
+        bad = ~np.isfinite(np.ma.filled(x, np.nan))
+        return np.ma.masked_array(np.where(bad, 0, np.ma.filled(x, 0)), mask=bad)
+
     def _binmap_all_beams(self, ens):
         """Binmap single ping data for all beams."""
 
+        # `ens.amp` and `ens.cor` come off the instrument as plain integer
+        # arrays. Promote all three fields to masked arrays so that the
+        # cells binmapping cannot fill can be masked below instead of being
+        # written as NaN (issue #78).
+        ens.vel = np.ma.masked_array(ens.vel)
+        ens.amp = np.ma.masked_array(ens.amp)
+        ens.cor = np.ma.masked_array(ens.cor)
+
         for beam_number in [1, 2, 3, 4]:
-            veli, ampi, cori = self._binmap_one_beam(ens, beam_number)
+            veli, ampi, cori = (
+                self._mask_binmapped(x) for x in self._binmap_one_beam(ens, beam_number)
+            )
             ens.vel[..., beam_number - 1] = veli
             ens.amp[..., beam_number - 1] = ampi
             ens.cor[..., beam_number - 1] = cori
