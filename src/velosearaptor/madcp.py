@@ -408,28 +408,70 @@ class ProcessADCP:
         p_interpolated = self._pressure_provided.interp(time=time).data
 
         # Beginning and end may have NaN's if the ADCP was started before
-        # the external pressure sensor. Make sure this happens only when
-        # outside the water and then replace with atmospheric pressure.
-        if np.any(np.isnan(p_interpolated)):
-            nan_mask = np.isnan(p_interpolated)
-            i_nan = np.flatnonzero(nan_mask)
+        # the external pressure sensor. Patch a leading and/or a trailing NaN
+        # run with atmospheric pressure, but only if the instrument was on
+        # deck at the time. Any other NaN is an error: pressure sets the depth
+        # of every velocity sample, so a gap that cannot be filled with
+        # atmospheric pressure must fail loudly.
+        i_good = np.flatnonzero(~np.isnan(p_interpolated))
+        if i_good.size == 0:
+            raise ValueError(
+                "External pressure is NaN over the whole ADCP time range. "
+                "Check that the external pressure record overlaps the ADCP "
+                "record in time."
+            )
 
-            first_few_good_median = np.median(p_interpolated[~nan_mask][:20])
-            last_few_good_median = np.median(p_interpolated[~nan_mask][-20:])
+        if i_good.size < p_interpolated.size:
+            first_few_good_median = np.median(p_interpolated[i_good][:20])
+            last_few_good_median = np.median(p_interpolated[i_good][-20:])
 
-        if np.isnan(p_interpolated[0]) and first_few_good_median < 1:
-            i_divide = np.flatnonzero(np.diff(i_nan) - 1) + 1
-            if i_divide.size == 0:
-                p_interpolated[nan_mask] = first_few_good_median
-            else:
-                p_interpolated[0:i_divide] = first_few_good_median
+            # Lengths of the leading and the trailing NaN run (zero if the
+            # record does not start / end with a NaN).
+            n_leading = i_good[0]
+            n_trailing = p_interpolated.size - 1 - i_good[-1]
 
-        if np.isnan(p_interpolated[-1]) and last_few_good_median < 1:
-            i_divide = np.flatnonzero(np.diff(i_nan) - 1) + 1
-            if i_divide.size == 0:
-                p_interpolated[nan_mask] = last_few_good_median
-            else:
-                p_interpolated[i_divide:] = last_few_good_median
+            if n_leading > 0:
+                if first_few_good_median < 1:
+                    p_interpolated[:n_leading] = first_few_good_median
+                else:
+                    raise ValueError(
+                        f"External pressure is NaN for the first {n_leading} "
+                        "ping(s) of the ADCP record, but the first valid "
+                        f"pressure ({first_few_good_median:.2f} dbar) shows "
+                        "the instrument was not on deck (< 1 dbar). Such a "
+                        "gap cannot be filled with atmospheric pressure; "
+                        "provide external pressure covering the start of the "
+                        "ADCP record."
+                    )
+
+            if n_trailing > 0:
+                if last_few_good_median < 1:
+                    p_interpolated[p_interpolated.size - n_trailing :] = (
+                        last_few_good_median
+                    )
+                else:
+                    raise ValueError(
+                        f"External pressure is NaN for the last {n_trailing} "
+                        "ping(s) of the ADCP record, but the last valid "
+                        f"pressure ({last_few_good_median:.2f} dbar) shows "
+                        "the instrument was not on deck (< 1 dbar). Such a "
+                        "gap cannot be filled with atmospheric pressure; "
+                        "provide external pressure covering the end of the "
+                        "ADCP record."
+                    )
+
+            # Whatever NaN is left sits between good data.
+            i_nan = np.flatnonzero(np.isnan(p_interpolated))
+            if i_nan.size > 0:
+                n_gaps = np.flatnonzero(np.diff(i_nan) > 1).size + 1
+                raise ValueError(
+                    f"External pressure has {n_gaps} interior NaN gap(s) "
+                    f"covering {i_nan.size} ping(s) of the ADCP record "
+                    f"(first at ping index {i_nan[0]}, last at {i_nan[-1]}). "
+                    "Interior gaps cannot be filled with atmospheric "
+                    "pressure; interpolate or otherwise fill the external "
+                    "pressure record before passing it in."
+                )
 
         # Now generate an interpolation function that will take dday as input
         # for later per-ensemble interpolation.
@@ -470,11 +512,38 @@ class ProcessADCP:
 
     def _lowpassfilter_pressure(self):
         t64 = io.yday0_to_datetime64(self.tsdat.yearbase, self.tsdat.dday)
-        fs = 1 / tools.dominant_period_in_s(t64)
+        # `scipy.signal.filtfilt` has no notion of a time base; it treats every
+        # sample as 1/fs apart. Derive fs from the *mean* sampling interval over
+        # the record so the cutoff below is expressed in wall-clock time. Using
+        # the modal interval instead puts a burst-sampled record on a fictitious
+        # time base in which the 30 minute cap can never bind, and the filter
+        # then removes a large part of a genuine mooring knockdown.
+        dt = tools.timedelta64_to_s(np.diff(t64))
+        mean_dt = tools.timedelta64_to_s(t64[-1] - t64[0]) / (t64.size - 1)
+        # Same non-uniformity test as the burst detection in
+        # :meth:`make_start_ddays`: a gap longer than four times the median ping
+        # interval is a break between bursts.
+        median_dt = np.median(dt)
+        if np.any(dt > 4 * median_dt):
+            warn(
+                "Pressure record is not uniformly sampled (median ping interval "
+                f"{median_dt:.1f} s, mean {mean_dt:.1f} s, longest gap "
+                f"{dt.max():.1f} s). The low-pass filter treats all pings as "
+                f"{mean_dt:.1f} s apart, so structure within a burst is not "
+                "resolved. Pass use_raw_pressure=True to skip the filter.",
+                stacklevel=2,
+            )
+        fs = 1 / mean_dt
         # Make cutoff period either 30 minutes or 50 data points,
         # whatever is shorter.
-        cutoff = 50 * (1 / fs)
-        cutoff = min(cutoff, 1800)
+        cutoff = min(50 * mean_dt, 1800)
+        if cutoff <= 2 * mean_dt:
+            raise ValueError(
+                f"Mean ping interval is {mean_dt:.1f} s, so a {cutoff:.0f} s "
+                "cutoff period is at or below the Nyquist period of the record "
+                "and cannot be filtered. Pass use_raw_pressure=True, or supply "
+                "external pressure."
+            )
         pressure = self.tsdat.pressure * self._pressure_scale_factor
         return tools.lowpassfilter(pressure, 1 / cutoff, fs)
 
@@ -644,14 +713,42 @@ class ProcessADCP:
         }
         self.tgridparams = Bunch(default_tgridparams)
         if tgridparams is not None:
-            # convert time to dday if provided as str
+            # Convert time to dday if provided as str. The conversion must be
+            # relative to the yearbase of the raw data - reading the year off
+            # the requested time instead puts any window in a later calendar
+            # year a whole year off.
             for time in ["t0", "t1"]:
                 if time in tgridparams and isinstance(tgridparams[time], str):
                     t64 = np.datetime64(tgridparams[time])
-                    _, dday = io.datetime64_to_yday0(t64)
-                    tgridparams[time] = dday
+                    tgridparams[time] = (
+                        t64 - np.datetime64(f"{self.yearbase}-01-01")
+                    ) / np.timedelta64(1, "D")
             # update parameters in processing object
             self.tgridparams.update_values(tgridparams, strict=True)
+            data_t0, data_t1 = self.dday[0], self.dday[-1]
+            req_t0, req_t1 = self.tgridparams.t0, self.tgridparams.t1
+            # An empty or reversed window selects no data, and it passes the
+            # overlap test below, which compares each endpoint against the data
+            # range on its own.
+            empty = req_t0 >= req_t1
+            # A requested window that does not overlap the data at all yields
+            # an empty record - fail loudly instead.
+            no_overlap = req_t1 < data_t0 or req_t0 > data_t1
+            if empty or no_overlap:
+                times = io.yday0_to_datetime64(
+                    self.yearbase,
+                    [float(req_t0), float(req_t1), float(data_t0), float(data_t1)],
+                ).astype("datetime64[s]")
+                if empty:
+                    raise ValueError(
+                        f"Requested time range starts at {times[0]} and ends "
+                        f"at {times[1]}, so it selects no data. `t1` must lie "
+                        "after `t0`."
+                    )
+                raise ValueError(
+                    f"Requested time range {times[0]} to {times[1]} does not "
+                    f"overlap the data range {times[2]} to {times[3]}."
+                )
         else:
             logger.warning(
                 "No time gridding parameters provided, using default values."
@@ -964,10 +1061,23 @@ class ProcessADCP:
             # It seems safe to assume that the time between bursts is at least
             # four times as long as the time between individual pings within a
             # burst.
-            inter_burst_dt = np.median(dday_diff[dday_diff > burst_dt * 4])
-            print(f"time between bursts: {inter_burst_dt * 24 * 60:1.1f} min")
             # Find starting points of all bursts.
             start_indices = np.flatnonzero(dday_diff > burst_dt * 4)
+            if start_indices.size == 0:
+                # No gap anywhere is longer than four ping intervals, so there
+                # are no bursts to find. Without this guard the median below is
+                # taken over an empty selection and returns NaN, and the ping
+                # count per burst comes out as INT32_MIN, which then fails much
+                # later with an unrelated message (issue #101).
+                raise ValueError(
+                    "This data is not burst sampled: no gap between pings is "
+                    "longer than four times the median ping interval of "
+                    f"{burst_dt * 24 * 60 * 60:1.1f} s. Set "
+                    "tgridparams['burst_average'] to False and give a "
+                    "dt_hours averaging interval instead."
+                )
+            inter_burst_dt = np.median(dday_diff[dday_diff > burst_dt * 4])
+            print(f"time between bursts: {inter_burst_dt * 24 * 60:1.1f} min")
             # Increase index so we are at the end of the larger time differences.
             start_indices += 1
             # Include the very beginning.
@@ -1297,11 +1407,36 @@ class ProcessADCP:
 
         return veli, ampi, cori
 
+    @staticmethod
+    def _mask_binmapped(x):
+        """Mask cells a binmapped field carries no data for (issue #78).
+
+        `_binmap_one_beam` marks cells outside the mapped beam range with
+        NaN. `ens.vel` is a masked array, so assigning NaN into it writes
+        data without setting the mask; `ens.amp` and `ens.cor` are integer
+        typed, so their NaN does not survive the assignment at all and is
+        cast to whatever the platform makes of `uint8(nan)` (0 on x86).
+        Convert the invalid cells into masked cells here, so that the mask,
+        not a NaN or a cast artifact, is what travels into `xyze`.
+        """
+        bad = ~np.isfinite(np.ma.filled(x, np.nan))
+        return np.ma.masked_array(np.where(bad, 0, np.ma.filled(x, 0)), mask=bad)
+
     def _binmap_all_beams(self, ens):
         """Binmap single ping data for all beams."""
 
+        # `ens.amp` and `ens.cor` come off the instrument as plain integer
+        # arrays. Promote all three fields to masked arrays so that the
+        # cells binmapping cannot fill can be masked below instead of being
+        # written as NaN (issue #78).
+        ens.vel = np.ma.masked_array(ens.vel)
+        ens.amp = np.ma.masked_array(ens.amp)
+        ens.cor = np.ma.masked_array(ens.cor)
+
         for beam_number in [1, 2, 3, 4]:
-            veli, ampi, cori = self._binmap_one_beam(ens, beam_number)
+            veli, ampi, cori = (
+                self._mask_binmapped(x) for x in self._binmap_one_beam(ens, beam_number)
+            )
             ens.vel[..., beam_number - 1] = veli
             ens.amp[..., beam_number - 1] = ampi
             ens.cor[..., beam_number - 1] = cori
@@ -1331,20 +1466,64 @@ class ProcessADCP:
         Parameters
         ----------
         start : int, optional
-            Start processing at this ping number.
+            Index of the first ping to process. This is a **ping index** into
+            the raw ping sequence, not a time and not an averaging interval.
+            Defaults to None, i.e. the first ping at or after `tgridparams.t0`.
         stop : int, optional
-            Stop processing at this ping number.
+            Index of the ping to stop before, again a **ping index**; the ping
+            at `stop` is not processed, so `stop - start` pings are returned.
+            Defaults to None, i.e. the first ping after `tgridparams.t1`.
         binmap : bool, optional
             Do binmapping of along-beam data.
         ens_size : int, optional
             Pings are processed in ensembles to reduce memory usage.
             This parameter sets how many pings are in an ensemble. The default is 50000.
 
+        Notes
+        -----
+        `start` and `stop` here do **not** mean what they mean in
+        :meth:`average_ensembles` and :meth:`burst_average_ensembles`. Those
+        index into the averaging intervals set up by :meth:`make_start_ddays`;
+        this method does no averaging and has no intervals, so its `start` and
+        `stop` can only index individual pings.
+
         """
+        # Validate the explicit indices. Unchecked they fail far from here:
+        # `start` past the record gives an empty `ens_idxs`, and `start > stop`
+        # a negative `npings` that dies inside `np.ma.zeros`. That is the same
+        # class of problem as the `UnboundLocalError` fixed below (issue #101).
+        npings_total = self.dday.size
+        for name, value in (("start", start), ("stop", stop)):
+            if value is None:
+                continue
+            if value < 0:
+                raise ValueError(
+                    f"{name}={value} is negative. Ping indices are not wrapped "
+                    "Python-style here; give an index between 0 and "
+                    f"{npings_total}."
+                )
+            if value > npings_total:
+                raise ValueError(
+                    f"{name}={value} is past the end of the record, which has "
+                    f"{npings_total} pings. Give an index between 0 and "
+                    f"{npings_total}."
+                )
+
         if start is None:
             idx_start = np.searchsorted(self.dday, self.dday_start)
+        else:
+            idx_start = start
         if stop is None:
             idx_stop = np.searchsorted(self.dday, self.dday_end)
+        else:
+            idx_stop = stop
+
+        if idx_start >= idx_stop:
+            raise ValueError(
+                f"start={idx_start} and stop={idx_stop} select no pings. "
+                "`stop` is exclusive, so it must lie after `start`. Ping "
+                "indices count forward from the start of the record."
+            )
 
         ens_idxs = np.hstack((np.arange(idx_start, idx_stop, ens_size), idx_stop))
         write_idxs = ens_idxs - ens_idxs[0]  # Arrays we write to start at index 0
@@ -1437,6 +1616,7 @@ class ProcessADCP:
             lat=self.lat,
         )
 
+        self._processing_method = "process_pings"
         self._ave2nc()
         self._add_meta_data_to_ds()
         self._log_processing_params()
@@ -1472,7 +1652,7 @@ class ProcessADCP:
         uvwe_std = np.full((nens, ndgrid, 4), np.nan, dtype=np.float32)
 
         pg = np.zeros((nens, ndgrid), dtype=np.int8)
-        ngood = np.zeros((nens, ndgrid), dtype=np.int16)
+        ngood = np.zeros((nens, ndgrid), dtype=np.int32)
         amp = np.full((nens, ndgrid), np.nan, dtype=np.float32)
 
         temperature = np.full((nens,), np.nan, dtype=np.float32)
@@ -1480,7 +1660,7 @@ class ProcessADCP:
         pressure_std = np.full((nens,), np.nan, dtype=np.float32)
         pressure_max = np.full((nens,), np.nan, dtype=np.float32)
 
-        npings = np.zeros((nens,), dtype=np.int16)
+        npings = np.zeros((nens,), dtype=np.int32)
         max_e_applied = np.full((nens,), np.nan, dtype=np.float32)
 
         dday = self.dday_mid[start:stop]
@@ -1506,9 +1686,12 @@ class ProcessADCP:
                 amp[i] = np.nanmean(ens.amp_grid, axis=0)
 
             ngood[i] = np.sum(~np.isnan(ens.enu_grid[..., 0]), axis=0)
-            # Widen before multiplying: ngood is int16, and 100 * ngood wraps
-            # once ngood > 327, which turns the best bins negative (issue #94).
-            pgi = 100 * ngood[i].astype(np.int32) // nprofs
+            # Widen before multiplying: ngood is int32 storage, and
+            # 100 * ngood wraps once ngood > 21474836, which would turn the
+            # best bins negative (issue #94). ngood itself is int32 rather than
+            # int16 so that averaging intervals longer than 32767 pings neither
+            # raise nor wrap (issue #101).
+            pgi = 100 * ngood[i].astype(np.int64) // nprofs
             pg[i] = pgi.astype(np.int8)
 
             p = np.ma.filled(ens.pressure, np.nan)
@@ -1548,9 +1731,55 @@ class ProcessADCP:
             lat=self.lat,
         )
 
+        self._processing_method = "average_ensembles"
         self._ave2nc()
         self._add_meta_data_to_ds()
         self._log_processing_params()
+
+    @staticmethod
+    def _interpolation_neighbors(zi, nbins):
+        """Bin indices used to interpolate over bin `zi`.
+
+        Two bins on either side where they exist, clipped to the profile.
+        Without the clipping, `zi < 2` indexes negative bins (which wrap to the
+        far end of the profile and break the monotonicity `interp1` requires)
+        and `zi > nbins - 3` runs off the end (issue #101).
+
+        The clipping costs no accuracy. The interpolation is piecewise linear,
+        so only the two bins bracketing `zi` enter the result and the outer
+        pair never contributes; a clipped window such as `[0, 2, 3]` for
+        `zi = 1` gives bitwise what the full window would.
+
+        Parameters
+        ----------
+        zi : int
+            Index of the bin to interpolate over.
+        nbins : int
+            Number of bins in the profile.
+
+        Returns
+        -------
+        list of int
+            Neighbouring bin indices, at least one on either side of `zi`.
+
+        """
+        if not 0 <= zi < nbins:
+            raise ValueError(
+                f"interpolate_bin={zi} is not a bin of this profile; it must "
+                f"be between 0 and {nbins - 1}."
+            )
+        neighbors = [i for i in (zi - 2, zi - 1, zi + 1, zi + 2) if 0 <= i < nbins]
+        if min(neighbors) > zi or max(neighbors) < zi:
+            # The first and last bin have a neighbour on one side only, so the
+            # target lies outside any window we could build. `interp1` masks an
+            # out-of-range target rather than extrapolating to it, so clipping
+            # here would leave the bin masked and do nothing at all. Refuse,
+            # rather than silently ignore the request.
+            raise ValueError(
+                f"interpolate_bin={zi} has no neighbouring bin on both sides; "
+                f"it must be between 1 and {nbins - 2} for this profile."
+            )
+        return neighbors
 
     def burst_average_ensembles(self, start=None, stop=None, interpolate_bin=None):
         """Time-averaging prior to depth-gridding.
@@ -1571,7 +1800,12 @@ class ProcessADCP:
             Range start for averaging. Index into start times of averaging
             intervals. Defaults to None (start at beginning).
         interpolate_bin : int or None, optional
-            Interpolate over a single, previously masked, bin. Defaults to None (no interpolation).
+            Interpolate over a single, previously masked, bin. Index into the
+            instrument-relative bins, so it must be between 1 and `nbins - 2`;
+            the first and last bin have no neighbour on one side and raise.
+            The interpolated bin keeps its own `pg` and `ngood`, which is zero
+            for a masked bin, so the interpolation stays visible in the output.
+            Defaults to None (no interpolation).
 
         """
         pg_condition = self.editparams.pg_limit
@@ -1588,7 +1822,7 @@ class ProcessADCP:
         uvwe_std = np.ma.zeros((nens, ndgrid, 4), dtype=np.float32)
 
         pg = np.zeros((nens, ndgrid), dtype=np.int8)
-        ngood = np.zeros((nens, ndgrid), dtype=np.int16)
+        ngood = np.zeros((nens, ndgrid), dtype=np.int32)
         amp = np.ma.zeros((nens, ndgrid), dtype=np.float32)
 
         temperature = np.ma.zeros((nens,), dtype=np.float32)
@@ -1596,7 +1830,7 @@ class ProcessADCP:
         pressure_std = np.ma.zeros((nens,), dtype=np.float32)
         pressure_max = np.ma.zeros((nens,), dtype=np.float32)
 
-        npings = np.zeros((nens,), dtype=np.int16)
+        npings = np.zeros((nens,), dtype=np.int32)
         max_e_applied = np.full((nens,), np.nan, dtype=np.float32)
 
         dday = self.dday_mid[start:stop]
@@ -1634,10 +1868,10 @@ class ProcessADCP:
             uvwe_std_inst = ens.enu.std(axis=0)
 
             # `count` returns a platform int, so `100 * ngood_inst` is wide
-            # enough not to wrap. Do not "tidy" this to int16: at more than 327
-            # good pings the product overflows and pg goes negative, which is
-            # what issue #94 was in `average_ensembles`. The int16 storage array
-            # above is only written after pg is computed, so it is safe.
+            # enough not to wrap. Do not "tidy" this to a narrow integer: at
+            # more than 327 good pings an int16 product overflows and pg goes
+            # negative, which is what issue #94 was in `average_ensembles`. The
+            # int32 storage array above is only written after pg is computed.
             ngood_inst = ens.enu[..., 0].count(axis=0)
             pgi_inst = 100 * ngood_inst // nprofs
 
@@ -1648,7 +1882,10 @@ class ProcessADCP:
 
             if interpolate_bin is not None:
                 zi = interpolate_bin
-                neighbors = [zi - 2, zi - 1, zi + 1, zi + 2]
+                # Note that pg and ngood are deliberately left alone for the
+                # interpolated bin, so the interpolation stays visible in the
+                # product and cannot be mistaken for measured data.
+                neighbors = self._interpolation_neighbors(zi, depth.size)
                 dtmp = depth[neighbors]
                 tmp = interp1(
                     dtmp,
@@ -1675,7 +1912,7 @@ class ProcessADCP:
                 interp1(depth, ngood_inst, self.dgrid, axis=0, method="linear"),
                 np.nan,
             )
-            ngood[i] = np.nan_to_num(ngood_grid).astype(np.int16)
+            ngood[i] = np.nan_to_num(ngood_grid).astype(np.int32)
 
             # Not changed to averaging in instrument-relative coordinates first.
             amp[i] = ens.amp_grid.mean(axis=0)
@@ -1714,6 +1951,7 @@ class ProcessADCP:
             lat=self.lat,
         )
 
+        self._processing_method = "burst_average_ensembles"
         self._ave2nc()
         self._add_meta_data_to_ds()
         self._log_processing_params()
@@ -1887,6 +2125,17 @@ class ProcessADCP:
 
         # Calculate transducer depth from pressure
         out["xducer_depth"] = -gsw.z_from_p(out.pressure, self.lat)
+
+        # `process_pings` does not regrid, so its vertical axis is the
+        # distance from the transducer to the center of each bin, not water
+        # depth, and it runs upwards for an uplooker. Publish it as `z`, the
+        # name the raw dataset already uses for the same quantity, so that
+        # `depth` always means water depth. Bin depth stays recoverable per
+        # ping as xducer_depth +/- z. `_add_names_and_units` runs after the
+        # rename and therefore attaches the `z` attributes, not the `depth`
+        # ones.
+        if getattr(self, "_processing_method", None) == "process_pings":
+            out = out.rename({"depth": "z"})
 
         # add variable names and units for plotting
         out = self._add_names_and_units(out)
