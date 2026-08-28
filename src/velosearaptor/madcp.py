@@ -851,7 +851,11 @@ class ProcessADCP:
           from the nearest valid neighbors.  The outlier may be the ping
           *before* the backward step rather than the ping after it — a forward
           clock spike — in which case the spike is the ping that gets moved and
-          the good timestamps following it are left alone.  Array length is
+          the good timestamps following it are left alone.  Whichever
+          hypothesis moves fewer pings is the one applied.  The two are equally
+          costly when exactly one ping sits below the jump, and that tie is
+          resolved in favour of repairing the ping *after* the jump, which is
+          what the pre-existing single-bad-ping behaviour did.  Array length is
           preserved so ``self.m`` index alignment is maintained.
         - Segment overlap (backward jump where all remaining pings stay below
           the pre-jump value): the array is truncated at the jump.  Only tail
