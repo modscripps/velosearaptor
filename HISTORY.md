@@ -19,6 +19,7 @@
 - Change processed dataset coordinate `z` to `depth` ([PR48]( https://github.com/modscripps/velosearaptor/pull/48)).
 - Change `vel_std` variables in output dataset to `vel_error` by dividing the standard deviation of each average by the square root of the number of pings ([PR26]( https://github.com/modscripps/velosearaptor/pull/26)).
 - Low-pass filter (inherently noisy) pressure before ensemble-averaging continuous ping data ([PR61]( https://github.com/modscripps/velosearaptor/pull/61)). By [Gunnar Voet](https://github.com/gunnarvoet/).
+- Rename the vertical coordinate of `velosearaptor.madcp.ProcessADCP.process_pings` output from `depth` to `z`. Any script indexing `ds.depth` on that path breaks, and the values it was reading were never water depth. For an uplooker the axis also runs the opposite way, so previously published per-ping files are inverted relative to water depth as well as offset from it: on `tests/data/binmap_16670013.000` (mean `xducer_depth` 154.5 m) `depth = 5.15` was 149 m of water depth and `depth = 161.15` was above the sea surface. Reprocess, or flip and offset by hand ([PR103](https://github.com/modscripps/velosearaptor/pull/103)).
 
 #### Bug Fixes
 - Fix conda/pip environment.
@@ -29,11 +30,12 @@
 - Fix non-monotonic ADCP time vectors by interpolating isolated bad pings, truncating segment overlaps, or raising on ambiguous cases ([PR70](https://github.com/modscripps/velosearaptor/pull/70)).
 - Raise a clear error in `ProcessADCP._parse_sysconfig` when no pressure record exceeds 15 dbar. The existing guard could never fire, so this case surfaced as a confusing `IndexError`.
 - Stamp the processing date in the log header in UTC rather than local time.
+- `velosearaptor.madcp.ProcessADCP.process_pings` now publishes its vertical axis as `z`, the distance from the transducer to the center of each bin, carrying the `z` attributes from `velosearaptor.io.cf_conventions`. The axis was never water depth on that path. The two averaging methods do grid onto water depth and keep publishing `depth`. Bin depth is recoverable per ping as `xducer_depth` plus `z` for a downlooker and `xducer_depth` minus `z` for an uplooker ([PR103](https://github.com/modscripps/velosearaptor/pull/103)).
 
 #### Documentation
 - Consolidate readme and history files.
 - Add button with link to source code on GitHub ([PR43]( https://github.com/modscripps/velosearaptor/pull/43)).
-- Describe the `z` coordinate of the raw output in its attributes ([#52](https://github.com/modscripps/velosearaptor/issues/52)). `z` is the distance from the transducer to each bin, not water depth, and keeps its name for that reason; the processed dataset provides actual depth as `depth`.
+- Describe the `z` coordinate of the raw output in its attributes ([#52](https://github.com/modscripps/velosearaptor/issues/52)). `z` is the distance from the transducer to each bin, not water depth, and keeps its name for that reason. The averaging methods regrid onto water depth and publish it as `depth`, while `velosearaptor.madcp.ProcessADCP.process_pings` keeps the transducer-relative axis and publishes it as `z`.
 
 #### Internal Changes
 - Remove `gvpy` dependency ([PR27]( https://github.com/modscripps/velosearaptor/pull/27)).
