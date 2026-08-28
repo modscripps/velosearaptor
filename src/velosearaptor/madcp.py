@@ -1505,6 +1505,11 @@ class ProcessADCP:
         far end of the profile and break the monotonicity `interp1` requires)
         and `zi > nbins - 3` runs off the end (issue #101).
 
+        The clipping costs no accuracy. The interpolation is piecewise linear,
+        so only the two bins bracketing `zi` enter the result and the outer
+        pair never contributes; a clipped window such as `[0, 2, 3]` for
+        `zi = 1` gives bitwise what the full window would.
+
         Parameters
         ----------
         zi : int
@@ -1525,9 +1530,11 @@ class ProcessADCP:
             )
         neighbors = [i for i in (zi - 2, zi - 1, zi + 1, zi + 2) if 0 <= i < nbins]
         if min(neighbors) > zi or max(neighbors) < zi:
-            # Interpolating the first or last bin would be an extrapolation
-            # from one side only. Refuse rather than quietly return something
-            # that is not an interpolation.
+            # The first and last bin have a neighbour on one side only, so the
+            # target lies outside any window we could build. `interp1` masks an
+            # out-of-range target rather than extrapolating to it, so clipping
+            # here would leave the bin masked and do nothing at all. Refuse,
+            # rather than silently ignore the request.
             raise ValueError(
                 f"interpolate_bin={zi} has no neighbouring bin on both sides; "
                 f"it must be between 1 and {nbins - 2} for this profile."
