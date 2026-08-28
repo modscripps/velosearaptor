@@ -4,7 +4,9 @@ Four documented options crash instead of working. None of them corrupts data;
 each one makes the option unusable, and each survived because nothing called it:
 
 - ``process_pings(start=..., stop=...)`` raised ``UnboundLocalError`` because
-  ``idx_start``/``idx_stop`` were bound only in the ``is None`` branches;
+  ``idx_start``/``idx_stop`` were bound only in the ``is None`` branches, and
+  an empty range (``start == stop``) reached the same ``UnboundLocalError`` by
+  running the chunk loop zero times;
 - ``burst_average=True`` on continuous data produced
   ``pings_per_burst = -2147483648`` from a median over an empty selection and
   then died in an unrelated reduction;
@@ -122,6 +124,19 @@ def test_process_pings_rejects_start_after_stop(rootdir):
 
     with pytest.raises(ValueError, match="after"):
         proc.process_pings(start=60, stop=10)
+
+
+def test_process_pings_rejects_an_empty_range(rootdir):
+    """`start == stop` selects no pings and must raise at the argument.
+
+    It reached the chunk loop, which never ran, and then died on the
+    `UnboundLocalError` for `ens` that this issue is about in the first place.
+    """
+    proc = ProcessADCP(rootdir / CONTINUOUS_FILE, META_DATA, magdec=0.0)
+
+    for index in (0, 5, proc.dday.size - 1):
+        with pytest.raises(ValueError, match="select no pings"):
+            proc.process_pings(start=index, stop=index)
 
 
 def test_process_pings_accepts_the_full_record(rootdir):

@@ -1280,11 +1280,11 @@ class ProcessADCP:
         else:
             idx_stop = stop
 
-        if idx_start > idx_stop:
+        if idx_start >= idx_stop:
             raise ValueError(
-                f"start={idx_start} lies after stop={idx_stop}, so no pings "
-                "would be processed. Ping indices count forward from the start "
-                "of the record."
+                f"start={idx_start} and stop={idx_stop} select no pings. "
+                "`stop` is exclusive, so it must lie after `start`. Ping "
+                "indices count forward from the start of the record."
             )
 
         ens_idxs = np.hstack((np.arange(idx_start, idx_stop, ens_size), idx_stop))
