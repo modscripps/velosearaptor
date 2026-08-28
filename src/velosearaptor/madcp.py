@@ -644,14 +644,42 @@ class ProcessADCP:
         }
         self.tgridparams = Bunch(default_tgridparams)
         if tgridparams is not None:
-            # convert time to dday if provided as str
+            # Convert time to dday if provided as str. The conversion must be
+            # relative to the yearbase of the raw data - reading the year off
+            # the requested time instead puts any window in a later calendar
+            # year a whole year off.
             for time in ["t0", "t1"]:
                 if time in tgridparams and isinstance(tgridparams[time], str):
                     t64 = np.datetime64(tgridparams[time])
-                    _, dday = io.datetime64_to_yday0(t64)
-                    tgridparams[time] = dday
+                    tgridparams[time] = (
+                        t64 - np.datetime64(f"{self.yearbase}-01-01")
+                    ) / np.timedelta64(1, "D")
             # update parameters in processing object
             self.tgridparams.update_values(tgridparams, strict=True)
+            data_t0, data_t1 = self.dday[0], self.dday[-1]
+            req_t0, req_t1 = self.tgridparams.t0, self.tgridparams.t1
+            # An empty or reversed window selects no data, and it passes the
+            # overlap test below, which compares each endpoint against the data
+            # range on its own.
+            empty = req_t0 >= req_t1
+            # A requested window that does not overlap the data at all yields
+            # an empty record - fail loudly instead.
+            no_overlap = req_t1 < data_t0 or req_t0 > data_t1
+            if empty or no_overlap:
+                times = io.yday0_to_datetime64(
+                    self.yearbase,
+                    [float(req_t0), float(req_t1), float(data_t0), float(data_t1)],
+                ).astype("datetime64[s]")
+                if empty:
+                    raise ValueError(
+                        f"Requested time range starts at {times[0]} and ends "
+                        f"at {times[1]}, so it selects no data. `t1` must lie "
+                        "after `t0`."
+                    )
+                raise ValueError(
+                    f"Requested time range {times[0]} to {times[1]} does not "
+                    f"overlap the data range {times[2]} to {times[3]}."
+                )
         else:
             logger.warning(
                 "No time gridding parameters provided, using default values."
