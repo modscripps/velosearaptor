@@ -90,6 +90,22 @@ def test_window_without_overlap_as_floats_raises(proc):
         proc.parse_tgridparams({"t0": DATA_DDAY1 + 1, "t1": DATA_DDAY1 + 2})
 
 
+def test_reversed_window_raises(proc):
+    """`t0` after `t1` selects no data. It sits inside the data range, so the
+    overlap check does not see it: each endpoint on its own is fine."""
+    with pytest.raises(ValueError, match="selects no data"):
+        proc.parse_tgridparams({"t0": "2021-07-09", "t1": "2021-07-08"})
+
+    with pytest.raises(ValueError, match="selects no data"):
+        proc.parse_tgridparams({"t0": DATA_DDAY1 - 1, "t1": DATA_DDAY0 + 1})
+
+
+def test_zero_length_window_raises(proc):
+    """`t0 == t1` selects no data either."""
+    with pytest.raises(ValueError, match="selects no data"):
+        proc.parse_tgridparams({"t0": "2021-07-09", "t1": "2021-07-09"})
+
+
 def test_partial_overlap_passes_quietly(proc):
     """A window reaching beyond the data on one side is a normal request."""
     proc.parse_tgridparams({"t0": "2021-07-05", "t1": "2021-07-10"})
