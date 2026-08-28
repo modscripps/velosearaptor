@@ -1378,6 +1378,7 @@ class ProcessADCP:
             lat=self.lat,
         )
 
+        self._processing_method = "process_pings"
         self._ave2nc()
         self._add_meta_data_to_ds()
         self._log_processing_params()
@@ -1492,6 +1493,7 @@ class ProcessADCP:
             lat=self.lat,
         )
 
+        self._processing_method = "average_ensembles"
         self._ave2nc()
         self._add_meta_data_to_ds()
         self._log_processing_params()
@@ -1711,6 +1713,7 @@ class ProcessADCP:
             lat=self.lat,
         )
 
+        self._processing_method = "burst_average_ensembles"
         self._ave2nc()
         self._add_meta_data_to_ds()
         self._log_processing_params()
@@ -1884,6 +1887,17 @@ class ProcessADCP:
 
         # Calculate transducer depth from pressure
         out["xducer_depth"] = -gsw.z_from_p(out.pressure, self.lat)
+
+        # `process_pings` does not regrid, so its vertical axis is the
+        # distance from the transducer to the center of each bin, not water
+        # depth, and it runs upwards for an uplooker. Publish it as `z`, the
+        # name the raw dataset already uses for the same quantity, so that
+        # `depth` always means water depth. Bin depth stays recoverable per
+        # ping as xducer_depth +/- z. `_add_names_and_units` runs after the
+        # rename and therefore attaches the `z` attributes, not the `depth`
+        # ones.
+        if getattr(self, "_processing_method", None) == "process_pings":
+            out = out.rename({"depth": "z"})
 
         # add variable names and units for plotting
         out = self._add_names_and_units(out)
