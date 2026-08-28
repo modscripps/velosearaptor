@@ -408,28 +408,70 @@ class ProcessADCP:
         p_interpolated = self._pressure_provided.interp(time=time).data
 
         # Beginning and end may have NaN's if the ADCP was started before
-        # the external pressure sensor. Make sure this happens only when
-        # outside the water and then replace with atmospheric pressure.
-        if np.any(np.isnan(p_interpolated)):
-            nan_mask = np.isnan(p_interpolated)
-            i_nan = np.flatnonzero(nan_mask)
+        # the external pressure sensor. Patch a leading and/or a trailing NaN
+        # run with atmospheric pressure, but only if the instrument was on
+        # deck at the time. Any other NaN is an error: pressure sets the depth
+        # of every velocity sample, so a gap that cannot be filled with
+        # atmospheric pressure must fail loudly.
+        i_good = np.flatnonzero(~np.isnan(p_interpolated))
+        if i_good.size == 0:
+            raise ValueError(
+                "External pressure is NaN over the whole ADCP time range. "
+                "Check that the external pressure record overlaps the ADCP "
+                "record in time."
+            )
 
-            first_few_good_median = np.median(p_interpolated[~nan_mask][:20])
-            last_few_good_median = np.median(p_interpolated[~nan_mask][-20:])
+        if i_good.size < p_interpolated.size:
+            first_few_good_median = np.median(p_interpolated[i_good][:20])
+            last_few_good_median = np.median(p_interpolated[i_good][-20:])
 
-        if np.isnan(p_interpolated[0]) and first_few_good_median < 1:
-            i_divide = np.flatnonzero(np.diff(i_nan) - 1) + 1
-            if i_divide.size == 0:
-                p_interpolated[nan_mask] = first_few_good_median
-            else:
-                p_interpolated[0:i_divide] = first_few_good_median
+            # Lengths of the leading and the trailing NaN run (zero if the
+            # record does not start / end with a NaN).
+            n_leading = i_good[0]
+            n_trailing = p_interpolated.size - 1 - i_good[-1]
 
-        if np.isnan(p_interpolated[-1]) and last_few_good_median < 1:
-            i_divide = np.flatnonzero(np.diff(i_nan) - 1) + 1
-            if i_divide.size == 0:
-                p_interpolated[nan_mask] = last_few_good_median
-            else:
-                p_interpolated[i_divide:] = last_few_good_median
+            if n_leading > 0:
+                if first_few_good_median < 1:
+                    p_interpolated[:n_leading] = first_few_good_median
+                else:
+                    raise ValueError(
+                        f"External pressure is NaN for the first {n_leading} "
+                        "ping(s) of the ADCP record, but the first valid "
+                        f"pressure ({first_few_good_median:.2f} dbar) shows "
+                        "the instrument was not on deck (< 1 dbar). Such a "
+                        "gap cannot be filled with atmospheric pressure; "
+                        "provide external pressure covering the start of the "
+                        "ADCP record."
+                    )
+
+            if n_trailing > 0:
+                if last_few_good_median < 1:
+                    p_interpolated[p_interpolated.size - n_trailing :] = (
+                        last_few_good_median
+                    )
+                else:
+                    raise ValueError(
+                        f"External pressure is NaN for the last {n_trailing} "
+                        "ping(s) of the ADCP record, but the last valid "
+                        f"pressure ({last_few_good_median:.2f} dbar) shows "
+                        "the instrument was not on deck (< 1 dbar). Such a "
+                        "gap cannot be filled with atmospheric pressure; "
+                        "provide external pressure covering the end of the "
+                        "ADCP record."
+                    )
+
+            # Whatever NaN is left sits between good data.
+            i_nan = np.flatnonzero(np.isnan(p_interpolated))
+            if i_nan.size > 0:
+                n_gaps = np.flatnonzero(np.diff(i_nan) > 1).size + 1
+                raise ValueError(
+                    f"External pressure has {n_gaps} interior NaN gap(s) "
+                    f"covering {i_nan.size} ping(s) of the ADCP record "
+                    f"(first at ping index {i_nan[0]}, last at {i_nan[-1]}). "
+                    "Interior gaps cannot be filled with atmospheric "
+                    "pressure; interpolate or otherwise fill the external "
+                    "pressure record before passing it in."
+                )
 
         # Now generate an interpolation function that will take dday as input
         # for later per-ensemble interpolation.
