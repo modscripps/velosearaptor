@@ -718,6 +718,26 @@ class ProcessADCP:
 
         return self.t0 + self.time_drift_rate * (dday_orig - self.t0)
 
+    def _uncorrect_dday(self, dday_corrected):
+        """Invert :meth:`_correct_dday`.
+
+        Used to carry a repair made on ``self.dday`` back into the raw
+        ``self.tsdat.dday`` it was derived from.
+
+        Parameters
+        ----------
+        dday_corrected : array-like
+            Drift-corrected time vector.
+
+        Returns
+        -------
+        array-like
+            The corresponding raw time vector.
+
+        """
+
+        return self.t0 + (dday_corrected - self.t0) / self.time_drift_rate
+
     def _ensure_monotonic_dday(self):
         """Detect and fix non-monotonic time vectors.
 
@@ -758,6 +778,13 @@ class ProcessADCP:
         if n < 2 or np.all(np.diff(dday) > 0):
             return
 
+        # `self.dday` is a drift-corrected copy of `self.tsdat.dday`, not the
+        # same array, so every value repaired below has to be carried back into
+        # the raw record at the end. Track which pings move rather than
+        # rewriting the whole array, so pings the repair never touched stay
+        # bit-identical.
+        repaired = np.zeros(n, dtype=bool)
+
         positive = np.diff(dday)
         positive = positive[positive > 0]
         if positive.size == 0:
@@ -775,6 +802,7 @@ class ProcessADCP:
             else:
                 step = median_dt
             dday[i0 + 1 : i0 + 1 + count] = dday[i0] + step * np.arange(1, count + 1)
+            repaired[i0 + 1 : i0 + 1 + count] = True
 
         i = 1
         truncate_at = None
@@ -828,8 +856,10 @@ class ProcessADCP:
                 )
                 if i == 1:
                     dday[0] = dday[1] - median_dt
+                    repaired[0] = True
                 else:
                     dday[i - 1] = (dday[i - 2] + dday[i]) / 2
+                    repaired[i - 1] = True
                 i += 1
             elif n_overlap <= _max_interp_pings:
                 logger.warning(
@@ -876,6 +906,12 @@ class ProcessADCP:
                 f"first at ping {still_bad[0]}. Inspect the time vector and "
                 f"handle manually."
             )
+
+        # Carry the repaired values back into the raw time base. Truncation
+        # already sliced both arrays, so only indices still in range apply.
+        moved = np.flatnonzero(repaired[: self.dday.size])
+        if moved.size > 0:
+            self.tsdat.dday[moved] = self._uncorrect_dday(self.dday[moved])
 
     def _parse_sysconfig(self):
         # We have to get the up/down reading from sysconfig for a time when the
