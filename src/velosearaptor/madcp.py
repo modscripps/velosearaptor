@@ -1250,6 +1250,27 @@ class ProcessADCP:
         `stop` can only index individual pings.
 
         """
+        # Validate the explicit indices. Unchecked they fail far from here:
+        # `start` past the record gives an empty `ens_idxs`, and `start > stop`
+        # a negative `npings` that dies inside `np.ma.zeros`. That is the same
+        # class of problem as the `UnboundLocalError` fixed below (issue #101).
+        npings_total = self.dday.size
+        for name, value in (("start", start), ("stop", stop)):
+            if value is None:
+                continue
+            if value < 0:
+                raise ValueError(
+                    f"{name}={value} is negative. Ping indices are not wrapped "
+                    "Python-style here; give an index between 0 and "
+                    f"{npings_total}."
+                )
+            if value > npings_total:
+                raise ValueError(
+                    f"{name}={value} is past the end of the record, which has "
+                    f"{npings_total} pings. Give an index between 0 and "
+                    f"{npings_total}."
+                )
+
         if start is None:
             idx_start = np.searchsorted(self.dday, self.dday_start)
         else:
@@ -1258,6 +1279,13 @@ class ProcessADCP:
             idx_stop = np.searchsorted(self.dday, self.dday_end)
         else:
             idx_stop = stop
+
+        if idx_start > idx_stop:
+            raise ValueError(
+                f"start={idx_start} lies after stop={idx_stop}, so no pings "
+                "would be processed. Ping indices count forward from the start "
+                "of the record."
+            )
 
         ens_idxs = np.hstack((np.arange(idx_start, idx_stop, ens_size), idx_stop))
         write_idxs = ens_idxs - ens_idxs[0]  # Arrays we write to start at index 0

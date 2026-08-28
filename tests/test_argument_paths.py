@@ -85,6 +85,53 @@ def test_process_pings_start_stop_are_ping_indices(rootdir):
     assert np.allclose(np.asarray(got), np.asarray(expected))
 
 
+def test_process_pings_rejects_out_of_range_indices(rootdir):
+    """A ping index outside the record is named, not turned into a crash.
+
+    Leaving these unchecked is the same class of problem as the
+    `UnboundLocalError` this item fixes: a documented option fails somewhere
+    far from the argument that caused it.
+    """
+    proc = ProcessADCP(rootdir / CONTINUOUS_FILE, META_DATA, magdec=0.0)
+    npings = proc.dday.size
+
+    with pytest.raises(ValueError, match="start"):
+        proc.process_pings(start=npings + 1)
+    with pytest.raises(ValueError, match="stop"):
+        proc.process_pings(stop=npings + 1)
+
+
+def test_process_pings_rejects_negative_indices(rootdir):
+    """Negative indices are not wrapped Python-style; they are refused.
+
+    `np.searchsorted` never returns a negative index, so the `None` path
+    cannot produce one; accepting one here would silently select a different
+    ping range from the one the caller asked for.
+    """
+    proc = ProcessADCP(rootdir / CONTINUOUS_FILE, META_DATA, magdec=0.0)
+
+    with pytest.raises(ValueError, match="negative"):
+        proc.process_pings(start=-5)
+    with pytest.raises(ValueError, match="negative"):
+        proc.process_pings(stop=-5)
+
+
+def test_process_pings_rejects_start_after_stop(rootdir):
+    """`start > stop` gives a negative ping count; say so at the argument."""
+    proc = ProcessADCP(rootdir / CONTINUOUS_FILE, META_DATA, magdec=0.0)
+
+    with pytest.raises(ValueError, match="after"):
+        proc.process_pings(start=60, stop=10)
+
+
+def test_process_pings_accepts_the_full_record(rootdir):
+    """The bounds are inclusive of the record end, as Python slicing is."""
+    proc = ProcessADCP(rootdir / CONTINUOUS_FILE, META_DATA, magdec=0.0)
+    npings = proc.dday.size
+    proc.process_pings(start=0, stop=npings)
+    assert proc.ds.time.size == npings
+
+
 # --- 0.2 burst_average on continuous data -----------------------------------
 
 
