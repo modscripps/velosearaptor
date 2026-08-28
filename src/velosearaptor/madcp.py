@@ -512,11 +512,38 @@ class ProcessADCP:
 
     def _lowpassfilter_pressure(self):
         t64 = io.yday0_to_datetime64(self.tsdat.yearbase, self.tsdat.dday)
-        fs = 1 / tools.dominant_period_in_s(t64)
+        # `scipy.signal.filtfilt` has no notion of a time base; it treats every
+        # sample as 1/fs apart. Derive fs from the *mean* sampling interval over
+        # the record so the cutoff below is expressed in wall-clock time. Using
+        # the modal interval instead puts a burst-sampled record on a fictitious
+        # time base in which the 30 minute cap can never bind, and the filter
+        # then removes a large part of a genuine mooring knockdown.
+        dt = tools.timedelta64_to_s(np.diff(t64))
+        mean_dt = tools.timedelta64_to_s(t64[-1] - t64[0]) / (t64.size - 1)
+        # Same non-uniformity test as the burst detection in
+        # :meth:`make_start_ddays`: a gap longer than four times the median ping
+        # interval is a break between bursts.
+        median_dt = np.median(dt)
+        if np.any(dt > 4 * median_dt):
+            warn(
+                "Pressure record is not uniformly sampled (median ping interval "
+                f"{median_dt:.1f} s, mean {mean_dt:.1f} s, longest gap "
+                f"{dt.max():.1f} s). The low-pass filter treats all pings as "
+                f"{mean_dt:.1f} s apart, so structure within a burst is not "
+                "resolved. Pass use_raw_pressure=True to skip the filter.",
+                stacklevel=2,
+            )
+        fs = 1 / mean_dt
         # Make cutoff period either 30 minutes or 50 data points,
         # whatever is shorter.
-        cutoff = 50 * (1 / fs)
-        cutoff = min(cutoff, 1800)
+        cutoff = min(50 * mean_dt, 1800)
+        if cutoff <= 2 * mean_dt:
+            raise ValueError(
+                f"Mean ping interval is {mean_dt:.1f} s, so a {cutoff:.0f} s "
+                "cutoff period is at or below the Nyquist period of the record "
+                "and cannot be filtered. Pass use_raw_pressure=True, or supply "
+                "external pressure."
+            )
         pressure = self.tsdat.pressure * self._pressure_scale_factor
         return tools.lowpassfilter(pressure, 1 / cutoff, fs)
 
