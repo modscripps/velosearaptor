@@ -177,6 +177,37 @@ class ProcessADCP:
     pressure_scale_factor : float, optional
         Can be used to scale a (likely broken) pressure time series. Defaults
         to 1 (no scaling).
+    depth_offset : float, optional
+        Constant offset in meters added to the published depth axis to correct
+        a constant bias in the pressure sensor. Positive means the instrument
+        was deeper than the pressure record says. Defaults to 0 (no offset).
+
+        The offset is applied only to the output: to the `depth` coordinate of
+        the averaging methods and to `xducer_depth` on all three paths. All
+        gridding and interpolation happens in raw pressure-derived depth
+        exactly as it does without an offset, so `u`, `v`, `w` and `pg` are
+        bit-identical to an unoffset run and the published axis is the
+        unoffset axis translated by a constant. This is the same result as
+        shifting the finished file by hand, which supplying a corrected
+        external pressure series cannot reproduce: `depth(p)` is nonlinear, so
+        a constant shift in dbar is not a constant shift in meters, and
+        re-deriving per-ping depths re-samples the interpolation onto the grid.
+
+        Because nothing upstream of the output moves, `dtop` and `dbot` in
+        `dgridparams` are read in the **raw**, uncorrected frame. Requesting
+        `dtop=100` with `depth_offset=5` publishes an axis starting at 105.
+        The offset does not apply to `z`, the transducer-relative distance
+        published by `process_pings`, and it does not apply to the in-water
+        pressure thresholds, which stay in pressure space.
+
+        `pressure` always holds the unmodified measurement. When the offset is
+        nonzero the equivalent corrected pressure is stored alongside it as
+        `pressure_corrected`, so that recomputing depth from the file
+        reproduces the published depth axis.
+
+        Note that `pressure_scale_factor` is applied twice on the low-pass
+        pressure path (a known bug), so combining the two parameters is not
+        currently reliable at `pressure_scale_factor != 1`.
 
 
     Attributes
@@ -285,6 +316,7 @@ class ProcessADCP:
         pressure=None,
         use_raw_pressure=False,
         pressure_scale_factor=1,
+        depth_offset=0,
     ):
         self.meta_data = Bunch(meta_data.copy())
         self.ibad = ibad
@@ -297,6 +329,7 @@ class ProcessADCP:
         self._pressure_provided = pressure
         self._pressure_scale_factor = pressure_scale_factor
         self._use_raw_pressure = use_raw_pressure
+        self._depth_offset = float(depth_offset)
 
         self._raw = None
         self._default_dgridparams = None
@@ -677,6 +710,21 @@ class ProcessADCP:
                 self.dgridparams.dbot,
                 self.dgridparams.d_interval,
                 dtype=float,
+            )
+
+        # `dtop` and `dbot` are in the uncorrected, pressure-derived frame, so
+        # with a depth offset the published axis is not the one that was asked
+        # for. Say so here rather than let it be discovered in the output.
+        depth_offset = getattr(self, "_depth_offset", 0.0)
+        if depth_offset:
+            logger.info(
+                "Depth grid spans %g to %g m in uncorrected depth; "
+                "depth_offset of %g m puts the published axis at %g to %g m.",
+                self.dgrid.min(),
+                self.dgrid.max(),
+                depth_offset,
+                self.dgrid.min() + depth_offset,
+                self.dgrid.max() + depth_offset,
             )
 
     def parse_tgridparams(self, tgridparams):
@@ -2188,6 +2236,33 @@ class ProcessADCP:
         # Calculate transducer depth from pressure
         out["xducer_depth"] = -gsw.z_from_p(out.pressure, self.lat)
 
+        # Apply the constant depth offset (issue #92). This is the only place
+        # it enters. Gridding and interpolation upstream run entirely in raw
+        # pressure-derived depth, so translating the axis here leaves the
+        # velocity field bit-identical to an unoffset run by construction,
+        # which is what the issue asks for and what re-deriving depths from a
+        # corrected pressure series cannot deliver.
+        #
+        # `getattr` because tests/test_dropna.py and tests/test_std_error.py
+        # call this method on a `ProcessADCP.__new__` shell that never runs
+        # `__init__`.
+        depth_offset = getattr(self, "_depth_offset", 0.0)
+        if depth_offset:
+            out["xducer_depth"] = out["xducer_depth"] + depth_offset
+            # `depth` is water depth and moves with the instrument. The
+            # `process_pings` axis is a distance from the transducer, renamed
+            # to `z` below, and an offset on the instrument's depth says
+            # nothing about it.
+            if getattr(self, "_processing_method", None) != "process_pings":
+                out = out.assign_coords(depth=out.depth.values + depth_offset)
+            # The measurement stays in `pressure`. This is what a sensor at
+            # the corrected depth would have read, so that recomputing depth
+            # from the file reproduces the published axis.
+            out["pressure_corrected"] = (
+                ["time"],
+                gsw.p_from_z(-out.xducer_depth.values, self.lat),
+            )
+
         # `process_pings` does not regrid, so its vertical axis is the
         # distance from the transducer to the center of each bin, not water
         # depth, and it runs upwards for an uplooker. Publish it as `z`, the
@@ -2201,8 +2276,37 @@ class ProcessADCP:
 
         # add variable names and units for plotting
         out = self._add_names_and_units(out)
+        out = self._add_depth_offset_comments(out, depth_offset)
 
         self.ds = out
+
+    @staticmethod
+    def _add_depth_offset_comments(ds, depth_offset):
+        """Record the applied depth offset on the variables it moved.
+
+        Injected after `_add_names_and_units`, which assigns the static
+        `io.cf_conventions` entries wholesale and would otherwise overwrite
+        this. Nothing is written when no offset was applied, so a file never
+        carries a correction it did not receive.
+        """
+        if not depth_offset:
+            return ds
+        note = (
+            f"A constant depth_offset of {depth_offset} m has been added to "
+            "this variable to correct a constant bias in the pressure sensor. "
+            "Positive means the instrument was deeper than the pressure "
+            "record says. The offset was applied to the output only; all "
+            "gridding used the uncorrected pressure-derived depth, so the "
+            "velocities are unchanged by it and depth gridding parameters "
+            "were interpreted in the uncorrected frame."
+        )
+        for name in ["depth", "xducer_depth"]:
+            if name in ds.variables:
+                attrs = dict(ds[name].attrs)
+                existing = attrs.get("comment")
+                attrs["comment"] = f"{existing} {note}" if existing else note
+                ds[name].attrs = attrs
+        return ds
 
     def _add_names_and_units(self, ds):
         """Add variable attributes based on CF conventions.
@@ -2233,6 +2337,9 @@ class ProcessADCP:
         masked = _masked_bins(self.editparams["maskbins"])
         # netcdf attributes cannot hold an empty array either.
         self.ds.attrs["maskbins"] = "none" if masked.size == 0 else masked
+        # Recorded even when zero: a reader needs to know the depth frame,
+        # and "no offset applied" is part of that.
+        self.ds.attrs["depth_offset"] = getattr(self, "_depth_offset", 0.0)
 
         # Add meta data if provided.
         if self.meta_data is not None:
