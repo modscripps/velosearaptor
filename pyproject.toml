@@ -4,6 +4,12 @@ build-backend = "uv_build"
 
 [project]
 name = "velosearaptor"
+# A `.devN` suffix marks development between releases. Keep this string and
+# `__version__` in src/velosearaptor/__init__.py identical: `_add_meta_data_to_ds`
+# writes the latter into every output file as the `velosearaptor_version`
+# attribute, so a file produced from an untagged commit has to stay
+# distinguishable from one produced from the release. Drop the suffix in both
+# files in the release commit, then reopen the next `.dev0` after tagging.
 version = "0.4.0.dev0"
 authors = [
     {name = "Gunnar Voet", email = "gvoet@ucsd.edu"},
