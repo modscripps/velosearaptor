@@ -126,3 +126,46 @@ def test_burst_average_published_pg_is_unchanged(rootdir):
     levels = np.isin(proc.dgrid, ds.depth.values)
     internal = np.asarray(proc.ave.pg)[:, levels].T
     assert np.array_equal(published[finite], internal[finite])
+
+
+def test_burst_average_ngood_is_nan_off_the_instrument_profile(rootdir):
+    """`ngood` conflates the same two cases as `pg`, via `np.nan_to_num`."""
+    proc = _burst_proc(rootdir)
+    proc.burst_average_ensembles()
+
+    ngood = np.asarray(proc.ave.ngood)
+    off_grid = np.ma.getmaskarray(proc.ave.amp)
+    assert off_grid.sum() > 0
+
+    assert np.issubdtype(ngood.dtype, np.floating)
+    assert np.all(np.isnan(ngood[off_grid]))
+
+
+def test_published_ngood_separates_no_data_from_zero_good_pings(rootdir):
+    """Unlike `pg`, `ngood` reaches the file unmasked, so this one is visible.
+
+    `_ave2nc` masks `pg` on `amp` and leaves `ngood` alone, so every off-grid
+    cell was published as "0 good pings". On this file that is 365 of the 366
+    zero cells; the remaining one is a real cell where no ping survived.
+    """
+    proc = _burst_proc(rootdir)
+    proc.burst_average_ensembles()
+    ds = proc.ds
+
+    ngood = ds.ngood.values
+    assert np.issubdtype(ngood.dtype, np.floating)
+
+    no_data = np.isnan(ngood)
+    amp_missing = np.isnan(ds.amp.values)
+    assert np.array_equal(no_data, amp_missing)
+
+    # The real zero-good cells survive as 0 and stay countable.
+    zero_good = ngood == 0
+    assert zero_good.sum() > 0
+    assert not np.any(zero_good & no_data)
+
+    # A count, so still integer-valued, and never more than the ping count.
+    finite = ~no_data
+    assert np.array_equal(ngood[finite], np.floor(ngood[finite]))
+    npings = np.broadcast_to(ds.npings.values[np.newaxis, :], ngood.shape)
+    assert np.all(ngood[finite] <= npings[finite])

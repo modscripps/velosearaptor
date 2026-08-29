@@ -274,10 +274,12 @@ def test_interpolated_bin_keeps_pg(rootdir):
     plain.burst_average_ensembles(stop=3)
     interp = ProcessADCP(rootdir / BURST_FILE, META_DATA, **kw)
     interp.burst_average_ensembles(stop=3, interpolate_bin=2)
-    # `pg` carries NaN off the instrument's profile (issue #82), so the
-    # comparison has to treat NaN as equal to NaN.
+    # `pg` and `ngood` carry NaN off the instrument's profile (issue #82), so
+    # the comparisons have to treat NaN as equal to NaN.
     assert np.array_equal(plain.ave.pg, interp.ave.pg, equal_nan=True)
-    assert np.array_equal(np.asarray(plain.ave.ngood), np.asarray(interp.ave.ngood))
+    assert np.array_equal(
+        np.asarray(plain.ave.ngood), np.asarray(interp.ave.ngood), equal_nan=True
+    )
 
 
 @pytest.mark.parametrize("orientation", ["down", "up"])
