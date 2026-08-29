@@ -53,7 +53,7 @@ from pycurrents.num.nptools import rangeslice
 from pycurrents.system import Bunch
 from tqdm import tqdm
 
-from . import io, tools
+from . import __version__, io, tools
 
 # Standard logging
 logger = logging.getLogger(__name__)
@@ -1612,6 +1612,10 @@ class ProcessADCP:
         logger.info("Processing all pings")
         logger.info(f"Binmapping is {binmap}")
 
+        # Kept for the output attributes: binmapping changes the velocities
+        # and nothing in the file otherwise records whether it ran.
+        self._binmap = binmap
+
         uvwe = np.ma.zeros((npings, ndgrid, 4), dtype=np.float32)
 
         pg = np.zeros((npings, ndgrid), dtype=np.int8)
@@ -1904,6 +1908,9 @@ class ProcessADCP:
 
         """
         pg_condition = self.editparams.pg_limit
+        # Kept for the output attributes: an interpolated bin is not measured
+        # data, so which bin was filled in has to be recoverable from the file.
+        self._interpolate_bin = interpolate_bin
         nens_orig = len(self.start_ddays)
         indices_orig = np.arange(nens_orig)
         indices = indices_orig[start:stop]
@@ -2277,6 +2284,8 @@ class ProcessADCP:
         # add variable names and units for plotting
         out = self._add_names_and_units(out)
         out = self._add_depth_offset_comments(out, depth_offset)
+        out = self._add_pg_comment(out, getattr(self, "_processing_method", None))
+        out = self._drop_absent_ancillary_variables(out)
 
         self.ds = out
 
@@ -2308,6 +2317,84 @@ class ProcessADCP:
                 ds[name].attrs = attrs
         return ds
 
+    # What `pg` counts differs on every path, and the name it shares with the
+    # instrument's own field means something else again (issue #82). The text
+    # is injected here because `io.cf_conventions` returns one static dict and
+    # `_add_names_and_units` assigns it wholesale, so it cannot be stored
+    # per path.
+    _PG_COMMENTS: ClassVar[dict] = {
+        "process_pings": (
+            "Fraction of pings with a valid velocity at this bin, computed "
+            "per ping by `process_pings`. It is binary, 0 or 100: 100 means "
+            "the ping survived editing at this bin, 0 means it was edited "
+            "out. No time averaging has happened on this path, so this says "
+            "nothing about a sample count."
+        ),
+        "average_ensembles": (
+            "Fraction of the pings in each averaging interval with a valid "
+            "velocity at this grid depth, computed by `average_ensembles` "
+            "after every ping was interpolated onto the universal depth "
+            "grid. `interp1` widens an edited bin, so both grid intervals "
+            "touching one come out invalid and this reads lower than the "
+            "fraction of pings that passed editing. It also absorbs mooring "
+            "knockdown: a grid depth the instrument did not reach for part "
+            "of the interval counts those pings as bad. `ngood` carries the "
+            "sample count this is derived from."
+        ),
+        "burst_average_ensembles": (
+            "Fraction of the pings in each burst with a valid velocity at "
+            "this bin, computed by `burst_average_ensembles` on "
+            "instrument-relative bins and then interpolated onto the "
+            "universal depth grid. It is NaN at depths outside the "
+            "instrument's profile, which is why it is float. Velocities were "
+            "screened against the `pg_limit` attribute. A bin filled in by "
+            "`interpolate_bin` keeps its own value of 0, so an interpolated "
+            "bin stays visible in the product. `ngood` carries the sample "
+            "count this is derived from."
+        ),
+    }
+
+    _PG_RDI_NOTE = (
+        "This is a velosearaptor-defined quantity. It shares its name with "
+        "RDI's own four PercentGood fields, which "
+        "`velosearaptor.io.read_raw_rdi` reads and no processing step uses, "
+        "and it means something different from them."
+    )
+
+    @classmethod
+    def _add_pg_comment(cls, ds, method):
+        """Say which of the three quantities called `pg` this one is."""
+        if "pg" not in ds.variables or method not in cls._PG_COMMENTS:
+            return ds
+        attrs = dict(ds.pg.attrs)
+        attrs["comment"] = f"{cls._PG_COMMENTS[method]} {cls._PG_RDI_NOTE}"
+        ds["pg"].attrs = attrs
+        return ds
+
+    @staticmethod
+    def _drop_absent_ancillary_variables(ds):
+        """Drop `ancillary_variables` names this file does not carry.
+
+        `io.cf_conventions` declares `npings` on twelve entries, and
+        `process_pings` writes no `npings`, so nine variables pointed at
+        something absent: a CF checker fails, and a reader looking for the
+        sample count behind `pg` or the error estimates finds nothing
+        (issue #102). Done generically rather than per variable, so a
+        variable added later cannot reintroduce it.
+        """
+        for v in ds.variables:
+            declared = ds[v].attrs.get("ancillary_variables")
+            if not declared:
+                continue
+            kept = [name for name in declared.split() if name in ds.variables]
+            attrs = dict(ds[v].attrs)
+            if kept:
+                attrs["ancillary_variables"] = " ".join(kept)
+            else:
+                del attrs["ancillary_variables"]
+            ds[v].attrs = attrs
+        return ds
+
     def _add_names_and_units(self, ds):
         """Add variable attributes based on CF conventions.
 
@@ -2326,20 +2413,91 @@ class ProcessADCP:
                 ds[v].attrs = CF[v]
         return ds
 
+    @property
+    def _pressure_source(self):
+        """Which pressure record set the depths in this run.
+
+        The four sources give different `xducer_depth` and, on the averaging
+        paths, a different depth grid, and the choice is not recoverable from
+        the numbers in the file.
+        """
+        if self._pressure_provided is not None:
+            return "external"
+        # `process_pings` scales the raw record per ping and never reaches the
+        # low pass, which lives in `read_ensemble`.
+        if getattr(self, "_processing_method", None) == "process_pings":
+            return "raw"
+        if self.is_burst_average or self._use_raw_pressure:
+            return "raw"
+        return "lowpass"
+
+    def _yday_to_isoformat(self, yday):
+        """Year day as a calendar time string for the output attributes."""
+        return str(io.yday0_to_datetime64(self.yearbase, float(yday)))
+
     def _add_meta_data_to_ds(self):
         # Add some more info.
+        method = getattr(self, "_processing_method", None)
+        self.ds.attrs["velosearaptor_version"] = __version__
+        self.ds.attrs["processing_method"] = "unknown" if method is None else method
         self.ds.attrs["orientation"] = self.orientation
         self.ds.attrs["magdec"] = self.magdec
-        for att in ["max_e", "max_e_deviation", "min_correlation", "pg_limit"]:
+        for att in ["max_e", "max_e_deviation", "min_correlation"]:
             value = self.editparams[att]
             # netcdf attributes cannot hold None.
             self.ds.attrs[att] = "none" if value is None else value
+        # `pg_limit` screens percent good in `burst_average_ensembles` alone,
+        # as the class docstring says. Writing the number into every file told
+        # a reader the product had been screened at that threshold when it had
+        # not (issue #102).
+        if method == "burst_average_ensembles":
+            value = self.editparams["pg_limit"]
+            self.ds.attrs["pg_limit"] = "none" if value is None else value
+        else:
+            self.ds.attrs["pg_limit"] = "not applied"
         masked = _masked_bins(self.editparams["maskbins"])
         # netcdf attributes cannot hold an empty array either.
         self.ds.attrs["maskbins"] = "none" if masked.size == 0 else masked
         # Recorded even when zero: a reader needs to know the depth frame,
         # and "no offset applied" is part of that.
         self.ds.attrs["depth_offset"] = getattr(self, "_depth_offset", 0.0)
+
+        # Where the depths came from, and how they were scaled.
+        self.ds.attrs["pressure_source"] = self._pressure_source
+        self.ds.attrs["pressure_scale_factor"] = self._pressure_scale_factor
+
+        # Clock correction. `driftparams` is not written to the log file at
+        # all, so this was previously unrecoverable.
+        applied = self.driftparams.get("end_adcp") is not None
+        self.ds.attrs["clock_correction"] = "applied" if applied else "none"
+        self.ds.attrs["time_drift_rate"] = self.time_drift_rate
+
+        self.ds.attrs["ibad"] = "none" if self.ibad is None else self.ibad
+
+        # The requested time window, in calendar time. It is held internally
+        # as a year day against `yearbase`, which is not a form a reader of
+        # the netCDF file can be expected to decode.
+        self.ds.attrs["t0"] = self._yday_to_isoformat(self.tgridparams.t0)
+        self.ds.attrs["t1"] = self._yday_to_isoformat(self.tgridparams.t1)
+
+        # Parameters that only mean something on the path that ran. Writing
+        # them everywhere is the same fault as the old `pg_limit`.
+        if method in ["average_ensembles", "burst_average_ensembles"]:
+            # `make_start_ddays` reads `dt_hours` only when not burst
+            # averaging; a burst gets its interval from the ping pattern. So
+            # record the interval that actually governed, and `dt_hours`
+            # itself only where it did something.
+            self.ds.attrs["averaging_interval_hours"] = self.dt * 24
+            if method == "average_ensembles":
+                self.ds.attrs["dt_hours"] = self.tgridparams.dt_hours
+            for att in ["dtop", "dbot", "d_interval"]:
+                self.ds.attrs[att] = self.dgridparams[att]
+        if method == "process_pings":
+            # netcdf attributes cannot hold a boolean either.
+            self.ds.attrs["binmap"] = str(bool(getattr(self, "_binmap", False)))
+        if method == "burst_average_ensembles":
+            value = getattr(self, "_interpolate_bin", None)
+            self.ds.attrs["interpolate_bin"] = "none" if value is None else value
 
         # Add meta data if provided.
         if self.meta_data is not None:
