@@ -1826,7 +1826,11 @@ class ProcessADCP:
         uvwe = np.ma.zeros((nens, ndgrid, 4), dtype=np.float32)
         uvwe_std = np.ma.zeros((nens, ndgrid, 4), dtype=np.float32)
 
-        pg = np.zeros((nens, ndgrid), dtype=np.int8)
+        # `pg` is float and starts at NaN so that a grid cell the instrument
+        # never sampled stays distinguishable from one where every ping was
+        # rejected, which reads 0. float64 keeps the published dtype, which
+        # `_ave2nc` already promotes when it masks `pg` on `amp`.
+        pg = np.full((nens, ndgrid), np.nan, dtype=np.float64)
         ngood = np.zeros((nens, ndgrid), dtype=np.int32)
         amp = np.ma.zeros((nens, ndgrid), dtype=np.float32)
 
@@ -1856,7 +1860,7 @@ class ProcessADCP:
             if nprofs < 2:
                 uvwe[i] = np.ma.masked
                 uvwe_std[i] = np.ma.masked
-                # (pg is not a masked array)
+                # (pg is not a masked array; it is NaN-filled already)
                 amp[i] = np.ma.masked
                 pressure[i] = np.ma.masked
                 pressure_std[i] = np.ma.masked
@@ -1911,8 +1915,16 @@ class ProcessADCP:
 
             # Interpolate pg to universal depth grid. Not overly satisfying but
             # seems like that's what we need to do here.
+            # Depths outside the instrument's profile come back masked. Fill
+            # them with NaN rather than casting them to 0, which would claim
+            # every ping at that depth was bad.
+            #
+            # `np.floor` reproduces the truncation the old `.astype(np.int8)`
+            # performed on the way in, so the published values do not move and
+            # `pg` stays an integer-valued percentage as it is in the other
+            # two averaging methods. Drop it only as a deliberate change.
             pgi_grid = interp1(depth, pgi_inst, self.dgrid, axis=0, method="linear")
-            pg[i] = pgi_grid.astype(np.int8)
+            pg[i] = np.floor(np.ma.filled(pgi_grid, np.nan))
             ngood_grid = np.ma.filled(
                 interp1(depth, ngood_inst, self.dgrid, axis=0, method="linear"),
                 np.nan,
