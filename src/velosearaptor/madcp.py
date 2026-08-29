@@ -1826,8 +1826,15 @@ class ProcessADCP:
         uvwe = np.ma.zeros((nens, ndgrid, 4), dtype=np.float32)
         uvwe_std = np.ma.zeros((nens, ndgrid, 4), dtype=np.float32)
 
-        pg = np.zeros((nens, ndgrid), dtype=np.int8)
-        ngood = np.zeros((nens, ndgrid), dtype=np.int32)
+        # `pg` and `ngood` are float and start at NaN so that a grid cell the
+        # instrument never sampled stays distinguishable from one where every
+        # ping was rejected, which reads 0. For `pg`, float64 keeps the
+        # published dtype, which `_ave2nc` already promotes when it masks `pg`
+        # on `amp`. `ngood` is masked by nothing, so its off-grid cells reached
+        # the file as "0 good pings"; giving it NaN changes its published dtype
+        # from int32 to float64 (issue #82).
+        pg = np.full((nens, ndgrid), np.nan, dtype=np.float64)
+        ngood = np.full((nens, ndgrid), np.nan, dtype=np.float64)
         amp = np.ma.zeros((nens, ndgrid), dtype=np.float32)
 
         temperature = np.ma.zeros((nens,), dtype=np.float32)
@@ -1856,7 +1863,7 @@ class ProcessADCP:
             if nprofs < 2:
                 uvwe[i] = np.ma.masked
                 uvwe_std[i] = np.ma.masked
-                # (pg is not a masked array)
+                # (pg is not a masked array; it is NaN-filled already)
                 amp[i] = np.ma.masked
                 pressure[i] = np.ma.masked
                 pressure_std[i] = np.ma.masked
@@ -1876,7 +1883,7 @@ class ProcessADCP:
             # enough not to wrap. Do not "tidy" this to a narrow integer: at
             # more than 327 good pings an int16 product overflows and pg goes
             # negative, which is what issue #94 was in `average_ensembles`. The
-            # int32 storage array above is only written after pg is computed.
+            # float storage arrays above are only written after pg is computed.
             ngood_inst = ens.enu[..., 0].count(axis=0)
             pgi_inst = 100 * ngood_inst // nprofs
 
@@ -1911,13 +1918,21 @@ class ProcessADCP:
 
             # Interpolate pg to universal depth grid. Not overly satisfying but
             # seems like that's what we need to do here.
+            # Depths outside the instrument's profile come back masked. Fill
+            # them with NaN rather than casting them to 0, which would claim
+            # every ping at that depth was bad.
+            #
+            # `np.floor` reproduces the truncation the old `.astype(np.int8)`
+            # performed on the way in, so the published values do not move and
+            # `pg` stays an integer-valued percentage as it is in the other
+            # two averaging methods. Drop it only as a deliberate change.
             pgi_grid = interp1(depth, pgi_inst, self.dgrid, axis=0, method="linear")
-            pg[i] = pgi_grid.astype(np.int8)
-            ngood_grid = np.ma.filled(
-                interp1(depth, ngood_inst, self.dgrid, axis=0, method="linear"),
-                np.nan,
-            )
-            ngood[i] = np.nan_to_num(ngood_grid).astype(np.int32)
+            pg[i] = np.floor(np.ma.filled(pgi_grid, np.nan))
+            # Same treatment for `ngood`: NaN off the profile rather than the
+            # 0 that `np.nan_to_num` produced, and `np.floor` for the
+            # truncation the old `astype(np.int32)` did, so it stays a count.
+            ngood_grid = interp1(depth, ngood_inst, self.dgrid, axis=0, method="linear")
+            ngood[i] = np.floor(np.ma.filled(ngood_grid, np.nan))
 
             # Not changed to averaging in instrument-relative coordinates first.
             amp[i] = ens.amp_grid.mean(axis=0)

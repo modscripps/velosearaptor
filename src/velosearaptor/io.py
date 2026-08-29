@@ -493,7 +493,9 @@ def cf_conventions():
             "comment": (
                 "Number of pings per depth bin that passed editing and "
                 "entered the time average. The basis for pg and for the "
-                "velocity standard errors."
+                "velocity standard errors. Zero means no ping survived "
+                "editing; NaN means the depth bin lies outside the "
+                "instrument's profile and nothing was measured there."
             ),
         },
         "max_e_applied": {
