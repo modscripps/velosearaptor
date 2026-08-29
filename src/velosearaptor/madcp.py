@@ -544,8 +544,9 @@ class ProcessADCP:
                 "and cannot be filtered. Pass use_raw_pressure=True, or supply "
                 "external pressure."
             )
-        pressure = self.tsdat.pressure * self._pressure_scale_factor
-        return tools.lowpassfilter(pressure, 1 / cutoff, fs)
+        # `tsdat.pressure` already carries `pressure_scale_factor`, applied in
+        # `_scale_pycurrents_pressure`. Do not apply it a second time here.
+        return tools.lowpassfilter(self.tsdat.pressure, 1 / cutoff, fs)
 
     def _read_auxiliary_data(self):
         """Read auxiliary data.
