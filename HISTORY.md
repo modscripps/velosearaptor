@@ -2,6 +2,27 @@
 
 ### v0.3.0 (2026 August)
 
+Everything since v0.2.0 in March 2022: the move from gadcp to velosearaptor, the switch to a `src/` layout with [uv](https://docs.astral.sh/uv/) and [ruff](https://docs.astral.sh/ruff/), and a systematic pass over the QC, editing and output-metadata code. Several of the bugs fixed in that pass changed results silently, so files processed with an earlier version may need reprocessing. The checklist below says when.
+
+#### Upgrading
+
+Reprocess if you:
+
+- supplied `t0`/`t1` as strings for a window whose calendar year differs from that of the first ping, the normal case for a mooring spanning New Year. The requested window was silently off by a year ([PR106](https://github.com/modscripps/velosearaptor/pull/106)).
+- set `pressure_scale_factor` to anything other than 1 and processed continuous data with `velosearaptor.madcp.ProcessADCP.average_ensembles`. The factor was applied twice on the low-pass pressure path, which sets `xducer_depth` and the depth grid ([PR111](https://github.com/modscripps/velosearaptor/pull/111)).
+- set `maskbins`, or ran `velosearaptor.madcp.ProcessADCP.process_pings` with a non-default `ens_size`. The adaptive error velocity threshold was estimated over the wrong samples ([PR116](https://github.com/modscripps/velosearaptor/pull/116)).
+- processed with `binmap=True` and use `amp`. Amplitude was biased low on 4.3% of finite cells in the bundled binmapped test file, by a median of 22 counts. Velocity is unchanged ([PR105](https://github.com/modscripps/velosearaptor/pull/105)).
+- averaged over intervals longer than 32767 pings, a 12 h average at a 1 s ping rate, where `npings` and `ngood` either raised `OverflowError` or wrapped silently ([PR104](https://github.com/modscripps/velosearaptor/pull/104)).
+- use `ngood` from `velosearaptor.madcp.ProcessADCP.burst_average_ensembles`, where depth bins the instrument never sampled read 0 rather than missing ([PR115](https://github.com/modscripps/velosearaptor/pull/115)).
+- ran a record with a non-uniform ping interval through the low-pass pressure path, where the documented 30 minute cutoff never bound. Continuous records are unaffected ([PR108](https://github.com/modscripps/velosearaptor/pull/108)).
+- have a record with non-monotonic time stamps, where the repair was classified from the first backward jump alone and applied to the whole record ([PR109](https://github.com/modscripps/velosearaptor/pull/109)).
+
+Update code if you:
+
+- index `ds.depth` on `velosearaptor.madcp.ProcessADCP.process_pings` output. It is now `ds.z`, and the values it held were never water depth ([PR103](https://github.com/modscripps/velosearaptor/pull/103)).
+- assume `ngood` from `velosearaptor.madcp.ProcessADCP.burst_average_ensembles` is an integer. It is float, carrying NaN outside the instrument's profile ([PR115](https://github.com/modscripps/velosearaptor/pull/115)).
+- read `ds.attrs["pg_limit"]` as a number. It reads `"not applied"` on the two paths that never applied it ([PR118](https://github.com/modscripps/velosearaptor/pull/118)).
+
 #### New Features
 - Install `magdec` via shell script.
 - Add an example notebook.
@@ -28,8 +49,8 @@
 - Fix conda/pip environment.
 - Read correct instrument orientation when a majority of the time series has been recorded outside the water ([PR44]( https://github.com/modscripps/velosearaptor/pull/44)).
 - Read paths provided via pathlib.PosixPath objects ([PR55]( https://github.com/modscripps/velosearaptor/pull/55)). By [Gunnar Voet](https://github.com/gunnarvoet/).
-- Fix xarray warning in `groupby` ([PR55]( https://github.com/modscripps/velosearaptor/pull/64)). By [Gunnar Voet](https://github.com/gunnarvoet/).
-- Replace scipy.stats.mode with np.unique for dominant period calculation ([#66] ( https://github.com/modscripps/velosearaptor/pull/66)).
+- Fix xarray warning in `groupby` ([PR64](https://github.com/modscripps/velosearaptor/pull/64)). By [Gunnar Voet](https://github.com/gunnarvoet/).
+- Replace scipy.stats.mode with np.unique for dominant period calculation ([PR66](https://github.com/modscripps/velosearaptor/pull/66)).
 - Fix non-monotonic ADCP time vectors by interpolating isolated bad pings, truncating segment overlaps, or raising on ambiguous cases ([PR70](https://github.com/modscripps/velosearaptor/pull/70)).
 - Raise a clear error in `ProcessADCP._parse_sysconfig` when no pressure record exceeds 15 dbar. The existing guard could never fire, so this case surfaced as a confusing `IndexError`.
 - Stamp the processing date in the log header in UTC rather than local time.
@@ -54,8 +75,8 @@
 
 #### Internal Changes
 - Remove `gvpy` dependency ([PR27]( https://github.com/modscripps/velosearaptor/pull/27)).
-- Auto-detect sonar type instead of hardcoding Workhorse ([PR65] (https://github.com/modscripps/velosearaptor/pull/65)).
-- Speed up bin-averaging ([PR67] ( https://github.com/modscripps/velosearaptor/pull/67 ).
+- Auto-detect sonar type instead of hardcoding Workhorse ([PR65](https://github.com/modscripps/velosearaptor/pull/65)).
+- Speed up bin-averaging ([PR67](https://github.com/modscripps/velosearaptor/pull/67)).
 - Move to a modern `pyproject.toml` / [uv](https://docs.astral.sh/uv/) setup with a `src/` layout ([#69](https://github.com/modscripps/velosearaptor/issues/69)). Removes `setup.py`, `setup.cfg`, `requirements.txt`, and `environment.yml`; tests move to a top-level `tests/` directory.
 - Install `pycurrents` from its git snapshot instead of the retired Mercurial repository, which fixes the documentation build ([#68](https://github.com/modscripps/velosearaptor/issues/68)).
 - Point the `magdec` install at the new geomag git repository and drop the conda requirement ([#71](https://github.com/modscripps/velosearaptor/issues/71)).
