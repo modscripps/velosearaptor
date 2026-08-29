@@ -68,6 +68,28 @@ UPLOOKER = "data/binmap_16670013.000"
 # The only bundled file that reaches the burst path.
 BURST_FILE = "data/24606000.000"
 
+# Magnitudes below this are folded onto zero before anything is compared.
+#
+# `e` and `w` are sums and differences of beam pairs and cancel exactly for
+# some cells. Whether the cancellation lands on exactly zero or on a residue
+# depends on the order the host's numpy chose to add the terms in, so it is a
+# property of the machine. Measured on the four configurations pinned here,
+# `e` on the per-ping path carries residues down to 4.3e-19, which is 2^-61,
+# and the smallest surviving magnitude in any pinned variable is 3.0e-7. The
+# threshold sits in the empty range between them, five orders below the
+# second number and seven above the first, so it cannot hide a real change.
+# A float32 ulp at a typical velocity is 1e-8, four orders above it. The
+# snap folds 250 of the 458 near-zero cells of per-ping `e`, whose smallest
+# surviving value is then 1.03e-3, the instrument's 1 mm/s velocity quantum.
+#
+# This folds values onto zero and quantizes nothing else, so a one-ulp change
+# anywhere else in the array still moves the checksum.
+#
+# Without this, `e` and `w` disagreed between CI runs of identical code on
+# identical inputs while their minimum, maximum, mean and invalid count
+# matched to the last digit. Nothing else in the output has this problem.
+NEAR_ZERO = 1e-12
+
 
 def _proc(rootdir, filename, **kwargs):
     # magdec explicitly, so the pin does not depend on the optional magdec
@@ -125,24 +147,23 @@ CONFIGURATIONS = {
 # ---------------------------------------------------------------- manifest
 
 
+def _snap_near_zero(values):
+    """Cancellation residues, and the sign of zero, folded onto zero.
+
+    See `NEAR_ZERO`. NaN survives the comparison and is left alone.
+    """
+    snapped = values.copy()
+    snapped[np.abs(snapped) < NEAR_ZERO] = 0
+    return snapped
+
+
 def _checksum(values):
     """sha256 over the filled values and, separately, over the invalid mask.
 
-    Two bit patterns are canonicalized first, because neither is reproducible
-    across machines and neither carries any information about the data.
-
-    NaN, whose payload bits are not fixed by the standard. Where a cell is
-    invalid is hashed separately, so filling cannot hide a change.
-
-    Negative zero. The sign of a computed zero follows the signs of the
-    summands and whether the compiler contracted a multiply-add, so it varies
-    between hosts. `w` and `e` are sums and differences of beam pairs of
-    quantized velocities and hit exact zero often, and on the bundled
-    per-ping configuration they were the only two variables to disagree
-    between a local run and CI while their minimum, maximum, mean and invalid
-    count all matched to the last digit.
-
-    Little-endian throughout, for the same reason.
+    Float values are snapped near zero first. NaN is filled, because its
+    payload bits are not fixed by the standard; where a cell is invalid is
+    hashed separately, so the filling cannot hide a change. Byte order is
+    forced little-endian so the manifest does not depend on the host.
     """
     a = np.ascontiguousarray(values)
     if a.dtype.kind == "M":
@@ -150,8 +171,7 @@ def _checksum(values):
         payload = a.view("int64").copy()
     elif a.dtype.kind in "fc":
         invalid = np.isnan(a)
-        payload = a.copy()
-        payload[payload == 0] = 0
+        payload = _snap_near_zero(a)
     elif a.dtype.kind in "iub":
         invalid = np.zeros(a.shape, dtype=bool)
         payload = a
@@ -181,10 +201,19 @@ def _summary(values):
         valid = np.isfinite(values)
         record = {"n_invalid": int((~valid).sum())}
         if valid.any():
-            good = values[valid]
+            # Snapped, like the checksum, so the recorded diagnostics are as
+            # host-independent as the quantity they describe.
+            good = _snap_near_zero(values)[valid]
             record["min"] = float(good.min())
             record["max"] = float(good.max())
             record["mean"] = float(np.mean(good, dtype=np.float64))
+            # `min_abs_nonzero` is what showed that the residues sit twelve
+            # orders of magnitude below the smallest real value, which is
+            # what makes `NEAR_ZERO` safe. Keep it recorded.
+            magnitude = np.abs(good)
+            record["n_zero"] = int((magnitude == 0).sum())
+            nonzero = magnitude[magnitude > 0]
+            record["min_abs_nonzero"] = float(nonzero.min()) if nonzero.size else None
         return record
     if kind in "iub" and values.size:
         return {
@@ -254,7 +283,11 @@ def _manifest(ds):
 
 
 def _summary_line(record):
-    fields = [key for key in ("min", "max", "mean", "first", "last") if key in record]
+    fields = [
+        key
+        for key in ("min", "max", "mean", "first", "last", "n_zero", "min_abs_nonzero")
+        if key in record
+    ]
     parts = [f"{key}={record[key]!r}" for key in fields]
     parts.append(f"n_invalid={record.get('n_invalid')}")
     return ", ".join(parts)
@@ -396,19 +429,24 @@ def test_the_pin_excludes_only_the_two_varying_attributes(rootdir):
         assert set(ds.attrs) - pinned == set(EXCLUDED_ATTRS)
 
 
-def test_the_checksum_ignores_the_sign_of_zero():
-    """Deliberate, and the reason is in `_checksum`. Do not undo it."""
-    positive = np.array([1.0, 0.0, -2.0], dtype=np.float32)
-    negative = np.array([1.0, -0.0, -2.0], dtype=np.float32)
-    assert positive.tobytes() != negative.tobytes()
-    assert _checksum(positive) == _checksum(negative)
+def test_the_checksum_snaps_near_zero():
+    """Deliberate, and the reason is at `NEAR_ZERO`. Do not undo it."""
+    zero = np.array([1.0, 0.0, -2.0], dtype=np.float64)
+    for indistinguishable in (-0.0, 4.336808689942018e-19, -1e-13):
+        other = np.array([1.0, indistinguishable, -2.0], dtype=np.float64)
+        assert zero.tobytes() != other.tobytes()
+        assert _checksum(zero) == _checksum(other)
 
-    # Everything else about a float array still has to move the checksum,
-    # including where the invalid cells are.
-    assert _checksum(positive) != _checksum(np.array([1.0, 0.0, 2.0], np.float32))
-    one_nan = np.array([1.0, np.nan, -2.0], dtype=np.float32)
-    other_nan = np.array([np.nan, 0.0, -2.0], dtype=np.float32)
-    assert _checksum(one_nan) != _checksum(positive)
+    # The threshold is five orders of magnitude below the smallest real value
+    # in any pinned variable, so a change that matters still moves the
+    # checksum.
+    assert _checksum(zero) != _checksum(np.array([1.0, 1e-10, -2.0]))
+    assert _checksum(zero) != _checksum(np.array([1.0, 0.0, 2.0]))
+
+    # So does moving where the invalid cells are.
+    one_nan = np.array([1.0, np.nan, -2.0])
+    other_nan = np.array([np.nan, 0.0, -2.0])
+    assert _checksum(one_nan) != _checksum(zero)
     assert _checksum(one_nan) != _checksum(other_nan)
 
 
