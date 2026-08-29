@@ -1,0 +1,2504 @@
+{
+ "configurations": {
+  "average_ensembles": {
+   "attrs": {
+    "Bin1Dist": {
+     "type": "float64",
+     "value": 5.15
+    },
+    "CellSize": {
+     "type": "float64",
+     "value": 4.0
+    },
+    "NCells": {
+     "type": "uint8",
+     "value": 40
+    },
+    "averaging_interval_hours": {
+     "type": "float",
+     "value": 0.5
+    },
+    "clock_correction": {
+     "type": "str",
+     "value": "none"
+    },
+    "d_interval": {
+     "type": "float64",
+     "value": 4.0
+    },
+    "dbot": {
+     "type": "float64",
+     "value": 165.0
+    },
+    "depth_offset": {
+     "type": "float",
+     "value": 0.0
+    },
+    "dt_hours": {
+     "type": "float",
+     "value": 0.5
+    },
+    "dtop": {
+     "type": "int",
+     "value": 10
+    },
+    "ibad": {
+     "type": "str",
+     "value": "none"
+    },
+    "lat": {
+     "type": "int",
+     "value": 0
+    },
+    "lon": {
+     "type": "int",
+     "value": 0
+    },
+    "magdec": {
+     "type": "float",
+     "value": 0.0
+    },
+    "maskbins": {
+     "type": "str",
+     "value": "none"
+    },
+    "max_e": {
+     "type": "float",
+     "value": 0.2
+    },
+    "max_e_deviation": {
+     "type": "int",
+     "value": 2
+    },
+    "min_correlation": {
+     "type": "int",
+     "value": 64
+    },
+    "mooring": {
+     "type": "str",
+     "value": "Test"
+    },
+    "orientation": {
+     "type": "str",
+     "value": "up"
+    },
+    "pg_limit": {
+     "type": "str",
+     "value": "not applied"
+    },
+    "pressure_scale_factor": {
+     "type": "int",
+     "value": 1
+    },
+    "pressure_source": {
+     "type": "str",
+     "value": "lowpass"
+    },
+    "processing_method": {
+     "type": "str",
+     "value": "average_ensembles"
+    },
+    "project": {
+     "type": "str",
+     "value": "Test"
+    },
+    "sn": {
+     "type": "int",
+     "value": 16670
+    },
+    "t0": {
+     "type": "str",
+     "value": "2018-09-11T10:13:04.010000000"
+    },
+    "t1": {
+     "type": "str",
+     "value": "2018-09-11T11:36:21.510000000"
+    },
+    "time_drift_rate": {
+     "type": "int",
+     "value": 1
+    }
+   },
+   "description": "binmap_16670013.000 via average_ensembles, defaults",
+   "dims": {
+    "depth": 35,
+    "time": 3
+   },
+   "variables": {
+    "amp": {
+     "attrs": {
+      "ancillary_variables": {
+       "type": "str",
+       "value": "npings"
+      },
+      "coverage_content_type": {
+       "type": "str",
+       "value": "physicalMeasurement"
+      },
+      "long_name": {
+       "type": "str",
+       "value": "amplitude"
+      },
+      "standard_name": {
+       "type": "str",
+       "value": "signal_intensity_from_multibeam_acoustic_doppler_velocity_sensor_in_sea_water"
+      }
+     },
+     "checksum": "969dd30fe90c1e52ca43e28f5d739f780b050a8fd610ab50a679b322e90a9bf1",
+     "dims": [
+      "depth",
+      "time"
+     ],
+     "dtype": "<f4",
+     "kind": "data_var",
+     "max": 200.10641479492188,
+     "mean": 119.92114417666481,
+     "min": 84.36334228515625,
+     "n_invalid": 0,
+     "shape": [
+      35,
+      3
+     ]
+    },
+    "depth": {
+     "attrs": {
+      "coverage_content_type": {
+       "type": "str",
+       "value": "coordinate"
+      },
+      "long_name": {
+       "type": "str",
+       "value": "depth"
+      },
+      "positive": {
+       "type": "str",
+       "value": "down"
+      },
+      "standard_name": {
+       "type": "str",
+       "value": "depth"
+      },
+      "units": {
+       "type": "str",
+       "value": "m"
+      }
+     },
+     "checksum": "369e9a1d77db992483ee681350b05c004caaffa5a663c4f1af3cd7d2223aa3ac",
+     "dims": [
+      "depth"
+     ],
+     "dtype": "<f8",
+     "kind": "coord",
+     "max": 149.0,
+     "mean": 81.0,
+     "min": 13.0,
+     "n_invalid": 0,
+     "shape": [
+      35
+     ]
+    },
+    "e": {
+     "attrs": {
+      "ancillary_variables": {
+       "type": "str",
+       "value": "npings"
+      },
+      "coverage_content_type": {
+       "type": "str",
+       "value": "qualityInformation"
+      },
+      "long_name": {
+       "type": "str",
+       "value": "error velocity"
+      },
+      "standard_name": {
+       "type": "str",
+       "value": "indicative_error_from_multibeam_acoustic_doppler_velocity_profiler_in_sea_water"
+      },
+      "units": {
+       "type": "str",
+       "value": "m s-1"
+      }
+     },
+     "checksum": "42d94820c2e0e9027bc5592bb76bcbf97d1332551a03fec2b4f6e60ffefb7ee9",
+     "dims": [
+      "depth",
+      "time"
+     ],
+     "dtype": "<f4",
+     "kind": "data_var",
+     "max": 0.07093344628810883,
+     "mean": 0.014576471195461982,
+     "min": -0.08792956918478012,
+     "n_invalid": 0,
+     "shape": [
+      35,
+      3
+     ]
+    },
+    "max_e_applied": {
+     "attrs": {
+      "comment": {
+       "type": "str",
+       "value": "Error velocity threshold applied to this averaging interval: the minimum of the absolute threshold max_e and max_e_deviation times the standard deviation of error velocity within the interval."
+      },
+      "coverage_content_type": {
+       "type": "str",
+       "value": "qualityInformation"
+      },
+      "long_name": {
+       "type": "str",
+       "value": "applied error velocity threshold"
+      },
+      "units": {
+       "type": "str",
+       "value": "m s-1"
+      }
+     },
+     "checksum": "2df75fa6a8adf3f4301b9682b571346a1d31bbcbdb0d4b03c9d3f327ce080573",
+     "dims": [
+      "time"
+     ],
+     "dtype": "<f4",
+     "kind": "data_var",
+     "max": 0.20000000298023224,
+     "mean": 0.17167323331038156,
+     "min": 0.14922966063022614,
+     "n_invalid": 0,
+     "shape": [
+      3
+     ]
+    },
+    "ngood": {
+     "attrs": {
+      "comment": {
+       "type": "str",
+       "value": "Number of pings per depth bin that passed editing and entered the time average. The basis for pg and for the velocity standard errors. Zero means no ping survived editing; NaN means the depth bin lies outside the instrument's profile and nothing was measured there."
+      },
+      "coverage_content_type": {
+       "type": "str",
+       "value": "qualityInformation"
+      },
+      "long_name": {
+       "type": "str",
+       "value": "number of good pings"
+      },
+      "standard_name": {
+       "type": "str",
+       "value": "number_of_observations"
+      }
+     },
+     "checksum": "d217390052d3660bdba9f42637e77e83ed5c80eeeeab230e687aeab8c0eb47f9",
+     "dims": [
+      "depth",
+      "time"
+     ],
+     "dtype": "<i4",
+     "kind": "data_var",
+     "max": 702,
+     "mean": 474.8666666666667,
+     "min": 4,
+     "n_invalid": 0,
+     "shape": [
+      35,
+      3
+     ]
+    },
+    "npings": {
+     "attrs": {
+      "coverage_content_type": {
+       "type": "str",
+       "value": "auxiliaryInformation"
+      },
+      "long_name": {
+       "type": "str",
+       "value": "number of pings"
+      },
+      "standard_name": {
+       "type": "str",
+       "value": "number_of_observations"
+      }
+     },
+     "checksum": "622bc52634c82a09430fcf618021ad72a09b459b686250462482373271ed04c6",
+     "dims": [
+      "time"
+     ],
+     "dtype": "<i4",
+     "kind": "data_var",
+     "max": 720,
+     "mean": 666.6666666666666,
+     "min": 560,
+     "n_invalid": 0,
+     "shape": [
+      3
+     ]
+    },
+    "pg": {
+     "attrs": {
+      "ancillary_variables": {
+       "type": "str",
+       "value": "npings"
+      },
+      "comment": {
+       "type": "str",
+       "value": "Fraction of the pings in each averaging interval with a valid velocity at this grid depth, computed by `average_ensembles` after every ping was interpolated onto the universal depth grid. `interp1` widens an edited bin, so both grid intervals touching one come out invalid and this reads lower than the fraction of pings that passed editing. It also absorbs mooring knockdown: a grid depth the instrument did not reach for part of the interval counts those pings as bad. `ngood` carries the sample count this is derived from. This is a velosearaptor-defined quantity. It shares its name with RDI's own four PercentGood fields, which `velosearaptor.io.read_raw_rdi` reads and no processing step uses, and it means something different from them."
+      },
+      "coverage_content_type": {
+       "type": "str",
+       "value": "qualityInformation"
+      },
+      "long_name": {
+       "type": "str",
+       "value": "percent good"
+      },
+      "standard_name": {
+       "type": "str",
+       "value": "proportion_of_acceptable_signal_returns_from_acoustic_instrument_in_sea_water"
+      },
+      "units": {
+       "type": "str",
+       "value": "percent"
+      }
+     },
+     "checksum": "b947353f9a34f83e0c4c0c0a9c09c687fe3f6b024d9f350a6ccb62f9808994be",
+     "dims": [
+      "depth",
+      "time"
+     ],
+     "dtype": "<f8",
+     "kind": "data_var",
+     "max": 100.0,
+     "mean": 70.68571428571428,
+     "min": 0.0,
+     "n_invalid": 0,
+     "shape": [
+      35,
+      3
+     ]
+    },
+    "pressure": {
+     "attrs": {
+      "ancillary_variables": {
+       "type": "str",
+       "value": "npings"
+      },
+      "coverage_content_type": {
+       "type": "str",
+       "value": "physicalMeasurement"
+      },
+      "long_name": {
+       "type": "str",
+       "value": "pressure"
+      },
+      "standard_name": {
+       "type": "str",
+       "value": "sea_water_pressure"
+      },
+      "units": {
+       "type": "str",
+       "value": "dbar"
+      }
+     },
+     "checksum": "7a39c73095d34db216131d0c89492c1dd2db46750f34283648a01fe2d9570a78",
+     "dims": [
+      "time"
+     ],
+     "dtype": "<f4",
+     "kind": "data_var",
+     "max": 155.41806030273438,
+     "mean": 155.37248738606772,
+     "min": 155.3417510986328,
+     "n_invalid": 0,
+     "shape": [
+      3
+     ]
+    },
+    "temperature": {
+     "attrs": {
+      "ancillary_variables": {
+       "type": "str",
+       "value": "npings"
+      },
+      "coverage_content_type": {
+       "type": "str",
+       "value": "physicalMeasurement"
+      },
+      "long_name": {
+       "type": "str",
+       "value": "temperature"
+      },
+      "standard_name": {
+       "type": "str",
+       "value": "sea_water_temperature"
+      },
+      "units": {
+       "type": "str",
+       "value": "degrees_C"
+      }
+     },
+     "checksum": "806bbe2e07ca20a197f1ff3d5dc5b4fccd2d7584d794768d71a1cafc565b5f21",
+     "dims": [
+      "time"
+     ],
+     "dtype": "<f4",
+     "kind": "data_var",
+     "max": 7.540375232696533,
+     "mean": 7.515277862548828,
+     "min": 7.470139026641846,
+     "n_invalid": 0,
+     "shape": [
+      3
+     ]
+    },
+    "time": {
+     "attrs": {},
+     "checksum": "736e428e0fccfb2ebfd3eaa4b4df9c60e9b6c8836c34669a71b5f056963c73fe",
+     "dims": [
+      "time"
+     ],
+     "dtype": "<M8[ns]",
+     "first": "2018-09-11T10:28:04.010000000",
+     "kind": "coord",
+     "last": "2018-09-11T11:28:04.010000000",
+     "n_invalid": 0,
+     "shape": [
+      3
+     ]
+    },
+    "u": {
+     "attrs": {
+      "ancillary_variables": {
+       "type": "str",
+       "value": "npings"
+      },
+      "coverage_content_type": {
+       "type": "str",
+       "value": "physicalMeasurement"
+      },
+      "long_name": {
+       "type": "str",
+       "value": "u"
+      },
+      "standard_name": {
+       "type": "str",
+       "value": "eastward_sea_water_velocity"
+      },
+      "units": {
+       "type": "str",
+       "value": "m s-1"
+      }
+     },
+     "checksum": "dbc1236b9b1ba32ca1d7930cb0947a8025968b6627104c130ff9311150313d75",
+     "dims": [
+      "depth",
+      "time"
+     ],
+     "dtype": "<f4",
+     "kind": "data_var",
+     "max": 0.1659708172082901,
+     "mean": 0.04261694568697186,
+     "min": -0.035811543464660645,
+     "n_invalid": 0,
+     "shape": [
+      35,
+      3
+     ]
+    },
+    "u_error": {
+     "attrs": {
+      "ancillary_variables": {
+       "type": "str",
+       "value": "npings"
+      },
+      "coverage_content_type": {
+       "type": "str",
+       "value": "qualityInformation"
+      },
+      "long_name": {
+       "type": "str",
+       "value": "u standard error"
+      },
+      "standard_name": {
+       "type": "str",
+       "value": "eastward_sea_water_velocity_standard_error"
+      },
+      "units": {
+       "type": "str",
+       "value": "m s-1"
+      }
+     },
+     "checksum": "97631bb892f87b831367809179efdb3ff3201102c36ab0d83a5fe3373031e84e",
+     "dims": [
+      "depth",
+      "time"
+     ],
+     "dtype": "<f8",
+     "kind": "data_var",
+     "max": 0.034896984369003674,
+     "mean": 0.005697724378105403,
+     "min": 0.0013366012150853872,
+     "n_invalid": 0,
+     "shape": [
+      35,
+      3
+     ]
+    },
+    "v": {
+     "attrs": {
+      "ancillary_variables": {
+       "type": "str",
+       "value": "npings"
+      },
+      "coverage_content_type": {
+       "type": "str",
+       "value": "physicalMeasurement"
+      },
+      "long_name": {
+       "type": "str",
+       "value": "v"
+      },
+      "standard_name": {
+       "type": "str",
+       "value": "northward_sea_water_velocity"
+      },
+      "units": {
+       "type": "str",
+       "value": "m s-1"
+      }
+     },
+     "checksum": "e5c0fe119bda571271f62a6260b2ba8247e1f8bd83d75246606a2e58970c5bec",
+     "dims": [
+      "depth",
+      "time"
+     ],
+     "dtype": "<f4",
+     "kind": "data_var",
+     "max": 0.13689953088760376,
+     "mean": -0.004004720861918204,
+     "min": -0.045905034989118576,
+     "n_invalid": 0,
+     "shape": [
+      35,
+      3
+     ]
+    },
+    "v_error": {
+     "attrs": {
+      "ancillary_variables": {
+       "type": "str",
+       "value": "npings"
+      },
+      "coverage_content_type": {
+       "type": "str",
+       "value": "qualityInformation"
+      },
+      "long_name": {
+       "type": "str",
+       "value": "v standard error"
+      },
+      "standard_name": {
+       "type": "str",
+       "value": "northward_sea_water_velocity_standard_error"
+      },
+      "units": {
+       "type": "str",
+       "value": "m s-1"
+      }
+     },
+     "checksum": "5a4c29bff92cef5c526290230d4d74a12ea6b2605a316f4cfdb5a0409355e749",
+     "dims": [
+      "depth",
+      "time"
+     ],
+     "dtype": "<f8",
+     "kind": "data_var",
+     "max": 0.06696033786914542,
+     "mean": 0.0056103767058895086,
+     "min": 0.0013827301949417934,
+     "n_invalid": 0,
+     "shape": [
+      35,
+      3
+     ]
+    },
+    "w": {
+     "attrs": {
+      "ancillary_variables": {
+       "type": "str",
+       "value": "npings"
+      },
+      "coverage_content_type": {
+       "type": "str",
+       "value": "physicalMeasurement"
+      },
+      "long_name": {
+       "type": "str",
+       "value": "w"
+      },
+      "standard_name": {
+       "type": "str",
+       "value": "upward_sea_water_velocity"
+      },
+      "units": {
+       "type": "str",
+       "value": "m s-1"
+      }
+     },
+     "checksum": "9b2c9ccb4524da12af99a1a663b90147fc6ce4187a74def8ddc67e002e9564c5",
+     "dims": [
+      "depth",
+      "time"
+     ],
+     "dtype": "<f4",
+     "kind": "data_var",
+     "max": 0.005994443316012621,
+     "mean": -0.05753207165606519,
+     "min": -0.16006605327129364,
+     "n_invalid": 0,
+     "shape": [
+      35,
+      3
+     ]
+    },
+    "w_error": {
+     "attrs": {
+      "ancillary_variables": {
+       "type": "str",
+       "value": "npings"
+      },
+      "coverage_content_type": {
+       "type": "str",
+       "value": "qualityInformation"
+      },
+      "long_name": {
+       "type": "str",
+       "value": "w standard error"
+      },
+      "standard_name": {
+       "type": "str",
+       "value": "upward_sea_water_velocity_standard_error"
+      },
+      "units": {
+       "type": "str",
+       "value": "m s-1"
+      }
+     },
+     "checksum": "52573190c3c81a7f957158708545ba918255c8d069322d78d38dabacf5a97379",
+     "dims": [
+      "depth",
+      "time"
+     ],
+     "dtype": "<f8",
+     "kind": "data_var",
+     "max": 0.024492678593582277,
+     "mean": 0.003504276650631909,
+     "min": 0.0005223098488444343,
+     "n_invalid": 0,
+     "shape": [
+      35,
+      3
+     ]
+    },
+    "xducer_depth": {
+     "attrs": {
+      "ancillary_variables": {
+       "type": "str",
+       "value": "npings"
+      },
+      "coverage_content_type": {
+       "type": "str",
+       "value": "physicalMeasurement"
+      },
+      "long_name": {
+       "type": "str",
+       "value": "transducer depth"
+      },
+      "positive": {
+       "type": "str",
+       "value": "down"
+      },
+      "standard_name": {
+       "type": "str",
+       "value": "depth"
+      },
+      "units": {
+       "type": "str",
+       "value": "m"
+      }
+     },
+     "checksum": "905f8f56850bdebddf4e85124c06f8f26291305f9a9c1e9057d3b825b1e5bb50",
+     "dims": [
+      "time"
+     ],
+     "dtype": "<f8",
+     "kind": "data_var",
+     "max": 154.50626246152592,
+     "mean": 154.46097395462866,
+     "min": 154.43042948378863,
+     "n_invalid": 0,
+     "shape": [
+      3
+     ]
+    }
+   }
+  },
+  "burst_average_ensembles": {
+   "attrs": {
+    "Bin1Dist": {
+     "type": "float64",
+     "value": 25.55
+    },
+    "CellSize": {
+     "type": "float64",
+     "value": 16.0
+    },
+    "NCells": {
+     "type": "uint8",
+     "value": 19
+    },
+    "averaging_interval_hours": {
+     "type": "float64",
+     "value": 0.020833333326208958
+    },
+    "clock_correction": {
+     "type": "str",
+     "value": "none"
+    },
+    "d_interval": {
+     "type": "float64",
+     "value": 16.0
+    },
+    "dbot": {
+     "type": "float64",
+     "value": 1522.0
+    },
+    "depth_offset": {
+     "type": "float",
+     "value": 0.0
+    },
+    "dtop": {
+     "type": "float64",
+     "value": 1145.0
+    },
+    "ibad": {
+     "type": "str",
+     "value": "none"
+    },
+    "interpolate_bin": {
+     "type": "str",
+     "value": "none"
+    },
+    "lat": {
+     "type": "int",
+     "value": 0
+    },
+    "lon": {
+     "type": "int",
+     "value": 0
+    },
+    "magdec": {
+     "type": "float",
+     "value": 0.0
+    },
+    "maskbins": {
+     "type": "str",
+     "value": "none"
+    },
+    "max_e": {
+     "type": "float",
+     "value": 0.2
+    },
+    "max_e_deviation": {
+     "type": "int",
+     "value": 2
+    },
+    "min_correlation": {
+     "type": "int",
+     "value": 64
+    },
+    "mooring": {
+     "type": "str",
+     "value": "Test"
+    },
+    "orientation": {
+     "type": "str",
+     "value": "down"
+    },
+    "pg_limit": {
+     "type": "int",
+     "value": 50
+    },
+    "pressure_scale_factor": {
+     "type": "int",
+     "value": 1
+    },
+    "pressure_source": {
+     "type": "str",
+     "value": "raw"
+    },
+    "processing_method": {
+     "type": "str",
+     "value": "burst_average_ensembles"
+    },
+    "project": {
+     "type": "str",
+     "value": "Test"
+    },
+    "sn": {
+     "type": "int",
+     "value": 24606
+    },
+    "t0": {
+     "type": "str",
+     "value": "2021-07-07T17:15:30.000000000"
+    },
+    "t1": {
+     "type": "str",
+     "value": "2021-07-11T12:15:03.000000000"
+    },
+    "time_drift_rate": {
+     "type": "int",
+     "value": 1
+    }
+   },
+   "description": "24606000.000 via burst_average_ensembles, tgridparams={\"burst_average\": True}",
+   "dims": {
+    "depth": 19,
+    "time": 365
+   },
+   "variables": {
+    "amp": {
+     "attrs": {
+      "ancillary_variables": {
+       "type": "str",
+       "value": "npings"
+      },
+      "coverage_content_type": {
+       "type": "str",
+       "value": "physicalMeasurement"
+      },
+      "long_name": {
+       "type": "str",
+       "value": "amplitude"
+      },
+      "standard_name": {
+       "type": "str",
+       "value": "signal_intensity_from_multibeam_acoustic_doppler_velocity_sensor_in_sea_water"
+      }
+     },
+     "checksum": "fb652980cec8aed154348744271c85b1ad71c3feb899f1b3636585b0379abf4a",
+     "dims": [
+      "depth",
+      "time"
+     ],
+     "dtype": "<f4",
+     "kind": "data_var",
+     "max": 189.17767333984375,
+     "mean": 135.86824758288705,
+     "min": 97.41099548339844,
+     "n_invalid": 365,
+     "shape": [
+      19,
+      365
+     ]
+    },
+    "depth": {
+     "attrs": {
+      "coverage_content_type": {
+       "type": "str",
+       "value": "coordinate"
+      },
+      "long_name": {
+       "type": "str",
+       "value": "depth"
+      },
+      "positive": {
+       "type": "str",
+       "value": "down"
+      },
+      "standard_name": {
+       "type": "str",
+       "value": "depth"
+      },
+      "units": {
+       "type": "str",
+       "value": "m"
+      }
+     },
+     "checksum": "5d3be5765ef83107e34fd28d9be4c642911eb394663cabc523008cf82a9463df",
+     "dims": [
+      "depth"
+     ],
+     "dtype": "<f8",
+     "kind": "coord",
+     "max": 1465.0,
+     "mean": 1321.0,
+     "min": 1177.0,
+     "n_invalid": 0,
+     "shape": [
+      19
+     ]
+    },
+    "e": {
+     "attrs": {
+      "ancillary_variables": {
+       "type": "str",
+       "value": "npings"
+      },
+      "coverage_content_type": {
+       "type": "str",
+       "value": "qualityInformation"
+      },
+      "long_name": {
+       "type": "str",
+       "value": "error velocity"
+      },
+      "standard_name": {
+       "type": "str",
+       "value": "indicative_error_from_multibeam_acoustic_doppler_velocity_profiler_in_sea_water"
+      },
+      "units": {
+       "type": "str",
+       "value": "m s-1"
+      }
+     },
+     "checksum": "89ede31fd532131bd987930d37cff800091e97a7cc2b6d115453449315cded8e",
+     "dims": [
+      "depth",
+      "time"
+     ],
+     "dtype": "<f4",
+     "kind": "data_var",
+     "max": 0.1576433926820755,
+     "mean": -0.0005343978614388057,
+     "min": -0.1439194530248642,
+     "n_invalid": 555,
+     "shape": [
+      19,
+      365
+     ]
+    },
+    "max_e_applied": {
+     "attrs": {
+      "comment": {
+       "type": "str",
+       "value": "Error velocity threshold applied to this averaging interval: the minimum of the absolute threshold max_e and max_e_deviation times the standard deviation of error velocity within the interval."
+      },
+      "coverage_content_type": {
+       "type": "str",
+       "value": "qualityInformation"
+      },
+      "long_name": {
+       "type": "str",
+       "value": "applied error velocity threshold"
+      },
+      "units": {
+       "type": "str",
+       "value": "m s-1"
+      }
+     },
+     "checksum": "708b925b480d21caa2a426951750637485dba0b7709bf9e821c66859390cf845",
+     "dims": [
+      "time"
+     ],
+     "dtype": "<f4",
+     "kind": "data_var",
+     "max": 0.19597002863883972,
+     "mean": 0.12471252412420429,
+     "min": 0.10184412449598312,
+     "n_invalid": 0,
+     "shape": [
+      365
+     ]
+    },
+    "ngood": {
+     "attrs": {
+      "comment": {
+       "type": "str",
+       "value": "Number of pings per depth bin that passed editing and entered the time average. The basis for pg and for the velocity standard errors. Zero means no ping survived editing; NaN means the depth bin lies outside the instrument's profile and nothing was measured there."
+      },
+      "coverage_content_type": {
+       "type": "str",
+       "value": "qualityInformation"
+      },
+      "long_name": {
+       "type": "str",
+       "value": "number of good pings"
+      },
+      "standard_name": {
+       "type": "str",
+       "value": "number_of_observations"
+      }
+     },
+     "checksum": "c9994b4434d5c4c955c442ae810339eaefd9f2c8cf737054f6eda1432e6a095c",
+     "dims": [
+      "depth",
+      "time"
+     ],
+     "dtype": "<f8",
+     "kind": "data_var",
+     "max": 22.0,
+     "mean": 19.918264840182648,
+     "min": 0.0,
+     "n_invalid": 365,
+     "shape": [
+      19,
+      365
+     ]
+    },
+    "npings": {
+     "attrs": {
+      "coverage_content_type": {
+       "type": "str",
+       "value": "auxiliaryInformation"
+      },
+      "long_name": {
+       "type": "str",
+       "value": "number of pings"
+      },
+      "standard_name": {
+       "type": "str",
+       "value": "number_of_observations"
+      }
+     },
+     "checksum": "4800296e0f6fc4a0253143e0c0f2dfcdbab859ab9fff41a705792c667496d5c6",
+     "dims": [
+      "time"
+     ],
+     "dtype": "<i4",
+     "kind": "data_var",
+     "max": 22,
+     "mean": 21.91780821917808,
+     "min": 2,
+     "n_invalid": 0,
+     "shape": [
+      365
+     ]
+    },
+    "pg": {
+     "attrs": {
+      "ancillary_variables": {
+       "type": "str",
+       "value": "npings"
+      },
+      "comment": {
+       "type": "str",
+       "value": "Fraction of the pings in each burst with a valid velocity at this bin, computed by `burst_average_ensembles` on instrument-relative bins and then interpolated onto the universal depth grid. It is NaN at depths outside the instrument's profile, which is why it is float. Velocities were screened against the `pg_limit` attribute. A bin filled in by `interpolate_bin` keeps its own value of 0, so an interpolated bin stays visible in the product. `ngood` carries the sample count this is derived from. This is a velosearaptor-defined quantity. It shares its name with RDI's own four PercentGood fields, which `velosearaptor.io.read_raw_rdi` reads and no processing step uses, and it means something different from them."
+      },
+      "coverage_content_type": {
+       "type": "str",
+       "value": "qualityInformation"
+      },
+      "long_name": {
+       "type": "str",
+       "value": "percent good"
+      },
+      "standard_name": {
+       "type": "str",
+       "value": "proportion_of_acceptable_signal_returns_from_acoustic_instrument_in_sea_water"
+      },
+      "units": {
+       "type": "str",
+       "value": "percent"
+      }
+     },
+     "checksum": "b56e99cc8d27e3a03100f9da3b995cbdc9486678da1f859123ddc0d45a18a2d1",
+     "dims": [
+      "depth",
+      "time"
+     ],
+     "dtype": "<f8",
+     "kind": "data_var",
+     "max": 100.0,
+     "mean": 91.84505327245053,
+     "min": 3.0,
+     "n_invalid": 365,
+     "shape": [
+      19,
+      365
+     ]
+    },
+    "pressure": {
+     "attrs": {
+      "ancillary_variables": {
+       "type": "str",
+       "value": "npings"
+      },
+      "coverage_content_type": {
+       "type": "str",
+       "value": "physicalMeasurement"
+      },
+      "long_name": {
+       "type": "str",
+       "value": "pressure"
+      },
+      "standard_name": {
+       "type": "str",
+       "value": "sea_water_pressure"
+      },
+      "units": {
+       "type": "str",
+       "value": "dbar"
+      }
+     },
+     "checksum": "e788a3c75099b9249cd90adbd2b8272cfa99e6cf7fcb3c25f5b7310413f18e98",
+     "dims": [
+      "time"
+     ],
+     "dtype": "<f4",
+     "kind": "data_var",
+     "max": 1163.961181640625,
+     "mean": 1160.9088643113228,
+     "min": 1158.1488037109375,
+     "n_invalid": 0,
+     "shape": [
+      365
+     ]
+    },
+    "temperature": {
+     "attrs": {
+      "ancillary_variables": {
+       "type": "str",
+       "value": "npings"
+      },
+      "coverage_content_type": {
+       "type": "str",
+       "value": "physicalMeasurement"
+      },
+      "long_name": {
+       "type": "str",
+       "value": "temperature"
+      },
+      "standard_name": {
+       "type": "str",
+       "value": "sea_water_temperature"
+      },
+      "units": {
+       "type": "str",
+       "value": "degrees_C"
+      }
+     },
+     "checksum": "85c0224879a0727ca27fb7f8c6587a0202ab7c4db0216845e5e8362ff435b1b5",
+     "dims": [
+      "time"
+     ],
+     "dtype": "<f4",
+     "kind": "data_var",
+     "max": 6.8218183517456055,
+     "mean": 5.839906811387571,
+     "min": 4.8168182373046875,
+     "n_invalid": 0,
+     "shape": [
+      365
+     ]
+    },
+    "time": {
+     "attrs": {},
+     "checksum": "f93dee22400083308d3210795b8c22bbe0691c66ccccfe071a5443d9fcf09804",
+     "dims": [
+      "time"
+     ],
+     "dtype": "<M8[ns]",
+     "first": "2021-07-07T17:16:03.000000000",
+     "kind": "coord",
+     "last": "2021-07-11T12:15:33.000000000",
+     "n_invalid": 0,
+     "shape": [
+      365
+     ]
+    },
+    "u": {
+     "attrs": {
+      "ancillary_variables": {
+       "type": "str",
+       "value": "npings"
+      },
+      "coverage_content_type": {
+       "type": "str",
+       "value": "physicalMeasurement"
+      },
+      "long_name": {
+       "type": "str",
+       "value": "u"
+      },
+      "standard_name": {
+       "type": "str",
+       "value": "eastward_sea_water_velocity"
+      },
+      "units": {
+       "type": "str",
+       "value": "m s-1"
+      }
+     },
+     "checksum": "b54fe4c333f2634b366750057ab2c7be3a0d3f7cb6dfde3f94c8faae16ceae11",
+     "dims": [
+      "depth",
+      "time"
+     ],
+     "dtype": "<f4",
+     "kind": "data_var",
+     "max": 0.33266857266426086,
+     "mean": 0.01458723834788469,
+     "min": -0.19712120294570923,
+     "n_invalid": 555,
+     "shape": [
+      19,
+      365
+     ]
+    },
+    "u_error": {
+     "attrs": {
+      "ancillary_variables": {
+       "type": "str",
+       "value": "npings"
+      },
+      "coverage_content_type": {
+       "type": "str",
+       "value": "qualityInformation"
+      },
+      "long_name": {
+       "type": "str",
+       "value": "u standard error"
+      },
+      "standard_name": {
+       "type": "str",
+       "value": "eastward_sea_water_velocity_standard_error"
+      },
+      "units": {
+       "type": "str",
+       "value": "m s-1"
+      }
+     },
+     "checksum": "c3534356bab980cc47c6c989ce264c0e16f38ae9da5aeecdee73741d87c8267b",
+     "dims": [
+      "depth",
+      "time"
+     ],
+     "dtype": "<f8",
+     "kind": "data_var",
+     "max": 0.0724708474699743,
+     "mean": 0.012569722146150614,
+     "min": 0.0,
+     "n_invalid": 555,
+     "shape": [
+      19,
+      365
+     ]
+    },
+    "v": {
+     "attrs": {
+      "ancillary_variables": {
+       "type": "str",
+       "value": "npings"
+      },
+      "coverage_content_type": {
+       "type": "str",
+       "value": "physicalMeasurement"
+      },
+      "long_name": {
+       "type": "str",
+       "value": "v"
+      },
+      "standard_name": {
+       "type": "str",
+       "value": "northward_sea_water_velocity"
+      },
+      "units": {
+       "type": "str",
+       "value": "m s-1"
+      }
+     },
+     "checksum": "51825f22aef9d67fe3e63e96d7b082d9b03451bcdc81d09303b5c72eeb5a8c4e",
+     "dims": [
+      "depth",
+      "time"
+     ],
+     "dtype": "<f4",
+     "kind": "data_var",
+     "max": 0.21482709050178528,
+     "mean": -0.018940603833033032,
+     "min": -0.3775806427001953,
+     "n_invalid": 555,
+     "shape": [
+      19,
+      365
+     ]
+    },
+    "v_error": {
+     "attrs": {
+      "ancillary_variables": {
+       "type": "str",
+       "value": "npings"
+      },
+      "coverage_content_type": {
+       "type": "str",
+       "value": "qualityInformation"
+      },
+      "long_name": {
+       "type": "str",
+       "value": "v standard error"
+      },
+      "standard_name": {
+       "type": "str",
+       "value": "northward_sea_water_velocity_standard_error"
+      },
+      "units": {
+       "type": "str",
+       "value": "m s-1"
+      }
+     },
+     "checksum": "c0412b785d6ceb2ebe3b8b0f75aefe2851333819c7c44d880baaba57972429f3",
+     "dims": [
+      "depth",
+      "time"
+     ],
+     "dtype": "<f8",
+     "kind": "data_var",
+     "max": 0.04458234068357171,
+     "mean": 0.012487792167712376,
+     "min": 0.0,
+     "n_invalid": 555,
+     "shape": [
+      19,
+      365
+     ]
+    },
+    "w": {
+     "attrs": {
+      "ancillary_variables": {
+       "type": "str",
+       "value": "npings"
+      },
+      "coverage_content_type": {
+       "type": "str",
+       "value": "physicalMeasurement"
+      },
+      "long_name": {
+       "type": "str",
+       "value": "w"
+      },
+      "standard_name": {
+       "type": "str",
+       "value": "upward_sea_water_velocity"
+      },
+      "units": {
+       "type": "str",
+       "value": "m s-1"
+      }
+     },
+     "checksum": "bb569916022307175a8ba48bab08c9c7704c1b4bf8653dd1595f8fd394a578cc",
+     "dims": [
+      "depth",
+      "time"
+     ],
+     "dtype": "<f4",
+     "kind": "data_var",
+     "max": 0.05006086081266403,
+     "mean": -2.9415180022317707e-05,
+     "min": -0.05282541736960411,
+     "n_invalid": 555,
+     "shape": [
+      19,
+      365
+     ]
+    },
+    "w_error": {
+     "attrs": {
+      "ancillary_variables": {
+       "type": "str",
+       "value": "npings"
+      },
+      "coverage_content_type": {
+       "type": "str",
+       "value": "qualityInformation"
+      },
+      "long_name": {
+       "type": "str",
+       "value": "w standard error"
+      },
+      "standard_name": {
+       "type": "str",
+       "value": "upward_sea_water_velocity_standard_error"
+      },
+      "units": {
+       "type": "str",
+       "value": "m s-1"
+      }
+     },
+     "checksum": "0d03b50442d265d5e9214968f5d25723eccc9db7d5fbbff1825774d1cd6117e3",
+     "dims": [
+      "depth",
+      "time"
+     ],
+     "dtype": "<f8",
+     "kind": "data_var",
+     "max": 0.016889852998181763,
+     "mean": 0.0032747423140772514,
+     "min": 0.0,
+     "n_invalid": 555,
+     "shape": [
+      19,
+      365
+     ]
+    },
+    "xducer_depth": {
+     "attrs": {
+      "ancillary_variables": {
+       "type": "str",
+       "value": "npings"
+      },
+      "coverage_content_type": {
+       "type": "str",
+       "value": "physicalMeasurement"
+      },
+      "long_name": {
+       "type": "str",
+       "value": "transducer depth"
+      },
+      "positive": {
+       "type": "str",
+       "value": "down"
+      },
+      "standard_name": {
+       "type": "str",
+       "value": "depth"
+      },
+      "units": {
+       "type": "str",
+       "value": "m"
+      }
+     },
+     "checksum": "6f1bb3ea383ccbb521d79d04b6143a40cabd0975c0f99b71bbbfa9f33abce41a",
+     "dims": [
+      "time"
+     ],
+     "dtype": "<f8",
+     "kind": "data_var",
+     "max": 1154.3353194773774,
+     "mean": 1151.3165984967184,
+     "min": 1148.5868848560472,
+     "n_invalid": 0,
+     "shape": [
+      365
+     ]
+    }
+   }
+  },
+  "process_pings_binmap_false": {
+   "attrs": {
+    "Bin1Dist": {
+     "type": "float64",
+     "value": 5.15
+    },
+    "CellSize": {
+     "type": "float64",
+     "value": 4.0
+    },
+    "NCells": {
+     "type": "uint8",
+     "value": 40
+    },
+    "binmap": {
+     "type": "str",
+     "value": "False"
+    },
+    "clock_correction": {
+     "type": "str",
+     "value": "none"
+    },
+    "depth_offset": {
+     "type": "float",
+     "value": 0.0
+    },
+    "ibad": {
+     "type": "str",
+     "value": "none"
+    },
+    "lat": {
+     "type": "int",
+     "value": 0
+    },
+    "lon": {
+     "type": "int",
+     "value": 0
+    },
+    "magdec": {
+     "type": "float",
+     "value": 0.0
+    },
+    "maskbins": {
+     "type": "str",
+     "value": "none"
+    },
+    "max_e": {
+     "type": "float",
+     "value": 0.2
+    },
+    "max_e_deviation": {
+     "type": "int",
+     "value": 2
+    },
+    "min_correlation": {
+     "type": "int",
+     "value": 64
+    },
+    "mooring": {
+     "type": "str",
+     "value": "Test"
+    },
+    "orientation": {
+     "type": "str",
+     "value": "up"
+    },
+    "pg_limit": {
+     "type": "str",
+     "value": "not applied"
+    },
+    "pressure_scale_factor": {
+     "type": "int",
+     "value": 1
+    },
+    "pressure_source": {
+     "type": "str",
+     "value": "raw"
+    },
+    "processing_method": {
+     "type": "str",
+     "value": "process_pings"
+    },
+    "project": {
+     "type": "str",
+     "value": "Test"
+    },
+    "sn": {
+     "type": "int",
+     "value": 16670
+    },
+    "t0": {
+     "type": "str",
+     "value": "2018-09-11T10:13:04.010000000"
+    },
+    "t1": {
+     "type": "str",
+     "value": "2018-09-11T11:36:21.510000000"
+    },
+    "time_drift_rate": {
+     "type": "int",
+     "value": 1
+    }
+   },
+   "description": "binmap_16670013.000 via process_pings(binmap=False)",
+   "dims": {
+    "time": 1999,
+    "z": 40
+   },
+   "variables": {
+    "amp": {
+     "attrs": {
+      "coverage_content_type": {
+       "type": "str",
+       "value": "physicalMeasurement"
+      },
+      "long_name": {
+       "type": "str",
+       "value": "amplitude"
+      },
+      "standard_name": {
+       "type": "str",
+       "value": "signal_intensity_from_multibeam_acoustic_doppler_velocity_sensor_in_sea_water"
+      }
+     },
+     "checksum": "e8ca1dd1ad4c54f34303aae1efc3eb01801641b010c5f804d9931d650a8fdd02",
+     "dims": [
+      "z",
+      "time"
+     ],
+     "dtype": "<f4",
+     "kind": "data_var",
+     "max": 217.0,
+     "mean": 118.21727113556778,
+     "min": 75.75,
+     "n_invalid": 0,
+     "shape": [
+      40,
+      1999
+     ]
+    },
+    "e": {
+     "attrs": {
+      "coverage_content_type": {
+       "type": "str",
+       "value": "qualityInformation"
+      },
+      "long_name": {
+       "type": "str",
+       "value": "error velocity"
+      },
+      "standard_name": {
+       "type": "str",
+       "value": "indicative_error_from_multibeam_acoustic_doppler_velocity_profiler_in_sea_water"
+      },
+      "units": {
+       "type": "str",
+       "value": "m s-1"
+      }
+     },
+     "checksum": "42bee36671e5c7fcc3c25fd1be604c6232a5567913194f902d3b020d2f851d8c",
+     "dims": [
+      "z",
+      "time"
+     ],
+     "dtype": "<f4",
+     "kind": "data_var",
+     "max": 0.19950814545154572,
+     "mean": 0.016840631003385325,
+     "min": -0.19950814545154572,
+     "n_invalid": 19316,
+     "shape": [
+      40,
+      1999
+     ]
+    },
+    "max_e_applied": {
+     "attrs": {
+      "comment": {
+       "type": "str",
+       "value": "Error velocity threshold applied to this averaging interval: the minimum of the absolute threshold max_e and max_e_deviation times the standard deviation of error velocity within the interval."
+      },
+      "coverage_content_type": {
+       "type": "str",
+       "value": "qualityInformation"
+      },
+      "long_name": {
+       "type": "str",
+       "value": "applied error velocity threshold"
+      },
+      "units": {
+       "type": "str",
+       "value": "m s-1"
+      }
+     },
+     "checksum": "4a83546caf019c37ae1aa1088a5f9d427cf080759129e039036c45039df50399",
+     "dims": [
+      "time"
+     ],
+     "dtype": "<f4",
+     "kind": "data_var",
+     "max": 0.20000000298023224,
+     "mean": 0.20000000298023224,
+     "min": 0.20000000298023224,
+     "n_invalid": 0,
+     "shape": [
+      1999
+     ]
+    },
+    "pg": {
+     "attrs": {
+      "comment": {
+       "type": "str",
+       "value": "Fraction of pings with a valid velocity at this bin, computed per ping by `process_pings`. It is binary, 0 or 100: 100 means the ping survived editing at this bin, 0 means it was edited out. No time averaging has happened on this path, so this says nothing about a sample count. This is a velosearaptor-defined quantity. It shares its name with RDI's own four PercentGood fields, which `velosearaptor.io.read_raw_rdi` reads and no processing step uses, and it means something different from them."
+      },
+      "coverage_content_type": {
+       "type": "str",
+       "value": "qualityInformation"
+      },
+      "long_name": {
+       "type": "str",
+       "value": "percent good"
+      },
+      "standard_name": {
+       "type": "str",
+       "value": "proportion_of_acceptable_signal_returns_from_acoustic_instrument_in_sea_water"
+      },
+      "units": {
+       "type": "str",
+       "value": "percent"
+      }
+     },
+     "checksum": "43cfff865e89a70c93fa678b0761cf37500604823c1350860b52a2b8d837b05d",
+     "dims": [
+      "z",
+      "time"
+     ],
+     "dtype": "<f8",
+     "kind": "data_var",
+     "max": 100.0,
+     "mean": 75.84292146073037,
+     "min": 0.0,
+     "n_invalid": 0,
+     "shape": [
+      40,
+      1999
+     ]
+    },
+    "pressure": {
+     "attrs": {
+      "coverage_content_type": {
+       "type": "str",
+       "value": "physicalMeasurement"
+      },
+      "long_name": {
+       "type": "str",
+       "value": "pressure"
+      },
+      "standard_name": {
+       "type": "str",
+       "value": "sea_water_pressure"
+      },
+      "units": {
+       "type": "str",
+       "value": "dbar"
+      }
+     },
+     "checksum": "5e79f864fd2b92bb3fdc2ee504bc90b632900f7889622ac585afe4abad38d6f1",
+     "dims": [
+      "time"
+     ],
+     "dtype": "<f8",
+     "kind": "data_var",
+     "max": 170.143,
+     "mean": 155.3549824912456,
+     "min": 141.787,
+     "n_invalid": 0,
+     "shape": [
+      1999
+     ]
+    },
+    "temperature": {
+     "attrs": {
+      "coverage_content_type": {
+       "type": "str",
+       "value": "physicalMeasurement"
+      },
+      "long_name": {
+       "type": "str",
+       "value": "temperature"
+      },
+      "standard_name": {
+       "type": "str",
+       "value": "sea_water_temperature"
+      },
+      "units": {
+       "type": "str",
+       "value": "degrees_C"
+      }
+     },
+     "checksum": "5d9c8dfbcbcfd1fcffb70ba2adec53ef6ee2b25f79ae58549104967f89e9bc59",
+     "dims": [
+      "time"
+     ],
+     "dtype": "<f8",
+     "kind": "data_var",
+     "max": 7.64,
+     "mean": 7.513271635817908,
+     "min": 7.3,
+     "n_invalid": 0,
+     "shape": [
+      1999
+     ]
+    },
+    "time": {
+     "attrs": {},
+     "checksum": "526b1dde31e4f748e79d6ceb5f2627c3f27d5929f1322edfa672daab5ff40281",
+     "dims": [
+      "time"
+     ],
+     "dtype": "<M8[ns]",
+     "first": "2018-09-11T10:13:04.010000000",
+     "kind": "coord",
+     "last": "2018-09-11T11:36:19.010000000",
+     "n_invalid": 0,
+     "shape": [
+      1999
+     ]
+    },
+    "u": {
+     "attrs": {
+      "coverage_content_type": {
+       "type": "str",
+       "value": "physicalMeasurement"
+      },
+      "long_name": {
+       "type": "str",
+       "value": "u"
+      },
+      "standard_name": {
+       "type": "str",
+       "value": "eastward_sea_water_velocity"
+      },
+      "units": {
+       "type": "str",
+       "value": "m s-1"
+      }
+     },
+     "checksum": "63f71b9b55ef237097864d1f25b0a038c06b0db6361cba5f548300f0b517b04d",
+     "dims": [
+      "z",
+      "time"
+     ],
+     "dtype": "<f4",
+     "kind": "data_var",
+     "max": 1.4915310144424438,
+     "mean": 0.03501467538253741,
+     "min": -1.2224907875061035,
+     "n_invalid": 19316,
+     "shape": [
+      40,
+      1999
+     ]
+    },
+    "v": {
+     "attrs": {
+      "coverage_content_type": {
+       "type": "str",
+       "value": "physicalMeasurement"
+      },
+      "long_name": {
+       "type": "str",
+       "value": "v"
+      },
+      "standard_name": {
+       "type": "str",
+       "value": "northward_sea_water_velocity"
+      },
+      "units": {
+       "type": "str",
+       "value": "m s-1"
+      }
+     },
+     "checksum": "4006fe8e4383cce80961940856364749884867c6e38b34e5894c5dc5aac096ea",
+     "dims": [
+      "z",
+      "time"
+     ],
+     "dtype": "<f4",
+     "kind": "data_var",
+     "max": 0.884117603302002,
+     "mean": -0.011029608263363836,
+     "min": -1.4376249313354492,
+     "n_invalid": 19316,
+     "shape": [
+      40,
+      1999
+     ]
+    },
+    "w": {
+     "attrs": {
+      "coverage_content_type": {
+       "type": "str",
+       "value": "physicalMeasurement"
+      },
+      "long_name": {
+       "type": "str",
+       "value": "w"
+      },
+      "standard_name": {
+       "type": "str",
+       "value": "upward_sea_water_velocity"
+      },
+      "units": {
+       "type": "str",
+       "value": "m s-1"
+      }
+     },
+     "checksum": "b56534d8f341bf2907f08eb1727469329e9dfcb2ca5bcbb580006e845faa1309",
+     "dims": [
+      "z",
+      "time"
+     ],
+     "dtype": "<f4",
+     "kind": "data_var",
+     "max": 0.9277734160423279,
+     "mean": -0.04765205567185046,
+     "min": -0.5288386940956116,
+     "n_invalid": 19316,
+     "shape": [
+      40,
+      1999
+     ]
+    },
+    "xducer_depth": {
+     "attrs": {
+      "coverage_content_type": {
+       "type": "str",
+       "value": "physicalMeasurement"
+      },
+      "long_name": {
+       "type": "str",
+       "value": "transducer depth"
+      },
+      "positive": {
+       "type": "str",
+       "value": "down"
+      },
+      "standard_name": {
+       "type": "str",
+       "value": "depth"
+      },
+      "units": {
+       "type": "str",
+       "value": "m"
+      }
+     },
+     "checksum": "dde70ae3d98464ca1c929e1de7bb60408bed5eb8a9970f3a12360821e283518a",
+     "dims": [
+      "time"
+     ],
+     "dtype": "<f8",
+     "kind": "data_var",
+     "max": 169.138783734345,
+     "mean": 154.4435329204659,
+     "min": 140.95982594914827,
+     "n_invalid": 0,
+     "shape": [
+      1999
+     ]
+    },
+    "z": {
+     "attrs": {
+      "comment": {
+       "type": "str",
+       "value": "Distance from the transducer to the center of each bin, not water depth. Bin depth depends on the depth of the instrument and whether it looks up or down, and varies in time with mooring knockdown. The averaging methods `average_ensembles` and `burst_average_ensembles` regrid onto water depth and publish that as their vertical coordinate. The single-ping product of `process_pings` keeps this transducer-relative axis; there bin depth is reconstructed per ping as `xducer_depth` plus `z` for a downlooker and `xducer_depth` minus `z` for an uplooker."
+      },
+      "coverage_content_type": {
+       "type": "str",
+       "value": "coordinate"
+      },
+      "long_name": {
+       "type": "str",
+       "value": "distance from transducer"
+      },
+      "units": {
+       "type": "str",
+       "value": "m"
+      }
+     },
+     "checksum": "70fc5c5caf232c401a4f83050c407756c474d195c7bef1a39795eb72acdc23dd",
+     "dims": [
+      "z"
+     ],
+     "dtype": "<f8",
+     "kind": "coord",
+     "max": 161.15,
+     "mean": 83.15,
+     "min": 5.15,
+     "n_invalid": 0,
+     "shape": [
+      40
+     ]
+    }
+   }
+  },
+  "process_pings_binmap_true": {
+   "attrs": {
+    "Bin1Dist": {
+     "type": "float64",
+     "value": 5.15
+    },
+    "CellSize": {
+     "type": "float64",
+     "value": 4.0
+    },
+    "NCells": {
+     "type": "uint8",
+     "value": 40
+    },
+    "binmap": {
+     "type": "str",
+     "value": "True"
+    },
+    "clock_correction": {
+     "type": "str",
+     "value": "none"
+    },
+    "depth_offset": {
+     "type": "float",
+     "value": 0.0
+    },
+    "ibad": {
+     "type": "str",
+     "value": "none"
+    },
+    "lat": {
+     "type": "int",
+     "value": 0
+    },
+    "lon": {
+     "type": "int",
+     "value": 0
+    },
+    "magdec": {
+     "type": "float",
+     "value": 0.0
+    },
+    "maskbins": {
+     "type": "str",
+     "value": "none"
+    },
+    "max_e": {
+     "type": "float",
+     "value": 0.2
+    },
+    "max_e_deviation": {
+     "type": "int",
+     "value": 2
+    },
+    "min_correlation": {
+     "type": "int",
+     "value": 64
+    },
+    "mooring": {
+     "type": "str",
+     "value": "Test"
+    },
+    "orientation": {
+     "type": "str",
+     "value": "up"
+    },
+    "pg_limit": {
+     "type": "str",
+     "value": "not applied"
+    },
+    "pressure_scale_factor": {
+     "type": "int",
+     "value": 1
+    },
+    "pressure_source": {
+     "type": "str",
+     "value": "raw"
+    },
+    "processing_method": {
+     "type": "str",
+     "value": "process_pings"
+    },
+    "project": {
+     "type": "str",
+     "value": "Test"
+    },
+    "sn": {
+     "type": "int",
+     "value": 16670
+    },
+    "t0": {
+     "type": "str",
+     "value": "2018-09-11T10:13:04.010000000"
+    },
+    "t1": {
+     "type": "str",
+     "value": "2018-09-11T11:36:21.510000000"
+    },
+    "time_drift_rate": {
+     "type": "int",
+     "value": 1
+    }
+   },
+   "description": "binmap_16670013.000 via process_pings(binmap=True)",
+   "dims": {
+    "time": 1999,
+    "z": 35
+   },
+   "variables": {
+    "amp": {
+     "attrs": {
+      "coverage_content_type": {
+       "type": "str",
+       "value": "physicalMeasurement"
+      },
+      "long_name": {
+       "type": "str",
+       "value": "amplitude"
+      },
+      "standard_name": {
+       "type": "str",
+       "value": "signal_intensity_from_multibeam_acoustic_doppler_velocity_sensor_in_sea_water"
+      }
+     },
+     "checksum": "57cd7e8e350a79e353651b953349e240b6c3f948f97afeb720f3567f22ce4146",
+     "dims": [
+      "z",
+      "time"
+     ],
+     "dtype": "<f4",
+     "kind": "data_var",
+     "max": 246.5,
+     "mean": 125.30156863977338,
+     "min": 20.5,
+     "n_invalid": 0,
+     "shape": [
+      35,
+      1999
+     ]
+    },
+    "e": {
+     "attrs": {
+      "coverage_content_type": {
+       "type": "str",
+       "value": "qualityInformation"
+      },
+      "long_name": {
+       "type": "str",
+       "value": "error velocity"
+      },
+      "standard_name": {
+       "type": "str",
+       "value": "indicative_error_from_multibeam_acoustic_doppler_velocity_profiler_in_sea_water"
+      },
+      "units": {
+       "type": "str",
+       "value": "m s-1"
+      }
+     },
+     "checksum": "eff977401000235e5333dea537c940a49c1d4fc08415daa2a1c2d27dc360bd90",
+     "dims": [
+      "z",
+      "time"
+     ],
+     "dtype": "<f4",
+     "kind": "data_var",
+     "max": 0.1999654769897461,
+     "mean": 0.019646029626029328,
+     "min": -0.19951345026493073,
+     "n_invalid": 36262,
+     "shape": [
+      35,
+      1999
+     ]
+    },
+    "max_e_applied": {
+     "attrs": {
+      "comment": {
+       "type": "str",
+       "value": "Error velocity threshold applied to this averaging interval: the minimum of the absolute threshold max_e and max_e_deviation times the standard deviation of error velocity within the interval."
+      },
+      "coverage_content_type": {
+       "type": "str",
+       "value": "qualityInformation"
+      },
+      "long_name": {
+       "type": "str",
+       "value": "applied error velocity threshold"
+      },
+      "units": {
+       "type": "str",
+       "value": "m s-1"
+      }
+     },
+     "checksum": "4a83546caf019c37ae1aa1088a5f9d427cf080759129e039036c45039df50399",
+     "dims": [
+      "time"
+     ],
+     "dtype": "<f4",
+     "kind": "data_var",
+     "max": 0.20000000298023224,
+     "mean": 0.20000000298023224,
+     "min": 0.20000000298023224,
+     "n_invalid": 0,
+     "shape": [
+      1999
+     ]
+    },
+    "pg": {
+     "attrs": {
+      "comment": {
+       "type": "str",
+       "value": "Fraction of pings with a valid velocity at this bin, computed per ping by `process_pings`. It is binary, 0 or 100: 100 means the ping survived editing at this bin, 0 means it was edited out. No time averaging has happened on this path, so this says nothing about a sample count. This is a velosearaptor-defined quantity. It shares its name with RDI's own four PercentGood fields, which `velosearaptor.io.read_raw_rdi` reads and no processing step uses, and it means something different from them."
+      },
+      "coverage_content_type": {
+       "type": "str",
+       "value": "qualityInformation"
+      },
+      "long_name": {
+       "type": "str",
+       "value": "percent good"
+      },
+      "standard_name": {
+       "type": "str",
+       "value": "proportion_of_acceptable_signal_returns_from_acoustic_instrument_in_sea_water"
+      },
+      "units": {
+       "type": "str",
+       "value": "percent"
+      }
+     },
+     "checksum": "2763f5bce80e27e46a58b5a1e306c3e104875a9d16e2c45a8a1d9a2fb5434d83",
+     "dims": [
+      "z",
+      "time"
+     ],
+     "dtype": "<f8",
+     "kind": "data_var",
+     "max": 100.0,
+     "mean": 48.17122847137855,
+     "min": 0.0,
+     "n_invalid": 0,
+     "shape": [
+      35,
+      1999
+     ]
+    },
+    "pressure": {
+     "attrs": {
+      "coverage_content_type": {
+       "type": "str",
+       "value": "physicalMeasurement"
+      },
+      "long_name": {
+       "type": "str",
+       "value": "pressure"
+      },
+      "standard_name": {
+       "type": "str",
+       "value": "sea_water_pressure"
+      },
+      "units": {
+       "type": "str",
+       "value": "dbar"
+      }
+     },
+     "checksum": "5e79f864fd2b92bb3fdc2ee504bc90b632900f7889622ac585afe4abad38d6f1",
+     "dims": [
+      "time"
+     ],
+     "dtype": "<f8",
+     "kind": "data_var",
+     "max": 170.143,
+     "mean": 155.3549824912456,
+     "min": 141.787,
+     "n_invalid": 0,
+     "shape": [
+      1999
+     ]
+    },
+    "temperature": {
+     "attrs": {
+      "coverage_content_type": {
+       "type": "str",
+       "value": "physicalMeasurement"
+      },
+      "long_name": {
+       "type": "str",
+       "value": "temperature"
+      },
+      "standard_name": {
+       "type": "str",
+       "value": "sea_water_temperature"
+      },
+      "units": {
+       "type": "str",
+       "value": "degrees_C"
+      }
+     },
+     "checksum": "5d9c8dfbcbcfd1fcffb70ba2adec53ef6ee2b25f79ae58549104967f89e9bc59",
+     "dims": [
+      "time"
+     ],
+     "dtype": "<f8",
+     "kind": "data_var",
+     "max": 7.64,
+     "mean": 7.513271635817908,
+     "min": 7.3,
+     "n_invalid": 0,
+     "shape": [
+      1999
+     ]
+    },
+    "time": {
+     "attrs": {},
+     "checksum": "526b1dde31e4f748e79d6ceb5f2627c3f27d5929f1322edfa672daab5ff40281",
+     "dims": [
+      "time"
+     ],
+     "dtype": "<M8[ns]",
+     "first": "2018-09-11T10:13:04.010000000",
+     "kind": "coord",
+     "last": "2018-09-11T11:36:19.010000000",
+     "n_invalid": 0,
+     "shape": [
+      1999
+     ]
+    },
+    "u": {
+     "attrs": {
+      "coverage_content_type": {
+       "type": "str",
+       "value": "physicalMeasurement"
+      },
+      "long_name": {
+       "type": "str",
+       "value": "u"
+      },
+      "standard_name": {
+       "type": "str",
+       "value": "eastward_sea_water_velocity"
+      },
+      "units": {
+       "type": "str",
+       "value": "m s-1"
+      }
+     },
+     "checksum": "e2697ad6be4b9f24ff9731a6eccd1f92ae3ae1f37f99ec4b83ade9adbd831fbf",
+     "dims": [
+      "z",
+      "time"
+     ],
+     "dtype": "<f4",
+     "kind": "data_var",
+     "max": 1.4337939023971558,
+     "mean": 0.039468468454325466,
+     "min": -0.5738447904586792,
+     "n_invalid": 36262,
+     "shape": [
+      35,
+      1999
+     ]
+    },
+    "v": {
+     "attrs": {
+      "coverage_content_type": {
+       "type": "str",
+       "value": "physicalMeasurement"
+      },
+      "long_name": {
+       "type": "str",
+       "value": "v"
+      },
+      "standard_name": {
+       "type": "str",
+       "value": "northward_sea_water_velocity"
+      },
+      "units": {
+       "type": "str",
+       "value": "m s-1"
+      }
+     },
+     "checksum": "84f5a24883020b1f27eda602d5cbccf36c991b454f39b661bda736c3601cb509",
+     "dims": [
+      "z",
+      "time"
+     ],
+     "dtype": "<f4",
+     "kind": "data_var",
+     "max": 1.069014072418213,
+     "mean": -0.0055699091560095304,
+     "min": -1.11025869846344,
+     "n_invalid": 36262,
+     "shape": [
+      35,
+      1999
+     ]
+    },
+    "w": {
+     "attrs": {
+      "coverage_content_type": {
+       "type": "str",
+       "value": "physicalMeasurement"
+      },
+      "long_name": {
+       "type": "str",
+       "value": "w"
+      },
+      "standard_name": {
+       "type": "str",
+       "value": "upward_sea_water_velocity"
+      },
+      "units": {
+       "type": "str",
+       "value": "m s-1"
+      }
+     },
+     "checksum": "7ac287ee5f7921ca7458279a300b240cfe486893957e9e486151ad5a9952ebb2",
+     "dims": [
+      "z",
+      "time"
+     ],
+     "dtype": "<f4",
+     "kind": "data_var",
+     "max": 0.7216655015945435,
+     "mean": -0.056348786776422743,
+     "min": -0.6790555715560913,
+     "n_invalid": 36262,
+     "shape": [
+      35,
+      1999
+     ]
+    },
+    "xducer_depth": {
+     "attrs": {
+      "coverage_content_type": {
+       "type": "str",
+       "value": "physicalMeasurement"
+      },
+      "long_name": {
+       "type": "str",
+       "value": "transducer depth"
+      },
+      "positive": {
+       "type": "str",
+       "value": "down"
+      },
+      "standard_name": {
+       "type": "str",
+       "value": "depth"
+      },
+      "units": {
+       "type": "str",
+       "value": "m"
+      }
+     },
+     "checksum": "dde70ae3d98464ca1c929e1de7bb60408bed5eb8a9970f3a12360821e283518a",
+     "dims": [
+      "time"
+     ],
+     "dtype": "<f8",
+     "kind": "data_var",
+     "max": 169.138783734345,
+     "mean": 154.4435329204659,
+     "min": 140.95982594914827,
+     "n_invalid": 0,
+     "shape": [
+      1999
+     ]
+    },
+    "z": {
+     "attrs": {
+      "comment": {
+       "type": "str",
+       "value": "Distance from the transducer to the center of each bin, not water depth. Bin depth depends on the depth of the instrument and whether it looks up or down, and varies in time with mooring knockdown. The averaging methods `average_ensembles` and `burst_average_ensembles` regrid onto water depth and publish that as their vertical coordinate. The single-ping product of `process_pings` keeps this transducer-relative axis; there bin depth is reconstructed per ping as `xducer_depth` plus `z` for a downlooker and `xducer_depth` minus `z` for an uplooker."
+      },
+      "coverage_content_type": {
+       "type": "str",
+       "value": "coordinate"
+      },
+      "long_name": {
+       "type": "str",
+       "value": "distance from transducer"
+      },
+      "units": {
+       "type": "str",
+       "value": "m"
+      }
+     },
+     "checksum": "008fcd418cdefa069ad9927d652f8e4ef337477638cba3ccdf1e85e256c27645",
+     "dims": [
+      "z"
+     ],
+     "dtype": "<f8",
+     "kind": "coord",
+     "max": 145.15,
+     "mean": 77.15000000000002,
+     "min": 9.15,
+     "n_invalid": 0,
+     "shape": [
+      35
+     ]
+    }
+   }
+  }
+ },
+ "excluded_attributes": [
+  "proc time",
+  "velosearaptor_version"
+ ],
+ "generated_by": "uv run python tests/test_pinned_output.py --write",
+ "pinned_release": "0.3.0"
+}
