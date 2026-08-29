@@ -128,10 +128,21 @@ CONFIGURATIONS = {
 def _checksum(values):
     """sha256 over the filled values and, separately, over the invalid mask.
 
-    NaN is filled rather than hashed because its bit pattern is not guaranteed
-    to be reproducible; where a cell is invalid is hashed separately so that
-    filling cannot hide a change. Little-endian throughout so the manifest
-    does not depend on the host.
+    Two bit patterns are canonicalized first, because neither is reproducible
+    across machines and neither carries any information about the data.
+
+    NaN, whose payload bits are not fixed by the standard. Where a cell is
+    invalid is hashed separately, so filling cannot hide a change.
+
+    Negative zero. The sign of a computed zero follows the signs of the
+    summands and whether the compiler contracted a multiply-add, so it varies
+    between hosts. `w` and `e` are sums and differences of beam pairs of
+    quantized velocities and hit exact zero often, and on the bundled
+    per-ping configuration they were the only two variables to disagree
+    between a local run and CI while their minimum, maximum, mean and invalid
+    count all matched to the last digit.
+
+    Little-endian throughout, for the same reason.
     """
     a = np.ascontiguousarray(values)
     if a.dtype.kind == "M":
@@ -140,6 +151,7 @@ def _checksum(values):
     elif a.dtype.kind in "fc":
         invalid = np.isnan(a)
         payload = a.copy()
+        payload[payload == 0] = 0
     elif a.dtype.kind in "iub":
         invalid = np.zeros(a.shape, dtype=bool)
         payload = a
@@ -382,6 +394,22 @@ def test_the_pin_excludes_only_the_two_varying_attributes(rootdir):
         ds = _dataset(rootdir, name)
         pinned = set(reference["configurations"][name]["attrs"])
         assert set(ds.attrs) - pinned == set(EXCLUDED_ATTRS)
+
+
+def test_the_checksum_ignores_the_sign_of_zero():
+    """Deliberate, and the reason is in `_checksum`. Do not undo it."""
+    positive = np.array([1.0, 0.0, -2.0], dtype=np.float32)
+    negative = np.array([1.0, -0.0, -2.0], dtype=np.float32)
+    assert positive.tobytes() != negative.tobytes()
+    assert _checksum(positive) == _checksum(negative)
+
+    # Everything else about a float array still has to move the checksum,
+    # including where the invalid cells are.
+    assert _checksum(positive) != _checksum(np.array([1.0, 0.0, 2.0], np.float32))
+    one_nan = np.array([1.0, np.nan, -2.0], dtype=np.float32)
+    other_nan = np.array([np.nan, 0.0, -2.0], dtype=np.float32)
+    assert _checksum(one_nan) != _checksum(positive)
+    assert _checksum(one_nan) != _checksum(other_nan)
 
 
 def test_the_harness_detects_a_perturbation(rootdir):
