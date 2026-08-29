@@ -21,9 +21,9 @@ jobs:
         # result is cached by setup-uv until uv.lock changes.
         run: uv sync --frozen
       - name: Lint
-        run: uv run ruff check src/velosearaptor/ tests/
+        run: uv run ruff check src/velosearaptor/ tests/ notebooks/
       - name: Check formatting
-        run: uv run ruff format --check src/velosearaptor/ tests/
+        run: uv run ruff format --check src/velosearaptor/ tests/ notebooks/
       - name: Run tests
         run: uv run pytest
         env:

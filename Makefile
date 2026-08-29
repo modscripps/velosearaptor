@@ -27,14 +27,15 @@ help:
 	@uv run python -c "$$PRINT_HELP_PYSCRIPT" < $(MAKEFILE_LIST)
 
 check: ## check style
-	uv run ruff check src/velosearaptor/ tests/
+	uv run ruff check src/velosearaptor/ tests/ notebooks/
 
 format: ## format code using ruff
-	uv run ruff format src/velosearaptor/ tests/
+	uv run ruff format src/velosearaptor/ tests/ notebooks/
 
 format-check: ## check code style using ruff format --diff
 	uv run ruff format --diff src/velosearaptor/
 	uv run ruff format --diff tests/
+	uv run ruff format --diff notebooks/
 
 LOGO := https://github.com/modscripps/velosearaptor/raw/main/logo/velosearaptor.png
 PDOC_OPTS := -d numpy -t .pdoc-theme-gv --math --logo $(LOGO)
