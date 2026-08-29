@@ -1212,24 +1212,47 @@ class ProcessADCP:
             self._raw.coords["bin"] = (("z"), np.arange(self._raw.z.size))
         return self._raw
 
-    def _edit(self, ens):
-        """Apply editing to xyze."""
+    def _edit_masks(self, ens):
+        """Mask cells rejected by correlation and by `maskbins`.
+
+        Split out of `_edit` so that `process_pings` can run this per chunk
+        and still compute the error velocity threshold once over the whole
+        record (issue #100).
+        """
         ep = self.editparams
         # Beams excluded via `ibad` do not enter the velocity solution, so
         # their correlation must not reject cells either (issue #90).
         cor = ens.cor if self.ibad is None else np.delete(ens.cor, self.ibad, axis=-1)
         cond = (cor < ep.min_correlation).any(axis=-1)
         ens.xyze[cond] = np.ma.masked
-        e = ens.xyze[:, :, 3]
-        max_e = min(ep.max_e, e.std() * ep.max_e_deviation)
-        # Store as plain float (NaN if the threshold could not be computed,
-        # e.g. for a fully masked ensemble) so it can be propagated to the
-        # output dataset.
-        ens.max_e_applied = float(max_e) if np.isfinite(max_e) else np.nan
-        cond = np.abs(e) > max_e
-        ens.xyze[cond] = np.ma.masked
+        # Before the standard deviation below, not after: bins the user has
+        # declared bad must not set the threshold that decides which of the
+        # kept bins survive. When the masked bins are the noisy ones their
+        # contribution pushes `max_e_deviation * sigma` past `max_e` and the
+        # adaptive criterion switches off entirely (issue #100).
         if ep.maskbins is not None:
             ens.xyze[:, ep.maskbins, :] = np.ma.masked
+
+    def _adaptive_max_e(self, e):
+        """The error velocity threshold to apply to the samples in `e`.
+
+        `e` is whatever survived `_edit_masks`. Accumulate in float64: the
+        per-ping path hands this a float32 array of the whole record, where a
+        naive float32 sum of squares loses real precision.
+        """
+        ep = self.editparams
+        max_e = min(ep.max_e, np.ma.std(e, dtype=np.float64) * ep.max_e_deviation)
+        # Return a plain float (NaN if the threshold could not be computed,
+        # e.g. for a fully masked ensemble) so it can be propagated to the
+        # output dataset.
+        return float(max_e) if np.isfinite(max_e) else np.nan
+
+    def _edit(self, ens):
+        """Apply editing to xyze."""
+        self._edit_masks(ens)
+        e = ens.xyze[:, :, 3]
+        ens.max_e_applied = self._adaptive_max_e(e)
+        ens.xyze[np.abs(e) > ens.max_e_applied] = np.ma.masked
 
     def _to_enu(self, ens):
         """
@@ -1483,6 +1506,8 @@ class ProcessADCP:
         ens_size : int, optional
             Pings are processed in ensembles to reduce memory usage.
             This parameter sets how many pings are in an ensemble. The default is 50000.
+            It does not affect the results: the error velocity threshold is
+            computed once over the whole record, not per ensemble.
 
         Notes
         -----
@@ -1578,8 +1603,9 @@ class ProcessADCP:
                     # Now we have to recalculate xyze with the binmapped data.
                     self._calculate_xyze(ens, ibad=self.ibad)
 
-                self._edit(ens)  # modifies xyze
-                max_e_applied[idx0:idx1] = ens.max_e_applied
+                # Only the masks here. The error velocity threshold is
+                # applied after the loop, over the whole record — see below.
+                self._edit_masks(ens)  # modifies xyze
                 self._to_enu(ens)  # transform to earth coords (east, north, up)
 
             else:
@@ -1590,14 +1616,30 @@ class ProcessADCP:
                 continue
 
             uvwe[idx0:idx1] = ens.enu
-
-            # Percent good is binary for single-ping data: 100 where the ping
-            # survived editing, 0 where it was edited out. Binmapped data can
-            # carry unmasked NaN, so test for that as well as for the mask.
-            u = ens.enu[..., 0]
-            good = np.isfinite(np.ma.filled(u, np.nan)) & ~np.ma.getmaskarray(u)
-            pg[idx0:idx1] = 100 * good.astype(np.int8)
             amp[idx0:idx1] = ens.amp.mean(axis=-1)  # Average over beams... why?
+
+        # Apply the error velocity threshold to the record as a whole. Running
+        # `_edit` inside the loop made `ens_size` the window the standard
+        # deviation was estimated over, so the same file processed with
+        # different `ens_size` came out with different velocities even though
+        # the parameter is documented as a memory knob (issue #100).
+        #
+        # No second pass and no extra array: `rdi_xyz_enu` carries the error
+        # velocity through untouched, so `uvwe[..., 3]` holds exactly what
+        # `_edit` would have seen in `xyze`, and masking a cell of `enu` in all
+        # four components is equivalent to masking it before the rotation.
+        # Both claims are pinned by tests/test_adaptive_max_e.py.
+        e = uvwe[..., 3]
+        max_e = self._adaptive_max_e(e)
+        uvwe[np.abs(e) > max_e] = np.ma.masked
+        max_e_applied[:] = max_e
+
+        # Percent good is binary for single-ping data: 100 where the ping
+        # survived editing, 0 where it was edited out. Binmapped data can
+        # carry unmasked NaN, so test for that as well as for the mask.
+        u = uvwe[..., 0]
+        good = np.isfinite(np.ma.filled(u, np.nan)) & ~np.ma.getmaskarray(u)
+        pg[:] = 100 * good.astype(np.int8)
 
         self.ave = Bunch(
             u=uvwe[..., 0],
