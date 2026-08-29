@@ -5,12 +5,17 @@ frequency, so every ping is treated as `1/fs` apart. Deriving `fs` from the
 *modal* ping interval means that on burst-sampled records the 1800 s cap is
 expressed in a fictitious time base and can never bind.
 
-All tests here are synthetic. The bundled raw files cannot separate this
-effect from genuine pressure-sensor noise (see the notes in
+The cutoff tests here are synthetic. The bundled raw files cannot separate
+this effect from genuine pressure-sensor noise (see the notes in
 `plans/qc-and-depth-offset.md`, item 9), so `_lowpassfilter_pressure` is driven
 directly on a constructed time base.
+
+`TestPressureScaleFactor` covers issue #110, where `pressure_scale_factor` was
+applied once in `_scale_pycurrents_pressure` and then a second time in
+`_lowpassfilter_pressure`.
 """
 
+import pathlib
 import warnings
 
 import numpy as np
@@ -188,3 +193,56 @@ class TestBurstRecord:
         pressure, _ = synthetic_pressure(seconds)
         with pytest.warns(UserWarning, match="not uniformly sampled"):
             make_processor(seconds, pressure)._lowpassfilter_pressure()
+
+
+class TestPressureScaleFactor:
+    """`pressure_scale_factor` must be applied exactly once (issue #110)."""
+
+    def test_lowpass_does_not_rescale_pressure(self):
+        """The low pass filters `tsdat.pressure` as handed to it.
+
+        `tsdat.pressure` already carries `pressure_scale_factor`, applied in
+        `_scale_pycurrents_pressure`. Applying it a second time here squares
+        it.
+        """
+        seconds = uniform_seconds()
+        pressure, _ = synthetic_pressure(seconds)
+
+        unscaled = make_processor(seconds, pressure)._lowpassfilter_pressure()
+
+        p = make_processor(seconds, pressure)
+        p._pressure_scale_factor = 2.0
+        scaled = p._lowpassfilter_pressure()
+
+        np.testing.assert_allclose(scaled, unscaled, rtol=1e-12)
+
+    def test_lowpass_pressure_scales_linearly(self):
+        """End to end: doubling the factor doubles `pressure_lp`, not quadruples it.
+
+        Driven on a bundled raw file so the whole path from
+        `_read_auxiliary_data` through `pressure_lp` is exercised. The raw
+        record is the control: it scales linearly today, and the low-passed
+        one must match it.
+        """
+        adcpfile = pathlib.Path(__file__).parent / "data/24606000.000"
+        meta_data = {"mooring": "Test", "project": "Test", "lon": 0, "lat": 0}
+
+        def build(scale_factor):
+            ctx = ignore_nonuniform_warning()
+            try:
+                adcp = madcp.ProcessADCP(
+                    adcpfile,
+                    meta_data,
+                    magdec=0.0,
+                    pressure_scale_factor=scale_factor,
+                )
+                return np.asarray(adcp.tsdat.pressure), np.asarray(adcp.pressure_lp)
+            finally:
+                ctx.__exit__(None, None, None)
+
+        raw_1, lp_1 = build(1.0)
+        raw_2, lp_2 = build(2.0)
+
+        # Control: the raw path already applies the factor once.
+        np.testing.assert_allclose(raw_2, 2.0 * raw_1, rtol=1e-12)
+        np.testing.assert_allclose(lp_2, 2.0 * lp_1, rtol=1e-9)
