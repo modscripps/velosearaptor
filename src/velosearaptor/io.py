@@ -466,6 +466,23 @@ def cf_conventions():
             "coverage_content_type": "physicalMeasurement",
             "ancillary_variables": "npings",
         },
+        "pressure_corrected": {
+            "long_name": "pressure corrected for depth offset",
+            "standard_name": "sea_water_pressure",
+            "units": "dbar",
+            "coverage_content_type": "modelResult",
+            "ancillary_variables": "npings",
+            "comment": (
+                "Derived quantity, not a measurement: the pressure a sensor "
+                "at the corrected depth would have read. The sensor itself "
+                "read `pressure`, which is stored unchanged. Present only on "
+                "files processed with a nonzero `depth_offset`, and provided "
+                "so that recomputing depth from the file reproduces the "
+                "published `depth` and `xducer_depth`. Because depth(p) is "
+                "nonlinear, the difference from `pressure` is not constant "
+                "with depth even though the depth offset is."
+            ),
+        },
         "temperature": {
             "long_name": "temperature",
             "standard_name": "sea_water_temperature",
