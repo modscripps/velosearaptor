@@ -1,5 +1,14 @@
 ## History
 
+### v0.4.0 (unreleased)
+
+<!-- Subsection order, matching v0.3.0 and v0.2.0: New Features, Breaking
+Changes, Bug Fixes, Documentation, Internal Changes. Add only the subsections
+this release needs.
+
+Everything below the v0.3.0 heading is released and tagged. Do not edit it;
+new entries belong here. -->
+
 ### v0.3.0 (2026 August)
 
 Everything since v0.2.0 in March 2022: the move from gadcp to velosearaptor, the switch to a `src/` layout with [uv](https://docs.astral.sh/uv/) and [ruff](https://docs.astral.sh/ruff/), and a systematic pass over the QC, editing and output-metadata code. Several of the bugs fixed in that pass changed results silently, so files processed with an earlier version may need reprocessing. The checklist below says when.
