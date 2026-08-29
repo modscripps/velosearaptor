@@ -112,6 +112,58 @@ def _masked_bins(maskbins):
     return mb.astype(int).ravel()
 
 
+# The editing criteria, as flags (issue #30). Each returns a boolean array
+# marking the cells it rejects, and none of them touches the data. Applying
+# the flags is the caller's business, which is what lets `process_pings` run
+# the two beam-space criteria per chunk and the error velocity threshold once
+# over the whole record.
+#
+# Module level and explicitly parameterized, instead of methods reading
+# `self`, so that a criterion can be evaluated without constructing a
+# `ProcessADCP`. No stage in this module reads mutable pipeline state, so this
+# costs nothing today and is what a composable pipeline would need (issue
+# #15).
+
+
+def _correlation_flag(cor, min_correlation):
+    """Beams whose correlation is below `min_correlation`.
+
+    The full beam axis is kept. Reducing it to a per-cell verdict is
+    `_correlation_cell_flag`, which is where the decisions live that issues
+    #18 and #30 want to change.
+    """
+    return np.asarray(cor) < min_correlation
+
+
+def _correlation_cell_flag(flag_beam, ibad=None):
+    """Cells the correlation test rejects, reduced from the per-beam flag.
+
+    One failing beam rejects the whole cell, which is harsher than the
+    instrument's own convention for the same threshold (issue #30). Beams
+    excluded via `ibad` do not enter the velocity solution, so their
+    correlation must not reject cells either (issue #90).
+    """
+    kept = flag_beam if ibad is None else np.delete(flag_beam, ibad, axis=-1)
+    return kept.any(axis=-1)
+
+
+def _maskbins_flag(shape, maskbins):
+    """Cells in the bins the user declared bad, for every ping."""
+    flag = np.zeros(shape, dtype=bool)
+    flag[:, _masked_bins(maskbins)] = True
+    return flag
+
+
+def _max_e_flag(e, max_e_applied):
+    """Cells whose error velocity exceeds the applied threshold.
+
+    Cells already masked in `e` come back False, so the flag carries only what
+    this test rejects. They stay masked either way. A threshold that could not
+    be computed, NaN for a fully masked ensemble, rejects nothing.
+    """
+    return np.ma.filled(np.abs(e) > max_e_applied, False)
+
+
 class ProcessADCP:
     """Moored ADCP Processing.
 
@@ -1266,20 +1318,23 @@ class ProcessADCP:
         Split out of `_edit` so that `process_pings` can run this per chunk
         and still compute the error velocity threshold once over the whole
         record (issue #100).
+
+        Both criteria are beam-space quantities, so both flags are computed
+        before anything is written to `xyze`. `flag_cor_beam`, `flag_cor` and
+        `flag_maskbins` are left on `ens` for the caller (issue #30).
         """
         ep = self.editparams
-        # Beams excluded via `ibad` do not enter the velocity solution, so
-        # their correlation must not reject cells either (issue #90).
-        cor = ens.cor if self.ibad is None else np.delete(ens.cor, self.ibad, axis=-1)
-        cond = (cor < ep.min_correlation).any(axis=-1)
-        ens.xyze[cond] = np.ma.masked
-        # Before the standard deviation below, not after: bins the user has
-        # declared bad must not set the threshold that decides which of the
-        # kept bins survive. When the masked bins are the noisy ones their
+        ens.flag_cor_beam = _correlation_flag(ens.cor, ep.min_correlation)
+        ens.flag_cor = _correlation_cell_flag(ens.flag_cor_beam, self.ibad)
+        ens.flag_maskbins = _maskbins_flag(ens.flag_cor.shape, ep.maskbins)
+
+        ens.xyze[ens.flag_cor] = np.ma.masked
+        # Before the standard deviation in `_edit`, not after: bins the user
+        # has declared bad must not set the threshold that decides which of
+        # the kept bins survive. When the masked bins are the noisy ones their
         # contribution pushes `max_e_deviation * sigma` past `max_e` and the
         # adaptive criterion switches off entirely (issue #100).
-        if ep.maskbins is not None:
-            ens.xyze[:, ep.maskbins, :] = np.ma.masked
+        ens.xyze[ens.flag_maskbins] = np.ma.masked
 
     def _adaptive_max_e(self, e):
         """The error velocity threshold to apply to the samples in `e`.
@@ -1296,11 +1351,16 @@ class ProcessADCP:
         return float(max_e) if np.isfinite(max_e) else np.nan
 
     def _edit(self, ens):
-        """Apply editing to xyze."""
+        """Apply editing to xyze.
+
+        Leaves the three flags of `_edit_masks` and `flag_max_e` on `ens`.
+        Their OR is the mask this method adds (issue #30).
+        """
         self._edit_masks(ens)
         e = ens.xyze[:, :, 3]
         ens.max_e_applied = self._adaptive_max_e(e)
-        ens.xyze[np.abs(e) > ens.max_e_applied] = np.ma.masked
+        ens.flag_max_e = _max_e_flag(e, ens.max_e_applied)
+        ens.xyze[ens.flag_max_e] = np.ma.masked
 
     def _to_enu(self, ens):
         """
@@ -1683,7 +1743,10 @@ class ProcessADCP:
         # Both claims are pinned by tests/test_adaptive_max_e.py.
         e = uvwe[..., 3]
         max_e = self._adaptive_max_e(e)
-        uvwe[np.abs(e) > max_e] = np.ma.masked
+        # The record-wide counterpart of `_edit`'s `flag_max_e`. The two
+        # beam-space flags were raised per chunk inside the loop, so on this
+        # path the three do not share a lifecycle (issue #30).
+        uvwe[_max_e_flag(e, max_e)] = np.ma.masked
         max_e_applied[:] = max_e
 
         # Percent good is binary for single-ping data: 100 where the ping
