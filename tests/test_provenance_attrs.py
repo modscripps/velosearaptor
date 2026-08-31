@@ -394,3 +394,34 @@ def test_pg_comment_names_interpolated_bins_on_the_burst_path(datasets):
     """An interpolated bin stays at `pg = 0` so it stays visible."""
     comment = datasets["burst_average_ensembles"].pg.attrs["comment"]
     assert "interpolate_bin" in comment
+
+
+# The two averaging paths count percent good on different grids, deliberately.
+# A comment that says only what each one counts leaves that reading as an
+# inconsistency, which is the half of issue #82 that documentation closes.
+OTHER_AVERAGING_PATH = {
+    "average_ensembles": "`burst_average_ensembles`",
+    "burst_average_ensembles": "`average_ensembles`",
+}
+
+
+@pytest.mark.parametrize("method", sorted(OTHER_AVERAGING_PATH))
+def test_pg_comment_names_the_criterion_behind_the_ordering(datasets, method):
+    """Why this path counts where it does, not only what it counts.
+
+    The criterion is whether the transducer moves appreciably within the
+    averaging window. A burst shares one depth vector, so its pings share a
+    bin grid and the count is exact in bin space; over the longer intervals
+    of `average_ensembles` the transducer moves several meters against a 4 m
+    bin, so no common bin grid exists and gridding has to come first.
+    """
+    comment = datasets[method].pg.attrs["comment"]
+    assert "transducer" in comment
+    # Each one names the other, so the difference reads as a choice.
+    assert OTHER_AVERAGING_PATH[method] in comment
+
+
+def test_pg_comment_says_the_ordering_does_not_arise_on_single_pings(datasets):
+    """`process_pings` averages nothing, so it has no ordering to justify."""
+    comment = datasets["process_pings"].pg.attrs["comment"]
+    assert "averaging window" in comment

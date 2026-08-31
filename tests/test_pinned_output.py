@@ -1,13 +1,13 @@
-"""Pinned output of the four processing configurations, as released in v0.3.0.
+"""Pinned output of the four processing configurations.
 
 Every other test in this suite asserts on the one quantity its issue was
 about: an axis name, a `pg` dtype, an output attribute, a masked cell. A
 restructuring of the processing loops can pass all of them while changing
 velocities. This module exists to catch that. It compares the complete output
 Dataset of four configurations, variable by variable, against a reference
-recorded from v0.3.0.
+recorded from the last reviewed state of the code.
 
-The reference is `data/pinned_output_v0.3.0.json`, a manifest holding, for
+The reference is `data/pinned_output.json`, a manifest holding, for
 every coordinate and data variable, its dims, shape, dtype, attributes and a
 sha256 over the filled values, plus the dataset attributes and their types.
 Regenerate it with
@@ -31,13 +31,18 @@ statistics are diagnostics for the failure message and for the diff, and are
 not asserted; they are there to tell a float reassociation apart from a bug.
 
 Two dataset attributes are excluded. `proc time` is the wall clock at
-processing. `velosearaptor_version` changes at every release and reads
-`0.4.0.dev0` on the branch that pins `0.3.0`. Everything else is compared.
+processing. `velosearaptor_version` changes at every release. Everything else
+is compared.
 
-v0.3.0 is tagged at 625a72b. It is the reference because it is a release a
-user can have installed, which is the form the question "did this change any
-output" has to take once the QC-flag work of issue #30 reaches its breaking
-steps.
+What the pin holds. It was first recorded from the v0.3.0 tag (625a72b) and
+has been regenerated since, so it carries the last reviewed output and not
+the output of any one release. Every regeneration is a deliberate output
+change, is reviewed in the diff of the manifest, and gets a HISTORY.md entry
+saying what moved; `git log tests/data/pinned_output.json` lists them. As a
+tripwire against a change nobody intended this is as strong as pinning a
+release. What it gives up is the question a user with a release installed
+would ask, whether the numbers of that version still hold, and answering it
+means checking the tag out and regenerating there.
 """
 
 import argparse
@@ -50,8 +55,7 @@ import pytest
 
 from velosearaptor.madcp import ProcessADCP
 
-PINNED_RELEASE = "0.3.0"
-REFERENCE = "data/pinned_output_v0.3.0.json"
+REFERENCE = "data/pinned_output.json"
 
 # Attributes that differ between two runs of identical code, or between two
 # releases that compute identical numbers.
@@ -307,10 +311,10 @@ def _compare_variables(reference, current):
     lines = []
     for name in sorted(set(reference) | set(current)):
         if name not in reference:
-            lines.append(f"{name}: present now, not in the v{PINNED_RELEASE} pin")
+            lines.append(f"{name}: present now, not in the pin")
             continue
         if name not in current:
-            lines.append(f"{name}: in the v{PINNED_RELEASE} pin, absent now")
+            lines.append(f"{name}: in the pin, absent now")
             continue
         ref, got = reference[name], current[name]
         for field in ("kind", "dims", "shape", "dtype"):
@@ -354,10 +358,7 @@ def _compare_variable_attrs(reference, current):
 def _message(name, lines):
     return "\n".join(
         [
-            (
-                f"{name}: {len(lines)} difference(s) from the pinned "
-                f"v{PINNED_RELEASE} output"
-            ),
+            f"{name}: {len(lines)} difference(s) from the pinned output",
             *(f"  {line}" for line in lines),
             "",
             "If the change is intended, regenerate the pin with",
@@ -495,7 +496,6 @@ def test_the_harness_detects_a_perturbation(rootdir):
 
 def _write_reference(rootdir):
     reference = {
-        "pinned_release": PINNED_RELEASE,
         "generated_by": "uv run python tests/test_pinned_output.py --write",
         "excluded_attributes": list(EXCLUDED_ATTRS),
         "configurations": {},
