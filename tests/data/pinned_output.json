@@ -349,7 +349,7 @@
       },
       "comment": {
        "type": "str",
-       "value": "Fraction of the pings in each averaging interval with a valid velocity at this grid depth, computed by `average_ensembles` after every ping was interpolated onto the universal depth grid. `interp1` widens an edited bin, so both grid intervals touching one come out invalid and this reads lower than the fraction of pings that passed editing. It also absorbs mooring knockdown: a grid depth the instrument did not reach for part of the interval counts those pings as bad. `ngood` carries the sample count this is derived from. This is a velosearaptor-defined quantity. It shares its name with RDI's own four PercentGood fields, which `velosearaptor.io.read_raw_rdi` reads and no processing step uses, and it means something different from them."
+       "value": "Fraction of the pings in each averaging interval with a valid velocity at this grid depth, computed by `average_ensembles` after every ping was interpolated onto the universal depth grid. The count is taken after gridding because the transducer moves within an averaging interval, by several meters against a 4 m bin on a typical mooring, so the pings in one interval share no common bin grid to count on. `burst_average_ensembles` counts on instrument bins before gridding, because within a burst the transducer does not move. `interp1` widens an edited bin, so both grid intervals touching one come out invalid and this reads lower than the fraction of pings that passed editing. It also absorbs mooring knockdown: a grid depth the instrument did not reach for part of the interval counts those pings as bad. `ngood` carries the sample count this is derived from. This is a velosearaptor-defined quantity. It shares its name with RDI's own four PercentGood fields, which `velosearaptor.io.read_raw_rdi` reads and no processing step uses, and it means something different from them."
       },
       "coverage_content_type": {
        "type": "str",
@@ -1121,7 +1121,7 @@
       },
       "comment": {
        "type": "str",
-       "value": "Fraction of the pings in each burst with a valid velocity at this bin, computed by `burst_average_ensembles` on instrument-relative bins and then interpolated onto the universal depth grid. It is NaN at depths outside the instrument's profile, which is why it is float. Velocities were screened against the `pg_limit` attribute. A bin filled in by `interpolate_bin` keeps its own value of 0, so an interpolated bin stays visible in the product. `ngood` carries the sample count this is derived from. This is a velosearaptor-defined quantity. It shares its name with RDI's own four PercentGood fields, which `velosearaptor.io.read_raw_rdi` reads and no processing step uses, and it means something different from them."
+       "value": "Fraction of the pings in each burst with a valid velocity at this bin, computed by `burst_average_ensembles` on instrument-relative bins and then interpolated onto the universal depth grid. The count is taken before gridding because every ping in a burst is assigned the burst mean transducer depth, so the pings share one bin grid and counting in bin space is exact. `average_ensembles` counts after gridding instead, because its intervals are long enough for the transducer to move and no common bin grid exists. It is NaN at depths outside the instrument's profile, which is why it is float. Velocities were screened against the `pg_limit` attribute. A bin filled in by `interpolate_bin` keeps its own value of 0, so an interpolated bin stays visible in the product. `ngood` carries the sample count this is derived from. This is a velosearaptor-defined quantity. It shares its name with RDI's own four PercentGood fields, which `velosearaptor.io.read_raw_rdi` reads and no processing step uses, and it means something different from them."
       },
       "coverage_content_type": {
        "type": "str",
@@ -1760,7 +1760,7 @@
      "attrs": {
       "comment": {
        "type": "str",
-       "value": "Fraction of pings with a valid velocity at this bin, computed per ping by `process_pings`. It is binary, 0 or 100: 100 means the ping survived editing at this bin, 0 means it was edited out. No time averaging has happened on this path, so this says nothing about a sample count. This is a velosearaptor-defined quantity. It shares its name with RDI's own four PercentGood fields, which `velosearaptor.io.read_raw_rdi` reads and no processing step uses, and it means something different from them."
+       "value": "Fraction of pings with a valid velocity at this bin, computed per ping by `process_pings`. It is binary, 0 or 100: 100 means the ping survived editing at this bin, 0 means it was edited out. No time averaging has happened on this path, so this says nothing about a sample count. The two averaging paths have to choose whether to count before or after depth gridding, and they choose differently; with no averaging window there is nothing to choose here. This is a velosearaptor-defined quantity. It shares its name with RDI's own four PercentGood fields, which `velosearaptor.io.read_raw_rdi` reads and no processing step uses, and it means something different from them."
       },
       "coverage_content_type": {
        "type": "str",
@@ -2287,7 +2287,7 @@
      "attrs": {
       "comment": {
        "type": "str",
-       "value": "Fraction of pings with a valid velocity at this bin, computed per ping by `process_pings`. It is binary, 0 or 100: 100 means the ping survived editing at this bin, 0 means it was edited out. No time averaging has happened on this path, so this says nothing about a sample count. This is a velosearaptor-defined quantity. It shares its name with RDI's own four PercentGood fields, which `velosearaptor.io.read_raw_rdi` reads and no processing step uses, and it means something different from them."
+       "value": "Fraction of pings with a valid velocity at this bin, computed per ping by `process_pings`. It is binary, 0 or 100: 100 means the ping survived editing at this bin, 0 means it was edited out. No time averaging has happened on this path, so this says nothing about a sample count. The two averaging paths have to choose whether to count before or after depth gridding, and they choose differently; with no averaging window there is nothing to choose here. This is a velosearaptor-defined quantity. It shares its name with RDI's own four PercentGood fields, which `velosearaptor.io.read_raw_rdi` reads and no processing step uses, and it means something different from them."
       },
       "coverage_content_type": {
        "type": "str",
@@ -2601,6 +2601,5 @@
   "proc time",
   "velosearaptor_version"
  ],
- "generated_by": "uv run python tests/test_pinned_output.py --write",
- "pinned_release": "0.3.0"
+ "generated_by": "uv run python tests/test_pinned_output.py --write"
 }
