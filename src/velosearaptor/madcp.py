@@ -193,8 +193,8 @@ QC_CRITERIA = ("nodata", "cor", "maskbins", "max_e")
 def _attributed_flags(flag_no_data, flag_cor, flag_maskbins):
     """The beam-space criteria, made disjoint so each cell has one reason.
 
-    The raw flags overlap, and the overlap is not a nuisance, it is a
-    misattribution. `_correlation_flag` compares the fill data underneath
+    The raw flags overlap. The overlap is a misattribution.
+    `_correlation_flag` compares the fill data underneath
     already-masked cells, and `_mask_binmapped` writes 0 there, which is below
     any correlation threshold. So `flag_cor` fires on essentially every cell
     `flag_no_data` already claimed: 100% of them under binmapping, which is
@@ -1436,6 +1436,7 @@ class ProcessADCP:
         ens.flag_max_e = _max_e_flag(e, ens.max_e_applied)
         ens.valid &= ~ens.flag_max_e
         # Already disjoint from the other three, so it is the flag unchanged.
+        # Aliased on purpose: nothing downstream mutates a flag in place.
         ens.reason_max_e = ens.flag_max_e
         ens.xyze[ens.flag_max_e] = np.ma.masked
 
@@ -1855,6 +1856,10 @@ class ProcessADCP:
             uvwe[idx0:idx1] = ens.enu
             amp[idx0:idx1] = ens.amp.mean(axis=-1)  # Average over beams... why?
             valid[idx0:idx1] = ens.valid
+            # The three criteria raised in this chunk. `reason_max_e` is not
+            # among them: this path calls `_edit_masks`, never `_edit`, so
+            # the record-wide error velocity flag genuinely does not exist
+            # here yet, and is filled in after the loop below.
             for name in ("nodata", "cor", "maskbins"):
                 nbad[name][idx0:idx1] = ens[f"reason_{name}"]
 
@@ -2242,13 +2247,16 @@ class ProcessADCP:
             uvwe[i] = uvwe_grid
             uvwe_std[i] = uvwe_std_grid
 
-            # One `interp1` call for every count, the way `_regrid_enu_amp`
-            # does it for velocity and amplitude. `interp1` takes a 2-D
+            # One `interp1` call for all six counts together, pg, ngood and
+            # the four reason counts, the way `_regrid_enu_amp` interpolates
+            # velocity and amplitude in a single call. `interp1` takes a 2-D
             # `y_old` and casts it to float64 internally.
             #
             # `np.floor` reproduces the truncation the old `.astype(np.int8)`
-            # and `.astype(np.int32)` performed on the way in, so the
-            # published values do not move and these stay integer-valued.
+            # and `.astype(np.int32)` performed on `pg` and `ngood`, so those
+            # two published values do not move. The four reason counts are
+            # new on this branch and had no prior `.astype` to preserve;
+            # `np.floor` here only keeps them integer-valued the same way.
             # Drop it only as a deliberate change.
             #
             # Depths outside the instrument's profile come back masked. Fill
@@ -2660,7 +2668,10 @@ class ProcessADCP:
         "process_pings": (
             "Whether this criterion rejected the ping at this bin, 0 or 1, "
             "computed per ping by `process_pings`. The four sum to 1 where "
-            "pg is 0 and to 0 where pg is 100."
+            "pg is 0 and to 0 where pg is 100. A bin declared bad through "
+            "`maskbins` carries no velocity for the whole record, so its "
+            "level leaves the published depth axis and `nbad_maskbins` "
+            "reads 0 on this path."
         ),
         "average_ensembles": (
             "Number of pings in each averaging interval that this criterion "
@@ -2670,7 +2681,9 @@ class ProcessADCP:
             "depth sits between two instrument bins, so a cell fed by two "
             "bins rejected for different reasons counts in more than one of "
             "these variables and the four can sum above the number of "
-            "rejected pings. `ngood` carries the count that survived."
+            "rejected pings. `ngood` carries the count that survived. NaN "
+            "means the depth bin lies outside the instrument's profile and "
+            "nothing was measured there."
         ),
         "burst_average_ensembles": (
             "Number of pings in each burst that this criterion rejected at "
