@@ -670,6 +670,12 @@ def test_an_unreadable_chunk_has_no_rejection_reason(rootdir, monkeypatch):
     `pg` is already 0 there and `u` is NaN, so the cell is not ambiguous.
     """
     proc = _proc(rootdir)
+    # Declare bad bins so `nbad_maskbins` fires on every ping that was read.
+    # Without this it is zero record-wide and the guard below would be
+    # vacuous for it, which is the one criterion this test most needs to
+    # bite on: `maskbins` rejects every ping it touches, so a dropped chunk
+    # reading 0 is only meaningful when the rest of the record reads 1.
+    proc.editparams.maskbins = proc.generate_binmask([4, 5])
     reads = []
     original = proc.m.read
 
@@ -687,11 +693,4 @@ def test_an_unreadable_chunk_has_no_rejection_reason(rootdir, monkeypatch):
     idx0, idx1 = reads[1][0] - offset, reads[1][1] - offset
     for name in NBAD:
         assert (proc.ave[name][idx0:idx1] == 0).all()
-        # Guard against a vacuous pass (the whole array being zero would
-        # make the assertion above meaningless) for whichever criteria this
-        # file's default `editparams` actually raises. `maskbins` is `None`
-        # by default (see `test_the_maskbins_flag_marks_the_declared_bins`),
-        # so `nbad_maskbins` is zero everywhere here, not just in the
-        # dropped chunk, and is exempt from the guard for that reason.
-        if proc.ave[name].any():
-            assert proc.ave[name][:idx0].any() or proc.ave[name][idx1:].any()
+        assert proc.ave[name][:idx0].any() or proc.ave[name][idx1:].any()
