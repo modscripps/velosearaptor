@@ -742,3 +742,79 @@ def test_burst_counts_ignore_the_interpolated_bin(rootdir):
 
     for name in NBAD:
         assert np.array_equal(plain.ave[name], interp.ave[name], equal_nan=True), name
+
+
+def test_the_reason_columns_leave_the_regridding_alone(rootdir):
+    """Ten columns must give exactly what six gave.
+
+    `_regrid_enu_amp` was deliberately reduced to one `interp1` call per
+    ping, and the published velocities come out of it. This is the one place
+    counting from flags touches them.
+    """
+    proc = _proc(rootdir)
+    ens = proc.read_ensemble(0)
+    proc._edit(ens)
+    proc._to_enu(ens)
+    proc._regrid_enu_amp(ens)
+
+    depth = proc._burst_average_depth(ens)
+    ncols = ens.enu.shape[-1]
+    for i in range(ens.dday.size):
+        amp_col = ens.amp[i].mean(axis=-1, keepdims=True)
+        combined = np.ma.concatenate([ens.enu[i], amp_col], axis=-1)
+        without = np.ma.filled(
+            interp1(depth[i], combined, proc.dgrid, axis=0, method="linear"), np.nan
+        )
+        assert np.array_equal(ens.enu_grid[i], without[:, :ncols], equal_nan=True)
+        assert np.array_equal(ens.amp_grid[i], without[:, ncols], equal_nan=True)
+
+    assert np.array_equal(ens.valid_grid, ~np.isnan(ens.enu_grid[..., 0]))
+
+
+def test_every_invalid_grid_cell_on_the_profile_has_a_reason(rootdir, monkeypatch):
+    """Gridding loses no attribution.
+
+    `interp1` reads exactly the two bracketing bins, so a grid cell is
+    invalid for a ping precisely when at least one bracketing bin was, and
+    its reason set is the union of those bins' reasons.
+    """
+    _, calls = _run(rootdir, monkeypatch, "average_ensembles", method="_edit")
+
+    n_invalid = n_attributed = 0
+    for _, _, ens in calls:
+        on_profile = ~np.isnan(ens.amp_grid)
+        invalid = (~ens.valid_grid) & on_profile
+        fired = np.zeros_like(invalid)
+        for name in madcp.QC_CRITERIA:
+            fired |= ens.reason_grid[name]
+        n_invalid += int(invalid.sum())
+        n_attributed += int((invalid & fired).sum())
+
+    assert n_invalid > 0
+    assert n_attributed == n_invalid
+
+
+def test_average_ensembles_counts_are_the_gridded_reasons(rootdir, monkeypatch):
+    _, calls = _run(rootdir, monkeypatch, "average_ensembles", method="_edit")
+    for _, _, ens in calls:
+        for name in madcp.QC_CRITERIA:
+            grid = ens.reason_grid[name]
+            assert grid.dtype == bool
+            assert grid.shape == ens.enu_grid.shape[:2]
+
+
+def test_average_ensembles_counts_are_nan_off_the_profile(rootdir):
+    """A grid depth the instrument never reached is not "0 pings rejected".
+
+    The bundled file does not reach this on its default grid, so the grid is
+    extended past the profile to construct it. This is the `average_ensembles`
+    half of the rule `tests/test_qc_flags.py` already checks on the burst path.
+    """
+    proc = _proc(rootdir, dgridparams={"dtop": 20, "dbot": 400, "d_interval": 4})
+    proc.average_ensembles()
+
+    off = np.isnan(proc.ds.amp.values)
+    assert off.any(), "the extended grid still lies inside the profile"
+    for name in NBAD:
+        assert proc.ds[name].dtype == np.float64
+        assert np.isnan(proc.ds[name].values[off]).all()

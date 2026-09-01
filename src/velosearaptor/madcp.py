@@ -1514,7 +1514,7 @@ class ProcessADCP:
         """Depth-grid ENU velocities and amplitudes in a single pass.
 
         Combines the work of _regrid_enu and _regrid_amp, calling interp1
-        once per ping on a concatenated (nbins, 6) array instead of twice
+        once per ping on a concatenated (nbins, 10) array instead of twice
         on separate arrays. Output arrays use NaN instead of masked values.
 
         The sixth column is validity, masked exactly where the cell is
@@ -1523,6 +1523,14 @@ class ProcessADCP:
         from it (issue #30). It is the only change this makes to a shared
         array, so the column must leave `enu_grid` and `amp_grid` bitwise
         alone, which `tests/test_qc_flags.py` pins.
+
+        The last four columns are the disjoint rejection reasons, encoded 1.0
+        where the criterion fired and 0.0 where it did not. A grid cell
+        carries a reason when the interpolated column comes back above zero,
+        which means at least one of the two bracketing bins carried it. A
+        cell fed by two bins rejected for different reasons therefore counts
+        both, which is the only place the published counts exceed
+        `nprofs - ngood`.
         """
         npings = ens.dday.size
         ndgrid = self.dgrid.size
@@ -1531,6 +1539,9 @@ class ProcessADCP:
         enu_grid = np.full((npings, ndgrid, ncols_enu), np.nan)
         amp_grid = np.full((npings, ndgrid), np.nan)
         valid_grid = np.zeros((npings, ndgrid), dtype=bool)
+        reason_grid = {
+            name: np.zeros((npings, ndgrid), dtype=bool) for name in QC_CRITERIA
+        }
 
         depth = self._burst_average_depth(ens)
 
@@ -1539,16 +1550,28 @@ class ProcessADCP:
             valid_col = np.ma.masked_array(
                 np.ones((ens.valid.shape[1], 1)), mask=~ens.valid[i][:, np.newaxis]
             )
-            combined = np.ma.concatenate([ens.enu[i], amp_col, valid_col], axis=-1)
+            # 1.0 where the criterion fired, 0.0 where it did not, unmasked.
+            # `interp1` reads the two bracketing bins, so a positive result
+            # means at least one of them carried that reason.
+            reason_cols = np.stack(
+                [ens[f"reason_{name}"][i].astype(float) for name in QC_CRITERIA],
+                axis=-1,
+            )
+            combined = np.ma.concatenate(
+                [ens.enu[i], amp_col, valid_col, reason_cols], axis=-1
+            )
             result = interp1(depth[i], combined, self.dgrid, axis=0, method=method)
             result_filled = np.ma.filled(result, np.nan)
             enu_grid[i] = result_filled[:, :ncols_enu]
             amp_grid[i] = result_filled[:, ncols_enu]
             valid_grid[i] = np.isfinite(result_filled[:, ncols_enu + 1])
+            for j, name in enumerate(QC_CRITERIA):
+                reason_grid[name][i] = result_filled[:, ncols_enu + 2 + j] > 0
 
         ens.enu_grid = enu_grid
         ens.amp_grid = amp_grid
         ens.valid_grid = valid_grid
+        ens.reason_grid = reason_grid
 
     def _binmap_one_beam(self, ens, beam_number):
         """Binmap single ping data for a single beam by linear interpolation.
@@ -1930,6 +1953,9 @@ class ProcessADCP:
 
         pg = np.zeros((nens, ndgrid), dtype=np.int8)
         ngood = np.zeros((nens, ndgrid), dtype=np.int32)
+        # `int32` and zero-initialized, following `ngood` on this path. The
+        # masking in `_ave2nc` is what turns an unsampled cell into NaN here.
+        nbad = {name: np.zeros((nens, ndgrid), dtype=np.int32) for name in QC_CRITERIA}
         amp = np.full((nens, ndgrid), np.nan, dtype=np.float32)
 
         temperature = np.full((nens,), np.nan, dtype=np.float32)
@@ -1967,6 +1993,8 @@ class ProcessADCP:
             # (issue #30). The two are the same array today; the point is that
             # the count no longer depends on `_edit` masking as a side effect.
             ngood[i] = np.sum(ens.valid_grid, axis=0)
+            for name in QC_CRITERIA:
+                nbad[name][i] = np.sum(ens.reason_grid[name], axis=0)
             # Widen before multiplying: ngood is int32 storage, and
             # 100 * ngood wraps once ngood > 21474836, which would turn the
             # best bins negative (issue #94). ngood itself is int32 rather than
@@ -1994,6 +2022,10 @@ class ProcessADCP:
             e_std=uvwe_std[..., 3],
             pg=pg,
             ngood=ngood,
+            nbad_nodata=nbad["nodata"],
+            nbad_cor=nbad["cor"],
+            nbad_maskbins=nbad["maskbins"],
+            nbad_max_e=nbad["max_e"],
             amp=amp,
             temperature=temperature,
             pressure=pressure,
