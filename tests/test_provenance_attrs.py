@@ -486,7 +486,8 @@ def test_the_burst_comment_warns_that_gridding_breaks_the_exact_sum(datasets):
         "floors each one"
         in datasets["burst_average_ensembles"].nbad_cor.attrs["comment"]
     )
-    assert "floors each one" not in datasets["process_pings"].nbad_cor.attrs["comment"]
+    for method in ("process_pings", "average_ensembles"):
+        assert "floors each one" not in datasets[method].nbad_cor.attrs["comment"]
 
 
 def test_percent_good_points_at_the_counts(datasets):
