@@ -664,7 +664,10 @@ def test_process_pings_counts_stay_int8_and_unmasked(rootdir):
     for name in NBAD:
         assert proc.ds[name].dtype == np.int8
         assert proc.ds[name].dims == ("z", "time")
-        assert np.isfinite(proc.ds[name].values).all()
+        # `int8` cannot carry NaN, so the interesting failure mode is the
+        # masking `_ave2nc` applies to the two averaging paths reaching this
+        # one by mistake, which would wrap the values in a masked array.
+        assert not np.ma.isMaskedArray(proc.ds[name].values)
 
 
 def test_an_unreadable_chunk_has_no_rejection_reason(rootdir, monkeypatch):
@@ -771,12 +774,65 @@ def test_every_invalid_grid_cell_on_the_profile_has_a_reason(rootdir, monkeypatc
 
 
 def test_average_ensembles_counts_are_the_gridded_reasons(rootdir, monkeypatch):
-    _, calls = _run(rootdir, monkeypatch, "average_ensembles", method="_edit")
+    """Each published count is the sum of the gridded reason it names.
+
+    Run with `maskbins` set so `nbad_maskbins` is nonzero and takes part in
+    the comparison below; without it a column swap involving that variable
+    would pass unnoticed.
+    """
+    calls = _record_edit(monkeypatch, "_edit")
+    proc = _proc(rootdir)
+    proc.editparams.maskbins = proc.generate_binmask([4, 5])
+    proc.average_ensembles()
+
+    assert calls, "no ensemble reached _edit"
     for _, _, ens in calls:
         for name in madcp.QC_CRITERIA:
             grid = ens.reason_grid[name]
             assert grid.dtype == bool
             assert grid.shape == ens.enu_grid.shape[:2]
+
+    for name in madcp.QC_CRITERIA:
+        expected = np.array(
+            [np.sum(ens.reason_grid[name], axis=0) for _, _, ens in calls]
+        )
+        assert np.array_equal(proc.ave[f"nbad_{name}"], expected)
+    assert proc.ave["nbad_maskbins"].any(), "maskbins never fired"
+
+
+def test_burst_counts_match_their_named_reason_in_bin_space(rootdir, monkeypatch):
+    """The interpolated count for each criterion is built from its own sum.
+
+    The published values are these bin-space sums interpolated onto the
+    depth grid and floored independently, and `floor(a) + floor(b)` can fall
+    short of `floor(a + b)` (issue #30), so comparing the published grid
+    values against a hand-rolled interpolation would mean reimplementing
+    that arithmetic here. Instead this captures the array
+    `burst_average_ensembles` hands to `interp1` before any interpolation or
+    flooring runs, and checks each of its four reason columns against the
+    same sum computed independently by name. That is what would catch the
+    counts landing under the wrong `nbad_*` name, for instance a slip
+    between the order `counts_inst` is assembled in and the order
+    `QC_CRITERIA` is unpacked in afterwards.
+    """
+    captured = []
+    original_interp1 = madcp.interp1
+    ncols = 2 + len(madcp.QC_CRITERIA)
+
+    def recorder(*args, **kwargs):
+        y_old = args[1]
+        if getattr(y_old, "ndim", 0) == 2 and y_old.shape[-1] == ncols:
+            captured.append(np.asarray(y_old))
+        return original_interp1(*args, **kwargs)
+
+    monkeypatch.setattr(madcp, "interp1", recorder)
+    _, calls = _run(rootdir, monkeypatch, "burst_average_ensembles", method="_edit")
+
+    assert len(captured) == len(calls)
+    for (_, _, ens), counts_inst in zip(calls, captured):
+        for j, name in enumerate(madcp.QC_CRITERIA):
+            expected = np.sum(np.asarray(ens[f"reason_{name}"]), axis=0)
+            assert np.array_equal(counts_inst[:, 2 + j], expected)
 
 
 def test_average_ensembles_counts_are_nan_off_the_profile(rootdir):
@@ -794,3 +850,4 @@ def test_average_ensembles_counts_are_nan_off_the_profile(rootdir):
     for name in NBAD:
         assert proc.ds[name].dtype == np.float64
         assert np.isnan(proc.ds[name].values[off]).all()
+        assert np.isfinite(proc.ds[name].values[~off]).all()

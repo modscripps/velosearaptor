@@ -473,7 +473,7 @@ def test_only_average_ensembles_warns_about_the_gridding_over_count(datasets):
     """The counts sum exactly, except where a grid cell straddles two bins."""
     assert "more than one" in datasets["average_ensembles"].nbad_cor.attrs["comment"]
     for method in ("process_pings", "burst_average_ensembles"):
-        assert "sum" in datasets[method].nbad_cor.attrs["comment"]
+        assert "more than one" not in datasets[method].nbad_cor.attrs["comment"]
 
 
 def test_the_burst_comment_warns_that_gridding_breaks_the_exact_sum(datasets):
