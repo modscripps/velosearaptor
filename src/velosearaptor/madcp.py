@@ -2650,9 +2650,11 @@ class ProcessADCP:
         "Each rejected ping is attributed to one criterion only, by the order "
         "the criteria are applied: nbad_nodata, then nbad_cor, then "
         "nbad_maskbins, then nbad_max_e. Attribution matters because the raw "
-        "criteria overlap: the correlation test reads the fill values under "
+        "criteria overlap. The correlation test reads the fill values under "
         "cells that carry no beam data at all, so without the precedence rule "
-        "it would claim up to a third of nbad_nodata as correlation failure."
+        "it would also count nearly every one of those cells as a correlation "
+        "failure, 100% of them where binmapping is on, and those cells are "
+        "29% of everything the correlation test reports there."
     )
     _NBAD_COMMENTS: ClassVar[dict] = {
         "process_pings": (

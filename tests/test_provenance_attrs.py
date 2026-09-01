@@ -455,6 +455,20 @@ def test_the_counts_state_the_precedence_rule(datasets, method):
     assert method in comment
 
 
+def test_the_counts_quantify_the_overlap_they_correct(datasets):
+    """The precedence sentence carries both measured figures.
+
+    An earlier draft attached the 29% to the wrong variable, claiming a third
+    of `nbad_nodata` would be misread as correlation failure. 29% is the share
+    of the correlation test's own total; the share of `nbad_nodata` is
+    essentially all of it. Both numbers are in the comment so that neither can
+    drift back to the other's place.
+    """
+    comment = datasets["process_pings"].nbad_cor.attrs["comment"]
+    assert "100%" in comment
+    assert "29%" in comment
+
+
 def test_only_average_ensembles_warns_about_the_gridding_over_count(datasets):
     """The counts sum exactly, except where a grid cell straddles two bins."""
     assert "more than one" in datasets["average_ensembles"].nbad_cor.attrs["comment"]

@@ -507,7 +507,7 @@ def cf_conventions():
             "long_name": "number of good pings",
             "standard_name": "number_of_observations",
             "coverage_content_type": "qualityInformation",
-            "ancillary_variables": ("nbad_nodata nbad_cor nbad_maskbins nbad_max_e"),
+            "ancillary_variables": "nbad_nodata nbad_cor nbad_maskbins nbad_max_e",
             "comment": (
                 "Number of pings per depth bin that passed editing and "
                 "entered the time average. The basis for pg and for the "
