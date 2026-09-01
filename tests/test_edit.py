@@ -26,6 +26,9 @@ def _ensemble(dead_beam_cor, min_cor_beam=0, nping=4, nbin=5):
     ens = Bunch()
     ens.cor = np.full((nping, nbin, 4), 128.0)
     ens.cor[..., min_cor_beam] = dead_beam_cor
+    # Every beam carries data, so `flag_no_data` is empty and the correlation
+    # test is still the only thing that can mask a cell here.
+    ens.vel = np.ma.masked_array(np.zeros((nping, nbin, 4)), mask=False)
     ens.xyze = np.ma.masked_array(np.zeros((nping, nbin, 4)), mask=False)
     return ens
 

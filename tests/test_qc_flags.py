@@ -12,13 +12,23 @@ call, so the flags are a decomposition of the current behavior and not a
 second implementation of it. `tests/test_pinned_output.py` covers the other
 half, that the published numbers are untouched.
 
-The three flags, in the order they are applied:
+The flags, in the order they are applied:
 
+`flag_no_data`    no beam that enters the velocity solution carries a velocity
+                  at this cell, so no solution exists before editing looks at
+                  it; reduced from the per-beam `flag_no_data_beam`
 `flag_cor`        correlation below `min_correlation` on any beam that enters
                   the velocity solution, reduced from the per-beam
                   `flag_cor_beam`
 `flag_maskbins`   bins the user declared bad through `maskbins`
 `flag_max_e`      error velocity above the applied threshold
+
+`flag_no_data` is the one editing does not cause. Binmapping cannot fill every
+cell of every beam and the instrument rejects beams on its own, so cells reach
+`_edit` already masked, and the three editing flags alone do not add up to the
+mask on `xyze`. Raising it makes `ens.valid`, the complement of the four,
+assertable against that mask, which is what lets percent good be counted from
+the flags instead of read back out of the damaged array (issue #30).
 
 The lifecycle differs by path and that is the easiest thing to get wrong here.
 `average_ensembles` and `burst_average_ensembles` call `_edit`, so all three
@@ -31,6 +41,7 @@ Both call patterns are exercised below.
 
 import numpy as np
 import pytest
+from pycurrents.num import interp1
 
 from velosearaptor import madcp
 from velosearaptor.madcp import ProcessADCP
@@ -94,6 +105,34 @@ def _or(flags):
     return combined
 
 
+CONFIGURATIONS = (
+    "average_ensembles",
+    "burst_average_ensembles",
+    "process_pings",
+    "process_pings_binmap",
+)
+
+
+def _run(rootdir, monkeypatch, config, method="_edit_masks", **kwargs):
+    """Run one of the four pinned configurations, recording calls to `method`.
+
+    `_edit` calls `_edit_masks`, so recording the latter reaches every
+    configuration; recording the former reaches only the two averaging paths.
+    """
+    calls = _record_edit(monkeypatch, method)
+    if config == "burst_average_ensembles":
+        proc = _burst_proc(rootdir, **kwargs)
+        proc.burst_average_ensembles()
+    elif config == "average_ensembles":
+        proc = _proc(rootdir, **kwargs)
+        proc.average_ensembles()
+    else:
+        proc = _proc(rootdir, **kwargs)
+        proc.process_pings(binmap=config.endswith("binmap"))
+    assert calls, f"no ensemble reached {method}"
+    return proc, calls
+
+
 # ------------------------------------------------- the load-bearing assertion
 
 
@@ -118,9 +157,19 @@ def test_edit_flags_reproduce_the_mask_on_the_averaging_paths(
             assert flag.shape == before.shape
         assert np.array_equal(after, before | _or(flags))
 
+        # The closed form: `before` is `flag_no_data`, so the four flags
+        # account for the whole mask and `ens.valid` is their complement.
+        all_flags = _flags(
+            ens, ("flag_no_data", "flag_cor", "flag_maskbins", "flag_max_e")
+        )
+        assert np.array_equal(after, _or(all_flags))
+        assert np.asarray(ens.valid).dtype == bool
+        assert np.array_equal(np.asarray(ens.valid), ~after)
+
     # A flag that never fires proves nothing about the decomposition.
     assert any(np.asarray(ens.flag_cor).any() for _, _, ens in calls)
     assert any(np.asarray(ens.flag_max_e).any() for _, _, ens in calls)
+    assert any(np.asarray(ens.flag_no_data).any() for _, _, ens in calls)
 
 
 @pytest.mark.parametrize("binmap", [False, True])
@@ -136,9 +185,14 @@ def test_edit_masks_flags_reproduce_the_chunk_mask_on_the_per_ping_path(
     for before, after, ens in calls:
         flags = _flags(ens, ("flag_cor", "flag_maskbins"))
         assert np.array_equal(after, before | _or(flags))
-        # The threshold has not run yet on this path, so no third flag exists.
+        # The threshold has not run yet on this path, so no fourth flag
+        # exists and `ens.valid` carries only the three raised so far.
         assert "flag_max_e" not in ens
+        all_flags = _flags(ens, ("flag_no_data", "flag_cor", "flag_maskbins"))
+        assert np.array_equal(after, _or(all_flags))
+        assert np.array_equal(np.asarray(ens.valid), ~after)
     assert any(np.asarray(ens.flag_cor).any() for _, _, ens in calls)
+    assert any(np.asarray(ens.flag_no_data).any() for _, _, ens in calls)
 
 
 def test_the_record_threshold_flag_reproduces_the_mask_on_the_per_ping_path(
@@ -270,6 +324,56 @@ def test_the_cell_correlation_flag_ignores_ibad_beams(rootdir, monkeypatch):
     assert saw_a_difference, "the excluded beam never differed from the rest"
 
 
+@pytest.mark.parametrize("config", CONFIGURATIONS)
+def test_the_no_data_flag_is_the_invalidity_editing_inherits(
+    rootdir, monkeypatch, config
+):
+    """`flag_no_data` is the mask `xyze` already carries when editing starts.
+
+    Editing does not cause it. Binmapping cannot fill every cell of every
+    beam and the instrument rejects beams on its own, so the flag is a
+    snapshot of what arrives rather than a criterion applied here. The
+    equality against the entry mask is what makes `ens.valid` a decomposition
+    of the mask instead of a second opinion about it.
+    """
+    _, calls = _run(rootdir, monkeypatch, config)
+
+    saw_one = False
+    for before, _, ens in calls:
+        beam = np.asarray(ens.flag_no_data_beam)
+        assert beam.dtype == bool
+        assert beam.shape == ens.vel.shape
+        assert np.array_equal(beam, np.ma.getmaskarray(ens.vel))
+        assert np.array_equal(np.asarray(ens.flag_no_data), beam.any(axis=-1))
+        assert np.array_equal(np.asarray(ens.flag_no_data), before)
+        saw_one |= bool(beam.any())
+
+    # Otherwise the equality would hold because both sides are empty.
+    assert saw_one, "no cell reached editing already masked"
+
+
+def test_the_no_data_cell_flag_ignores_ibad_beams(rootdir, monkeypatch):
+    """A beam dropped by `ibad` must not declare a cell unsolvable (issue #90).
+
+    `Transform.beam_to_xyz` fills the excluded beam from the other three
+    before it transforms, so that beam's mask never reaches `xyze`. Reducing
+    over all four beams instead disagrees with the mask, and `ibad` is outside
+    the four pinned configurations, so nothing else here would catch it.
+    """
+    ibad = 0
+    _, calls = _run(rootdir, monkeypatch, "average_ensembles", ibad=ibad)
+
+    saw_a_difference = False
+    for before, _, ens in calls:
+        beam = np.asarray(ens.flag_no_data_beam)
+        kept = np.delete(beam, ibad, axis=-1)
+        assert np.array_equal(np.asarray(ens.flag_no_data), kept.any(axis=-1))
+        assert np.array_equal(np.asarray(ens.flag_no_data), before)
+        saw_a_difference |= bool((beam.any(axis=-1) != kept.any(axis=-1)).any())
+
+    assert saw_a_difference, "the excluded beam never differed from the rest"
+
+
 def test_the_threshold_flag_is_the_error_velocity_test(rootdir, monkeypatch):
     """`flag_max_e` marks the surviving cells above the applied threshold."""
     calls = _record_edit(monkeypatch, "_edit")
@@ -293,8 +397,13 @@ def test_the_flag_helpers_take_their_parameters_explicitly():
     cor = np.array([[[70, 70, 70, 10]]], dtype=np.uint8)
     beam = madcp._correlation_flag(cor, 64)
     assert np.array_equal(beam, [[[False, False, False, True]]])
-    assert np.array_equal(madcp._correlation_cell_flag(beam), [[True]])
-    assert np.array_equal(madcp._correlation_cell_flag(beam, ibad=3), [[False]])
+    # One reduction, shared by every beam-space criterion.
+    assert np.array_equal(madcp._cell_flag(beam), [[True]])
+    assert np.array_equal(madcp._cell_flag(beam, ibad=3), [[False]])
+
+    vel = np.ma.masked_array(np.zeros((1, 1, 4)), mask=[[[False, False, False, True]]])
+    assert np.array_equal(madcp._no_data_flag(vel), beam)
+    assert not madcp._no_data_flag(np.zeros((1, 1, 4))).any()
 
     assert np.array_equal(madcp._maskbins_flag((2, 3), [1]), [[0, 1, 0], [0, 1, 0]])
     assert not madcp._maskbins_flag((2, 3), None).any()
@@ -303,3 +412,125 @@ def test_the_flag_helpers_take_their_parameters_explicitly():
     assert np.array_equal(madcp._max_e_flag(e, 0.2), [[False, True, False]])
     # A threshold that could not be computed rejects nothing.
     assert not madcp._max_e_flag(e, np.nan).any()
+
+
+# ------------------------------------------------- percent good from the flags
+
+
+def test_process_pings_percent_good_is_the_assembled_validity(rootdir, monkeypatch):
+    """On the per-ping path `pg` is validity, assembled in two stages.
+
+    The beam-space criteria are raised once per `ens_size` chunk and the error
+    velocity threshold once over the whole record (issue #100), so the chunks
+    have to be stitched back together before the record-wide flag is applied.
+    `ens_size` is small here to make the chunking real.
+    """
+    seen = {}
+    original = madcp._max_e_flag
+
+    def recorder(e, max_e_applied):
+        flag = original(e, max_e_applied)
+        seen["flag"] = flag.copy()
+        return flag
+
+    monkeypatch.setattr(madcp, "_max_e_flag", recorder)
+    calls = _record_edit(monkeypatch, "_edit_masks")
+    proc = _proc(rootdir)
+    proc.process_pings(ens_size=500)
+
+    assert len(calls) > 1, "the record was not chunked"
+    valid = np.concatenate([np.asarray(ens.valid) for _, _, ens in calls], axis=0)
+    valid &= ~seen["flag"]
+    assert np.array_equal(proc.ave.pg, 100 * valid.astype(np.int8))
+    assert valid.any() and not valid.all()
+
+
+def test_burst_percent_good_is_the_validity_count(rootdir, monkeypatch):
+    """The burst path counts on the instrument bins, so validity counts there.
+
+    Every ping of a burst sits on one tiled depth vector, so the count is
+    exact in bin space and the gridding of the count is unchanged (issue #30,
+    decision of 2026-08-31).
+    """
+    _, calls = _run(rootdir, monkeypatch, "burst_average_ensembles", method="_edit")
+
+    counted = False
+    for _, _, ens in calls:
+        valid = np.asarray(ens.valid)
+        assert np.array_equal(valid.sum(axis=0), ens.enu[..., 0].count(axis=0))
+        counted |= bool(valid.any())
+    assert counted
+
+
+def test_average_ensembles_percent_good_is_the_gridded_validity(rootdir, monkeypatch):
+    """The spaced path counts on the depth grid, so validity is gridded too.
+
+    The transducer moves within an averaging interval there, so the pings of
+    one interval share no bin grid and the count has to be taken after
+    gridding. Validity rides as one more column of the single `interp1` call
+    in `_regrid_enu_amp`, so it costs no extra interpolation.
+    """
+    _, calls = _run(rootdir, monkeypatch, "average_ensembles", method="_edit")
+
+    for _, _, ens in calls:
+        valid_grid = np.asarray(ens.valid_grid)
+        assert valid_grid.dtype == bool
+        assert np.array_equal(valid_grid, ~np.isnan(ens.enu_grid[..., 0]))
+
+
+def test_the_validity_column_leaves_the_regridding_alone(rootdir):
+    """The extra column must not move the velocities or the amplitudes.
+
+    `_regrid_enu_amp` writes into a shared `interp1` call that was
+    deliberately reduced to one call per ping, so this is the one place where
+    counting from the flags touches published numbers.
+    """
+    proc = _proc(rootdir)
+    ens = proc.read_ensemble(0)
+    proc._edit(ens)
+    proc._to_enu(ens)
+    proc._regrid_enu_amp(ens)
+
+    depth = proc._burst_average_depth(ens)
+    ncols = ens.enu.shape[-1]
+    for i in range(ens.dday.size):
+        amp_col = ens.amp[i].mean(axis=-1, keepdims=True)
+        combined = np.ma.concatenate([ens.enu[i], amp_col], axis=-1)
+        without = np.ma.filled(
+            interp1(depth[i], combined, proc.dgrid, axis=0, method="linear"), np.nan
+        )
+        assert np.array_equal(ens.enu_grid[i], without[:, :ncols], equal_nan=True)
+        assert np.array_equal(ens.amp_grid[i], without[:, ncols], equal_nan=True)
+
+    assert np.array_equal(ens.valid_grid, ~np.isnan(ens.enu_grid[..., 0]))
+
+
+def test_an_unreadable_chunk_is_zero_percent_good(rootdir, monkeypatch):
+    """Pings the reader cannot return never reach `_edit_masks`.
+
+    Validity assembled from flags has no entry for them, so the array it
+    assembles into starts False and they come out 0 % good. Reading `pg` back
+    out of `uvwe`, which is what this replaces, got them right for free. None
+    of the pinned configurations contains an unreadable chunk, so the reader
+    is made to fail one here.
+    """
+    proc = _proc(rootdir)
+    reads = []
+    original = proc.m.read
+
+    def read(start=None, stop=None, **kwargs):
+        reads.append((start, stop))
+        if len(reads) == 2:
+            return None
+        return original(start=start, stop=stop, **kwargs)
+
+    monkeypatch.setattr(proc.m, "read", read)
+    proc.process_pings(ens_size=500)
+
+    assert len(reads) > 2, "the dropped chunk was the last one"
+    offset = reads[0][0]
+    idx0, idx1 = reads[1][0] - offset, reads[1][1] - offset
+    pg = proc.ave.pg
+    assert (pg[idx0:idx1] == 0).all()
+    assert (pg[:idx0] == 100).any()
+    assert (pg[idx1:] == 100).any()

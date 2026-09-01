@@ -52,6 +52,9 @@ def _two_population_ensemble(kept_sigma, masked_sigma, nping=200, nbin=20):
     half = nbin // 2
     xyze[:, :half, 3] = rng.normal(0.0, kept_sigma, (nping, half))
     xyze[:, half:, 3] = rng.normal(0.0, masked_sigma, (nping, nbin - half))
+    # Every beam carries data, so `flag_no_data` is empty and the error
+    # velocity is the only thing under test.
+    ens.vel = np.ma.masked_array(np.zeros((nping, nbin, 4)), mask=False)
     ens.xyze = np.ma.masked_array(xyze, mask=False)
     return ens
 
