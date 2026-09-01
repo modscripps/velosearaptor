@@ -278,7 +278,24 @@
      ]
     },
     "nbad_cor": {
-     "attrs": {},
+     "attrs": {
+      "comment": {
+       "type": "str",
+       "value": "Number of pings in each averaging interval that this criterion rejected at this grid depth, computed by `average_ensembles` after every ping was interpolated onto the universal depth grid, the same order `pg` is counted in on this path. A grid depth sits between two instrument bins, so a cell fed by two bins rejected for different reasons counts in more than one of these variables and the four can sum above the number of rejected pings. `ngood` carries the count that survived. Each rejected ping is attributed to one criterion only, by the order the criteria are applied: nbad_nodata, then nbad_cor, then nbad_maskbins, then nbad_max_e. Attribution matters because the raw criteria overlap: the correlation test reads the fill values under cells that carry no beam data at all, so without the precedence rule it would claim up to a third of nbad_nodata as correlation failure."
+      },
+      "coverage_content_type": {
+       "type": "str",
+       "value": "qualityInformation"
+      },
+      "long_name": {
+       "type": "str",
+       "value": "pings rejected: low correlation"
+      },
+      "units": {
+       "type": "str",
+       "value": "1"
+      }
+     },
      "checksum": "c6d9337b8afb606259ee8e3d36f517ce90d1d520f501fefe20d9dccaf1df62cf",
      "dims": [
       "depth",
@@ -298,7 +315,24 @@
      ]
     },
     "nbad_maskbins": {
-     "attrs": {},
+     "attrs": {
+      "comment": {
+       "type": "str",
+       "value": "Number of pings in each averaging interval that this criterion rejected at this grid depth, computed by `average_ensembles` after every ping was interpolated onto the universal depth grid, the same order `pg` is counted in on this path. A grid depth sits between two instrument bins, so a cell fed by two bins rejected for different reasons counts in more than one of these variables and the four can sum above the number of rejected pings. `ngood` carries the count that survived. Each rejected ping is attributed to one criterion only, by the order the criteria are applied: nbad_nodata, then nbad_cor, then nbad_maskbins, then nbad_max_e. Attribution matters because the raw criteria overlap: the correlation test reads the fill values under cells that carry no beam data at all, so without the precedence rule it would claim up to a third of nbad_nodata as correlation failure."
+      },
+      "coverage_content_type": {
+       "type": "str",
+       "value": "qualityInformation"
+      },
+      "long_name": {
+       "type": "str",
+       "value": "pings rejected: bin masked by the user"
+      },
+      "units": {
+       "type": "str",
+       "value": "1"
+      }
+     },
      "checksum": "3e386db2b9b8bb8dd655adfb06cd5441719a74014ceb8a8586ecfa4f3e30dd0e",
      "dims": [
       "depth",
@@ -318,7 +352,24 @@
      ]
     },
     "nbad_max_e": {
-     "attrs": {},
+     "attrs": {
+      "comment": {
+       "type": "str",
+       "value": "Number of pings in each averaging interval that this criterion rejected at this grid depth, computed by `average_ensembles` after every ping was interpolated onto the universal depth grid, the same order `pg` is counted in on this path. A grid depth sits between two instrument bins, so a cell fed by two bins rejected for different reasons counts in more than one of these variables and the four can sum above the number of rejected pings. `ngood` carries the count that survived. Each rejected ping is attributed to one criterion only, by the order the criteria are applied: nbad_nodata, then nbad_cor, then nbad_maskbins, then nbad_max_e. Attribution matters because the raw criteria overlap: the correlation test reads the fill values under cells that carry no beam data at all, so without the precedence rule it would claim up to a third of nbad_nodata as correlation failure."
+      },
+      "coverage_content_type": {
+       "type": "str",
+       "value": "qualityInformation"
+      },
+      "long_name": {
+       "type": "str",
+       "value": "pings rejected: error velocity above threshold"
+      },
+      "units": {
+       "type": "str",
+       "value": "1"
+      }
+     },
      "checksum": "dea13dadd807dccf265bfe836e26b406bec5859d7718dbe94d5412d68a5d0528",
      "dims": [
       "depth",
@@ -338,7 +389,24 @@
      ]
     },
     "nbad_nodata": {
-     "attrs": {},
+     "attrs": {
+      "comment": {
+       "type": "str",
+       "value": "Number of pings in each averaging interval that this criterion rejected at this grid depth, computed by `average_ensembles` after every ping was interpolated onto the universal depth grid, the same order `pg` is counted in on this path. A grid depth sits between two instrument bins, so a cell fed by two bins rejected for different reasons counts in more than one of these variables and the four can sum above the number of rejected pings. `ngood` carries the count that survived. Each rejected ping is attributed to one criterion only, by the order the criteria are applied: nbad_nodata, then nbad_cor, then nbad_maskbins, then nbad_max_e. Attribution matters because the raw criteria overlap: the correlation test reads the fill values under cells that carry no beam data at all, so without the precedence rule it would claim up to a third of nbad_nodata as correlation failure."
+      },
+      "coverage_content_type": {
+       "type": "str",
+       "value": "qualityInformation"
+      },
+      "long_name": {
+       "type": "str",
+       "value": "pings rejected: no beam data"
+      },
+      "units": {
+       "type": "str",
+       "value": "1"
+      }
+     },
      "checksum": "dcae61aef7bf447fa5088826c04641210314c001c184e6508599bd248f69325c",
      "dims": [
       "depth",
@@ -359,6 +427,10 @@
     },
     "ngood": {
      "attrs": {
+      "ancillary_variables": {
+       "type": "str",
+       "value": "nbad_nodata nbad_cor nbad_maskbins nbad_max_e"
+      },
       "comment": {
        "type": "str",
        "value": "Number of pings per depth bin that passed editing and entered the time average. The basis for pg and for the velocity standard errors. Zero means no ping survived editing; NaN means the depth bin lies outside the instrument's profile and nothing was measured there."
@@ -425,7 +497,7 @@
      "attrs": {
       "ancillary_variables": {
        "type": "str",
-       "value": "npings"
+       "value": "npings nbad_nodata nbad_cor nbad_maskbins nbad_max_e"
       },
       "comment": {
        "type": "str",
@@ -1128,7 +1200,24 @@
      ]
     },
     "nbad_cor": {
-     "attrs": {},
+     "attrs": {
+      "comment": {
+       "type": "str",
+       "value": "Number of pings in each burst that this criterion rejected at this bin, computed by `burst_average_ensembles` on the instrument bins and then interpolated onto the depth grid, the same order `pg` is counted in on this path. On the instrument bins the four sum exactly to the number of rejected pings. NaN means the depth bin lies outside the instrument's profile and nothing was measured there. An interpolated bin keeps its own counts, so the interpolation stays visible. Each rejected ping is attributed to one criterion only, by the order the criteria are applied: nbad_nodata, then nbad_cor, then nbad_maskbins, then nbad_max_e. Attribution matters because the raw criteria overlap: the correlation test reads the fill values under cells that carry no beam data at all, so without the precedence rule it would claim up to a third of nbad_nodata as correlation failure."
+      },
+      "coverage_content_type": {
+       "type": "str",
+       "value": "qualityInformation"
+      },
+      "long_name": {
+       "type": "str",
+       "value": "pings rejected: low correlation"
+      },
+      "units": {
+       "type": "str",
+       "value": "1"
+      }
+     },
      "checksum": "d53f5536362b9f3477b7cf25199263700b90cac1ddb53169e82712fb47cabad7",
      "dims": [
       "depth",
@@ -1148,7 +1237,24 @@
      ]
     },
     "nbad_maskbins": {
-     "attrs": {},
+     "attrs": {
+      "comment": {
+       "type": "str",
+       "value": "Number of pings in each burst that this criterion rejected at this bin, computed by `burst_average_ensembles` on the instrument bins and then interpolated onto the depth grid, the same order `pg` is counted in on this path. On the instrument bins the four sum exactly to the number of rejected pings. NaN means the depth bin lies outside the instrument's profile and nothing was measured there. An interpolated bin keeps its own counts, so the interpolation stays visible. Each rejected ping is attributed to one criterion only, by the order the criteria are applied: nbad_nodata, then nbad_cor, then nbad_maskbins, then nbad_max_e. Attribution matters because the raw criteria overlap: the correlation test reads the fill values under cells that carry no beam data at all, so without the precedence rule it would claim up to a third of nbad_nodata as correlation failure."
+      },
+      "coverage_content_type": {
+       "type": "str",
+       "value": "qualityInformation"
+      },
+      "long_name": {
+       "type": "str",
+       "value": "pings rejected: bin masked by the user"
+      },
+      "units": {
+       "type": "str",
+       "value": "1"
+      }
+     },
      "checksum": "1fdddd9b7463ea6168e1c19ffa421778208a70846bd192f4e9814e11d124f7d4",
      "dims": [
       "depth",
@@ -1168,7 +1274,24 @@
      ]
     },
     "nbad_max_e": {
-     "attrs": {},
+     "attrs": {
+      "comment": {
+       "type": "str",
+       "value": "Number of pings in each burst that this criterion rejected at this bin, computed by `burst_average_ensembles` on the instrument bins and then interpolated onto the depth grid, the same order `pg` is counted in on this path. On the instrument bins the four sum exactly to the number of rejected pings. NaN means the depth bin lies outside the instrument's profile and nothing was measured there. An interpolated bin keeps its own counts, so the interpolation stays visible. Each rejected ping is attributed to one criterion only, by the order the criteria are applied: nbad_nodata, then nbad_cor, then nbad_maskbins, then nbad_max_e. Attribution matters because the raw criteria overlap: the correlation test reads the fill values under cells that carry no beam data at all, so without the precedence rule it would claim up to a third of nbad_nodata as correlation failure."
+      },
+      "coverage_content_type": {
+       "type": "str",
+       "value": "qualityInformation"
+      },
+      "long_name": {
+       "type": "str",
+       "value": "pings rejected: error velocity above threshold"
+      },
+      "units": {
+       "type": "str",
+       "value": "1"
+      }
+     },
      "checksum": "65f9a147ac4f66d9e911ae28db482b5dd772117ef5305660fbe067ef5712dc77",
      "dims": [
       "depth",
@@ -1188,7 +1311,24 @@
      ]
     },
     "nbad_nodata": {
-     "attrs": {},
+     "attrs": {
+      "comment": {
+       "type": "str",
+       "value": "Number of pings in each burst that this criterion rejected at this bin, computed by `burst_average_ensembles` on the instrument bins and then interpolated onto the depth grid, the same order `pg` is counted in on this path. On the instrument bins the four sum exactly to the number of rejected pings. NaN means the depth bin lies outside the instrument's profile and nothing was measured there. An interpolated bin keeps its own counts, so the interpolation stays visible. Each rejected ping is attributed to one criterion only, by the order the criteria are applied: nbad_nodata, then nbad_cor, then nbad_maskbins, then nbad_max_e. Attribution matters because the raw criteria overlap: the correlation test reads the fill values under cells that carry no beam data at all, so without the precedence rule it would claim up to a third of nbad_nodata as correlation failure."
+      },
+      "coverage_content_type": {
+       "type": "str",
+       "value": "qualityInformation"
+      },
+      "long_name": {
+       "type": "str",
+       "value": "pings rejected: no beam data"
+      },
+      "units": {
+       "type": "str",
+       "value": "1"
+      }
+     },
      "checksum": "9a626866dbbe937acf5fb65b4432ea5ae41be0491d9e1c99c6e57061012960c1",
      "dims": [
       "depth",
@@ -1209,6 +1349,10 @@
     },
     "ngood": {
      "attrs": {
+      "ancillary_variables": {
+       "type": "str",
+       "value": "nbad_nodata nbad_cor nbad_maskbins nbad_max_e"
+      },
       "comment": {
        "type": "str",
        "value": "Number of pings per depth bin that passed editing and entered the time average. The basis for pg and for the velocity standard errors. Zero means no ping survived editing; NaN means the depth bin lies outside the instrument's profile and nothing was measured there."
@@ -1277,7 +1421,7 @@
      "attrs": {
       "ancillary_variables": {
        "type": "str",
-       "value": "npings"
+       "value": "npings nbad_nodata nbad_cor nbad_maskbins nbad_max_e"
       },
       "comment": {
        "type": "str",
@@ -1917,7 +2061,24 @@
      ]
     },
     "nbad_cor": {
-     "attrs": {},
+     "attrs": {
+      "comment": {
+       "type": "str",
+       "value": "Whether this criterion rejected the ping at this bin, 0 or 1, computed per ping by `process_pings`. The four sum to 1 where pg is 0 and to 0 where pg is 100. Each rejected ping is attributed to one criterion only, by the order the criteria are applied: nbad_nodata, then nbad_cor, then nbad_maskbins, then nbad_max_e. Attribution matters because the raw criteria overlap: the correlation test reads the fill values under cells that carry no beam data at all, so without the precedence rule it would claim up to a third of nbad_nodata as correlation failure."
+      },
+      "coverage_content_type": {
+       "type": "str",
+       "value": "qualityInformation"
+      },
+      "long_name": {
+       "type": "str",
+       "value": "pings rejected: low correlation"
+      },
+      "units": {
+       "type": "str",
+       "value": "1"
+      }
+     },
      "checksum": "39e34479927af5136bc232af35b5d9db4fd5b78e9c2ff2ff08e11552dfaf3560",
      "dims": [
       "z",
@@ -1935,7 +2096,24 @@
      ]
     },
     "nbad_maskbins": {
-     "attrs": {},
+     "attrs": {
+      "comment": {
+       "type": "str",
+       "value": "Whether this criterion rejected the ping at this bin, 0 or 1, computed per ping by `process_pings`. The four sum to 1 where pg is 0 and to 0 where pg is 100. Each rejected ping is attributed to one criterion only, by the order the criteria are applied: nbad_nodata, then nbad_cor, then nbad_maskbins, then nbad_max_e. Attribution matters because the raw criteria overlap: the correlation test reads the fill values under cells that carry no beam data at all, so without the precedence rule it would claim up to a third of nbad_nodata as correlation failure."
+      },
+      "coverage_content_type": {
+       "type": "str",
+       "value": "qualityInformation"
+      },
+      "long_name": {
+       "type": "str",
+       "value": "pings rejected: bin masked by the user"
+      },
+      "units": {
+       "type": "str",
+       "value": "1"
+      }
+     },
      "checksum": "a60058edb4e4be790c67428486e42996792a1d134d3e7c6c406275a0a9c90ea5",
      "dims": [
       "z",
@@ -1953,7 +2131,24 @@
      ]
     },
     "nbad_max_e": {
-     "attrs": {},
+     "attrs": {
+      "comment": {
+       "type": "str",
+       "value": "Whether this criterion rejected the ping at this bin, 0 or 1, computed per ping by `process_pings`. The four sum to 1 where pg is 0 and to 0 where pg is 100. Each rejected ping is attributed to one criterion only, by the order the criteria are applied: nbad_nodata, then nbad_cor, then nbad_maskbins, then nbad_max_e. Attribution matters because the raw criteria overlap: the correlation test reads the fill values under cells that carry no beam data at all, so without the precedence rule it would claim up to a third of nbad_nodata as correlation failure."
+      },
+      "coverage_content_type": {
+       "type": "str",
+       "value": "qualityInformation"
+      },
+      "long_name": {
+       "type": "str",
+       "value": "pings rejected: error velocity above threshold"
+      },
+      "units": {
+       "type": "str",
+       "value": "1"
+      }
+     },
      "checksum": "7587c79d7ebeffb1191f90bc27ad859a6e891ee5b89604c8a1bdf082ea824e32",
      "dims": [
       "z",
@@ -1971,7 +2166,24 @@
      ]
     },
     "nbad_nodata": {
-     "attrs": {},
+     "attrs": {
+      "comment": {
+       "type": "str",
+       "value": "Whether this criterion rejected the ping at this bin, 0 or 1, computed per ping by `process_pings`. The four sum to 1 where pg is 0 and to 0 where pg is 100. Each rejected ping is attributed to one criterion only, by the order the criteria are applied: nbad_nodata, then nbad_cor, then nbad_maskbins, then nbad_max_e. Attribution matters because the raw criteria overlap: the correlation test reads the fill values under cells that carry no beam data at all, so without the precedence rule it would claim up to a third of nbad_nodata as correlation failure."
+      },
+      "coverage_content_type": {
+       "type": "str",
+       "value": "qualityInformation"
+      },
+      "long_name": {
+       "type": "str",
+       "value": "pings rejected: no beam data"
+      },
+      "units": {
+       "type": "str",
+       "value": "1"
+      }
+     },
      "checksum": "8db6cffeaf89143cf44e37e8bb7012257b8cc319f6ba54d67d10d8e7ac70e4b7",
      "dims": [
       "z",
@@ -1990,6 +2202,10 @@
     },
     "pg": {
      "attrs": {
+      "ancillary_variables": {
+       "type": "str",
+       "value": "nbad_nodata nbad_cor nbad_maskbins nbad_max_e"
+      },
       "comment": {
        "type": "str",
        "value": "Fraction of pings with a valid velocity at this bin, computed per ping by `process_pings`. It is binary, 0 or 100: 100 means the ping survived editing at this bin, 0 means it was edited out. No time averaging has happened on this path, so this says nothing about a sample count. The two averaging paths have to choose whether to count before or after depth gridding, and they choose differently; with no averaging window there is nothing to choose here. This is a velosearaptor-defined quantity. It shares its name with RDI's own four PercentGood fields, which `velosearaptor.io.read_raw_rdi` reads and no processing step uses, and it means something different from them."
@@ -2516,7 +2732,24 @@
      ]
     },
     "nbad_cor": {
-     "attrs": {},
+     "attrs": {
+      "comment": {
+       "type": "str",
+       "value": "Whether this criterion rejected the ping at this bin, 0 or 1, computed per ping by `process_pings`. The four sum to 1 where pg is 0 and to 0 where pg is 100. Each rejected ping is attributed to one criterion only, by the order the criteria are applied: nbad_nodata, then nbad_cor, then nbad_maskbins, then nbad_max_e. Attribution matters because the raw criteria overlap: the correlation test reads the fill values under cells that carry no beam data at all, so without the precedence rule it would claim up to a third of nbad_nodata as correlation failure."
+      },
+      "coverage_content_type": {
+       "type": "str",
+       "value": "qualityInformation"
+      },
+      "long_name": {
+       "type": "str",
+       "value": "pings rejected: low correlation"
+      },
+      "units": {
+       "type": "str",
+       "value": "1"
+      }
+     },
      "checksum": "56c219600e85695207be6a8ef7ce38bfae9ab6a7b21027d818753802dfce19fb",
      "dims": [
       "z",
@@ -2534,7 +2767,24 @@
      ]
     },
     "nbad_maskbins": {
-     "attrs": {},
+     "attrs": {
+      "comment": {
+       "type": "str",
+       "value": "Whether this criterion rejected the ping at this bin, 0 or 1, computed per ping by `process_pings`. The four sum to 1 where pg is 0 and to 0 where pg is 100. Each rejected ping is attributed to one criterion only, by the order the criteria are applied: nbad_nodata, then nbad_cor, then nbad_maskbins, then nbad_max_e. Attribution matters because the raw criteria overlap: the correlation test reads the fill values under cells that carry no beam data at all, so without the precedence rule it would claim up to a third of nbad_nodata as correlation failure."
+      },
+      "coverage_content_type": {
+       "type": "str",
+       "value": "qualityInformation"
+      },
+      "long_name": {
+       "type": "str",
+       "value": "pings rejected: bin masked by the user"
+      },
+      "units": {
+       "type": "str",
+       "value": "1"
+      }
+     },
      "checksum": "16d914f9086670fdd6fff8a9595bf50836b5ae6282b259e3bd9e649f9b792802",
      "dims": [
       "z",
@@ -2552,7 +2802,24 @@
      ]
     },
     "nbad_max_e": {
-     "attrs": {},
+     "attrs": {
+      "comment": {
+       "type": "str",
+       "value": "Whether this criterion rejected the ping at this bin, 0 or 1, computed per ping by `process_pings`. The four sum to 1 where pg is 0 and to 0 where pg is 100. Each rejected ping is attributed to one criterion only, by the order the criteria are applied: nbad_nodata, then nbad_cor, then nbad_maskbins, then nbad_max_e. Attribution matters because the raw criteria overlap: the correlation test reads the fill values under cells that carry no beam data at all, so without the precedence rule it would claim up to a third of nbad_nodata as correlation failure."
+      },
+      "coverage_content_type": {
+       "type": "str",
+       "value": "qualityInformation"
+      },
+      "long_name": {
+       "type": "str",
+       "value": "pings rejected: error velocity above threshold"
+      },
+      "units": {
+       "type": "str",
+       "value": "1"
+      }
+     },
      "checksum": "f2c832e9b5a4e8261b02af3f5c936c20be0a051d6f1ab8bb010dfd669bbf8e28",
      "dims": [
       "z",
@@ -2570,7 +2837,24 @@
      ]
     },
     "nbad_nodata": {
-     "attrs": {},
+     "attrs": {
+      "comment": {
+       "type": "str",
+       "value": "Whether this criterion rejected the ping at this bin, 0 or 1, computed per ping by `process_pings`. The four sum to 1 where pg is 0 and to 0 where pg is 100. Each rejected ping is attributed to one criterion only, by the order the criteria are applied: nbad_nodata, then nbad_cor, then nbad_maskbins, then nbad_max_e. Attribution matters because the raw criteria overlap: the correlation test reads the fill values under cells that carry no beam data at all, so without the precedence rule it would claim up to a third of nbad_nodata as correlation failure."
+      },
+      "coverage_content_type": {
+       "type": "str",
+       "value": "qualityInformation"
+      },
+      "long_name": {
+       "type": "str",
+       "value": "pings rejected: no beam data"
+      },
+      "units": {
+       "type": "str",
+       "value": "1"
+      }
+     },
      "checksum": "bab0659bdd2a27532d8eac50d975273ca758344fef20c6f0358299546793d71b",
      "dims": [
       "z",
@@ -2589,6 +2873,10 @@
     },
     "pg": {
      "attrs": {
+      "ancillary_variables": {
+       "type": "str",
+       "value": "nbad_nodata nbad_cor nbad_maskbins nbad_max_e"
+      },
       "comment": {
        "type": "str",
        "value": "Fraction of pings with a valid velocity at this bin, computed per ping by `process_pings`. It is binary, 0 or 100: 100 means the ping survived editing at this bin, 0 means it was edited out. No time averaging has happened on this path, so this says nothing about a sample count. The two averaging paths have to choose whether to count before or after depth gridding, and they choose differently; with no averaging window there is nothing to choose here. This is a velosearaptor-defined quantity. It shares its name with RDI's own four PercentGood fields, which `velosearaptor.io.read_raw_rdi` reads and no processing step uses, and it means something different from them."

@@ -2542,6 +2542,7 @@ class ProcessADCP:
         out = self._add_names_and_units(out)
         out = self._add_depth_offset_comments(out, depth_offset)
         out = self._add_pg_comment(out, getattr(self, "_processing_method", None))
+        out = self._add_nbad_comments(out, getattr(self, "_processing_method", None))
         out = self._drop_absent_ancillary_variables(out)
 
         self.ds = out
@@ -2641,6 +2642,58 @@ class ProcessADCP:
         attrs = dict(ds.pg.attrs)
         attrs["comment"] = f"{cls._PG_COMMENTS[method]} {cls._PG_RDI_NOTE}"
         ds["pg"].attrs = attrs
+        return ds
+
+    # What "rejected by this criterion" means depends on how many pings sit
+    # behind a cell, which differs per path exactly as it does for `pg`.
+    _NBAD_SHARED: ClassVar[str] = (
+        "Each rejected ping is attributed to one criterion only, by the order "
+        "the criteria are applied: nbad_nodata, then nbad_cor, then "
+        "nbad_maskbins, then nbad_max_e. Attribution matters because the raw "
+        "criteria overlap: the correlation test reads the fill values under "
+        "cells that carry no beam data at all, so without the precedence rule "
+        "it would claim up to a third of nbad_nodata as correlation failure."
+    )
+    _NBAD_COMMENTS: ClassVar[dict] = {
+        "process_pings": (
+            "Whether this criterion rejected the ping at this bin, 0 or 1, "
+            "computed per ping by `process_pings`. The four sum to 1 where "
+            "pg is 0 and to 0 where pg is 100."
+        ),
+        "average_ensembles": (
+            "Number of pings in each averaging interval that this criterion "
+            "rejected at this grid depth, computed by `average_ensembles` "
+            "after every ping was interpolated onto the universal depth "
+            "grid, the same order `pg` is counted in on this path. A grid "
+            "depth sits between two instrument bins, so a cell fed by two "
+            "bins rejected for different reasons counts in more than one of "
+            "these variables and the four can sum above the number of "
+            "rejected pings. `ngood` carries the count that survived."
+        ),
+        "burst_average_ensembles": (
+            "Number of pings in each burst that this criterion rejected at "
+            "this bin, computed by `burst_average_ensembles` on the "
+            "instrument bins and then interpolated onto the depth grid, the "
+            "same order `pg` is counted in on this path. On the instrument "
+            "bins the four sum exactly to the number of rejected pings. NaN "
+            "means the depth bin lies outside the instrument's profile and "
+            "nothing was measured there. An interpolated bin keeps its own "
+            "counts, so the interpolation stays visible."
+        ),
+    }
+
+    @classmethod
+    def _add_nbad_comments(cls, ds, method):
+        """Say what one rejection count means on this path."""
+        if method not in cls._NBAD_COMMENTS:
+            return ds
+        for name in QC_CRITERIA:
+            var = f"nbad_{name}"
+            if var not in ds.variables:
+                continue
+            attrs = dict(ds[var].attrs)
+            attrs["comment"] = f"{cls._NBAD_COMMENTS[method]} {cls._NBAD_SHARED}"
+            ds[var].attrs = attrs
         return ds
 
     @staticmethod

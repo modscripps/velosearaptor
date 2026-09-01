@@ -425,3 +425,44 @@ def test_pg_comment_says_the_ordering_does_not_arise_on_single_pings(datasets):
     """`process_pings` averages nothing, so it has no ordering to justify."""
     comment = datasets["process_pings"].pg.attrs["comment"]
     assert "averaging window" in comment
+
+
+NBAD = ("nbad_nodata", "nbad_cor", "nbad_maskbins", "nbad_max_e")
+
+
+@pytest.mark.parametrize(
+    "method", ["process_pings", "average_ensembles", "burst_average_ensembles"]
+)
+def test_every_count_carries_its_metadata(datasets, method):
+    ds = datasets[method]
+    for name in NBAD:
+        assert name in ds.variables, name
+        attrs = ds[name].attrs
+        assert attrs["units"] == "1"
+        assert attrs["coverage_content_type"] == "qualityInformation"
+        assert attrs["long_name"]
+        # CF has no standard name for a per-criterion rejection count.
+        assert "standard_name" not in attrs
+
+
+@pytest.mark.parametrize(
+    "method", ["process_pings", "average_ensembles", "burst_average_ensembles"]
+)
+def test_the_counts_state_the_precedence_rule(datasets, method):
+    """A reader has to know the counts are disjoint, and in which order."""
+    comment = datasets[method].nbad_cor.attrs["comment"]
+    assert "nbad_nodata" in comment
+    assert method in comment
+
+
+def test_only_average_ensembles_warns_about_the_gridding_over_count(datasets):
+    """The counts sum exactly, except where a grid cell straddles two bins."""
+    assert "more than one" in datasets["average_ensembles"].nbad_cor.attrs["comment"]
+    for method in ("process_pings", "burst_average_ensembles"):
+        assert "sum" in datasets[method].nbad_cor.attrs["comment"]
+
+
+def test_percent_good_points_at_the_counts(datasets):
+    for method, ds in datasets.items():
+        declared = ds.pg.attrs["ancillary_variables"].split()
+        assert set(NBAD) <= set(declared), method
