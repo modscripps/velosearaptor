@@ -476,6 +476,19 @@ def test_only_average_ensembles_warns_about_the_gridding_over_count(datasets):
         assert "sum" in datasets[method].nbad_cor.attrs["comment"]
 
 
+def test_the_burst_comment_warns_that_gridding_breaks_the_exact_sum(datasets):
+    """Floored independently per count, so the published values can fall short.
+
+    The exact identity holds on the instrument bins, before the depth-grid
+    interpolation. A reader summing the published values needs to know that.
+    """
+    assert (
+        "floors each one"
+        in datasets["burst_average_ensembles"].nbad_cor.attrs["comment"]
+    )
+    assert "floors each one" not in datasets["process_pings"].nbad_cor.attrs["comment"]
+
+
 def test_percent_good_points_at_the_counts(datasets):
     for method, ds in datasets.items():
         declared = ds.pg.attrs["ancillary_variables"].split()
