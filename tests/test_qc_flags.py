@@ -694,3 +694,51 @@ def test_an_unreadable_chunk_has_no_rejection_reason(rootdir, monkeypatch):
     for name in NBAD:
         assert (proc.ave[name][idx0:idx1] == 0).all()
         assert proc.ave[name][:idx0].any() or proc.ave[name][idx1:].any()
+
+
+def test_burst_counts_partition_the_rejected_pings(rootdir, monkeypatch):
+    """Counted on the instrument bins, where the partition is exact.
+
+    Checked before the interpolation onto the depth grid, because `interp1`
+    on a count is what smears it.
+    """
+    _, calls = _run(rootdir, monkeypatch, "burst_average_ensembles", method="_edit")
+
+    for _, _, ens in calls:
+        counts = [
+            np.sum(np.asarray(ens[f"reason_{name}"]), axis=0)
+            for name in madcp.QC_CRITERIA
+        ]
+        nprofs = ens.enu.shape[0]
+        ngood = np.sum(np.asarray(ens.valid), axis=0)
+        assert np.array_equal(sum(counts), nprofs - ngood)
+
+
+def test_burst_counts_are_nan_off_the_profile(rootdir):
+    """A grid depth the instrument never reached is not "0 pings rejected".
+
+    Same treatment `pg` and `ngood` already get on this path (issue #82).
+    """
+    proc = _burst_proc(rootdir)
+    proc.burst_average_ensembles()
+
+    off = np.isnan(proc.ave.ngood)
+    assert off.any(), "no off-profile cell in this file"
+    for name in NBAD:
+        assert proc.ave[name].dtype == np.float64
+        assert np.isnan(proc.ave[name][off]).all()
+        assert np.isfinite(proc.ave[name][~off]).all()
+
+
+def test_burst_counts_ignore_the_interpolated_bin(rootdir):
+    """An interpolated bin is not measured data, so its counts stand.
+
+    `pg` and `ngood` are deliberately left alone there and these follow.
+    """
+    plain = _burst_proc(rootdir)
+    plain.burst_average_ensembles()
+    interp = _burst_proc(rootdir)
+    interp.burst_average_ensembles(interpolate_bin=3)
+
+    for name in NBAD:
+        assert np.array_equal(plain.ave[name], interp.ave[name], equal_nan=True), name

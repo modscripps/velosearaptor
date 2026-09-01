@@ -2114,6 +2114,15 @@ class ProcessADCP:
         # from int32 to float64 (issue #82).
         pg = np.full((nens, ndgrid), np.nan, dtype=np.float64)
         ngood = np.full((nens, ndgrid), np.nan, dtype=np.float64)
+
+        # Same NaN initialization and the same reason as `pg` and `ngood`
+        # above: an interval with fewer than two pings is skipped below
+        # without writing, and a grid depth off the profile must not read
+        # "0 pings rejected" (issue #82).
+        nbad = {
+            name: np.full((nens, ndgrid), np.nan, dtype=np.float64)
+            for name in QC_CRITERIA
+        }
         amp = np.ma.zeros((nens, ndgrid), dtype=np.float32)
 
         temperature = np.ma.zeros((nens,), dtype=np.float32)
@@ -2201,23 +2210,32 @@ class ProcessADCP:
             uvwe[i] = uvwe_grid
             uvwe_std[i] = uvwe_std_grid
 
-            # Interpolate pg to universal depth grid. Not overly satisfying but
-            # seems like that's what we need to do here.
+            # One `interp1` call for every count, the way `_regrid_enu_amp`
+            # does it for velocity and amplitude. `interp1` takes a 2-D
+            # `y_old` and casts it to float64 internally.
+            #
+            # `np.floor` reproduces the truncation the old `.astype(np.int8)`
+            # and `.astype(np.int32)` performed on the way in, so the
+            # published values do not move and these stay integer-valued.
+            # Drop it only as a deliberate change.
+            #
             # Depths outside the instrument's profile come back masked. Fill
             # them with NaN rather than casting them to 0, which would claim
             # every ping at that depth was bad.
-            #
-            # `np.floor` reproduces the truncation the old `.astype(np.int8)`
-            # performed on the way in, so the published values do not move and
-            # `pg` stays an integer-valued percentage as it is in the other
-            # two averaging methods. Drop it only as a deliberate change.
-            pgi_grid = interp1(depth, pgi_inst, self.dgrid, axis=0, method="linear")
-            pg[i] = np.floor(np.ma.filled(pgi_grid, np.nan))
-            # Same treatment for `ngood`: NaN off the profile rather than the
-            # 0 that `np.nan_to_num` produced, and `np.floor` for the
-            # truncation the old `astype(np.int32)` did, so it stays a count.
-            ngood_grid = interp1(depth, ngood_inst, self.dgrid, axis=0, method="linear")
-            ngood[i] = np.floor(np.ma.filled(ngood_grid, np.nan))
+            counts_inst = np.column_stack(
+                [pgi_inst, ngood_inst]
+                + [np.sum(ens[f"reason_{name}"], axis=0) for name in QC_CRITERIA]
+            )
+            counts_grid = np.floor(
+                np.ma.filled(
+                    interp1(depth, counts_inst, self.dgrid, axis=0, method="linear"),
+                    np.nan,
+                )
+            )
+            pg[i] = counts_grid[:, 0]
+            ngood[i] = counts_grid[:, 1]
+            for j, name in enumerate(QC_CRITERIA):
+                nbad[name][i] = counts_grid[:, 2 + j]
 
             # Not changed to averaging in instrument-relative coordinates first.
             amp[i] = ens.amp_grid.mean(axis=0)
@@ -2238,6 +2256,10 @@ class ProcessADCP:
             e_std=uvwe_std[..., 3],
             pg=pg,
             ngood=ngood,
+            nbad_nodata=nbad["nodata"],
+            nbad_cor=nbad["cor"],
+            nbad_maskbins=nbad["maskbins"],
+            nbad_max_e=nbad["max_e"],
             amp=amp,
             temperature=temperature,
             pressure=pressure,
@@ -2400,6 +2422,21 @@ class ProcessADCP:
         # Percent good is currently defined everywhere. Set to NaN where we
         # don't have any amplitude data (i.e. no data).
         out["pg"] = out.pg.where(~np.isnan(out.amp), other=np.nan)
+
+        # The counts say how many pings each criterion rejected. Off the
+        # instrument's profile no ping was measured at all, so 0 would claim
+        # something that was never true (issue #82).
+        #
+        # Not on `process_pings`, where `z` is the instrument bin axis: every
+        # bin is sampled whenever the ping was read, the only NaN cell is an
+        # unreadable chunk, and `u` and `pg` already report that. Masking
+        # there would promote the counts from int8 to float64 and more than
+        # double the largest product this package writes.
+        if getattr(self, "_processing_method", None) != "process_pings":
+            for name in QC_CRITERIA:
+                var = f"nbad_{name}"
+                if var in out:
+                    out[var] = out[var].where(~np.isnan(out.amp), other=np.nan)
 
         # Drop depth levels that carry no velocity. Keying the drop on the
         # whole Dataset would keep levels alive on the strength of amp alone:
