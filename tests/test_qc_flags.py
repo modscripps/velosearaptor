@@ -478,12 +478,15 @@ def test_average_ensembles_percent_good_is_the_gridded_validity(rootdir, monkeyp
         assert np.array_equal(valid_grid, ~np.isnan(ens.enu_grid[..., 0]))
 
 
-def test_the_validity_column_leaves_the_regridding_alone(rootdir):
-    """The extra column must not move the velocities or the amplitudes.
+def test_the_extra_columns_leave_the_regridding_alone(rootdir):
+    """Ten columns must give exactly what four plus amplitude gave.
 
-    `_regrid_enu_amp` writes into a shared `interp1` call that was
-    deliberately reduced to one call per ping, so this is the one place where
-    counting from the flags touches published numbers.
+    `_regrid_enu_amp` was deliberately reduced to one `interp1` call per
+    ping, and the published velocities and amplitudes come out of it. The
+    validity column and the four reason columns ride along in that same
+    call, so this rebuilds the call without any of them and compares. It is
+    the only guard on the one place counting from flags touches a published
+    array.
     """
     proc = _proc(rootdir)
     ens = proc.read_ensemble(0)
@@ -742,33 +745,6 @@ def test_burst_counts_ignore_the_interpolated_bin(rootdir):
 
     for name in NBAD:
         assert np.array_equal(plain.ave[name], interp.ave[name], equal_nan=True), name
-
-
-def test_the_reason_columns_leave_the_regridding_alone(rootdir):
-    """Ten columns must give exactly what six gave.
-
-    `_regrid_enu_amp` was deliberately reduced to one `interp1` call per
-    ping, and the published velocities come out of it. This is the one place
-    counting from flags touches them.
-    """
-    proc = _proc(rootdir)
-    ens = proc.read_ensemble(0)
-    proc._edit(ens)
-    proc._to_enu(ens)
-    proc._regrid_enu_amp(ens)
-
-    depth = proc._burst_average_depth(ens)
-    ncols = ens.enu.shape[-1]
-    for i in range(ens.dday.size):
-        amp_col = ens.amp[i].mean(axis=-1, keepdims=True)
-        combined = np.ma.concatenate([ens.enu[i], amp_col], axis=-1)
-        without = np.ma.filled(
-            interp1(depth[i], combined, proc.dgrid, axis=0, method="linear"), np.nan
-        )
-        assert np.array_equal(ens.enu_grid[i], without[:, :ncols], equal_nan=True)
-        assert np.array_equal(ens.amp_grid[i], without[:, ncols], equal_nan=True)
-
-    assert np.array_equal(ens.valid_grid, ~np.isnan(ens.enu_grid[..., 0]))
 
 
 def test_every_invalid_grid_cell_on_the_profile_has_a_reason(rootdir, monkeypatch):
