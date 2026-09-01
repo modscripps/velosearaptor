@@ -135,13 +135,34 @@ def _correlation_flag(cor, min_correlation):
     return np.asarray(cor) < min_correlation
 
 
-def _correlation_cell_flag(flag_beam, ibad=None):
-    """Cells the correlation test rejects, reduced from the per-beam flag.
+def _no_data_flag(vel):
+    """Beams carrying no velocity at a cell.
+
+    Whichever cause put it there: the instrument rejected the beam, or
+    binmapping had no source bin to fill the cell from (issue #78). The two
+    are not separable, because `_binmap_all_beams` overwrites the beam data
+    and some raw-masked cells come back finite from it.
+
+    Editing does not cause this and does not mask for it; the cells are
+    already masked when `_edit_masks` is entered. The flag exists so that
+    validity can be assembled from flags alone, which is what percent good is
+    counted from (issue #30).
+    """
+    return np.ma.getmaskarray(vel)
+
+
+def _cell_flag(flag_beam, ibad=None):
+    """Reduce a per-beam flag to a per-cell verdict.
 
     One failing beam rejects the whole cell, which is harsher than the
-    instrument's own convention for the same threshold (issue #30). Beams
-    excluded via `ibad` do not enter the velocity solution, so their
-    correlation must not reject cells either (issue #90).
+    instrument's own convention for the correlation threshold (issue #30).
+    Beams excluded via `ibad` do not enter the velocity solution, so what they
+    do must not reject cells either (issue #90); `Transform.beam_to_xyz` fills
+    the excluded beam from the other three before transforming, so its mask
+    never reaches `xyze` and neither may its flag.
+
+    Shared by every beam-space criterion, so softening the whole-cell rule for
+    three-beam solutions (issue #18) is one change, here.
     """
     kept = flag_beam if ibad is None else np.delete(flag_beam, ibad, axis=-1)
     return kept.any(axis=-1)
@@ -1322,11 +1343,24 @@ class ProcessADCP:
         Both criteria are beam-space quantities, so both flags are computed
         before anything is written to `xyze`. `flag_cor_beam`, `flag_cor` and
         `flag_maskbins` are left on `ens` for the caller (issue #30).
+
+        `flag_no_data_beam` and its cell reduction `flag_no_data` record the
+        invalidity that arrives here rather than being caused here, and
+        nothing is masked for them. Without it the flags do not add up to the
+        mask on `xyze`: on the binmapped per-ping path nearly a third of every
+        invalid cell was already invalid before any criterion looked at it.
+
+        `ens.valid` is the complement of the flags raised so far, and is what
+        percent good is counted from. `_edit` narrows it with `flag_max_e`;
+        `process_pings` applies that flag itself, once over the whole record.
         """
         ep = self.editparams
+        ens.flag_no_data_beam = _no_data_flag(ens.vel)
+        ens.flag_no_data = _cell_flag(ens.flag_no_data_beam, self.ibad)
         ens.flag_cor_beam = _correlation_flag(ens.cor, ep.min_correlation)
-        ens.flag_cor = _correlation_cell_flag(ens.flag_cor_beam, self.ibad)
+        ens.flag_cor = _cell_flag(ens.flag_cor_beam, self.ibad)
         ens.flag_maskbins = _maskbins_flag(ens.flag_cor.shape, ep.maskbins)
+        ens.valid = ~(ens.flag_no_data | ens.flag_cor | ens.flag_maskbins)
 
         ens.xyze[ens.flag_cor] = np.ma.masked
         # Before the standard deviation in `_edit`, not after: bins the user
@@ -1353,13 +1387,16 @@ class ProcessADCP:
     def _edit(self, ens):
         """Apply editing to xyze.
 
-        Leaves the three flags of `_edit_masks` and `flag_max_e` on `ens`.
-        Their OR is the mask this method adds (issue #30).
+        Leaves the flags of `_edit_masks` and `flag_max_e` on `ens`, and
+        `ens.valid`, their complement. `ens.valid` is `~getmaskarray(xyze)`
+        per cell once this returns, which is what makes percent good
+        computable from the flags (issue #30).
         """
         self._edit_masks(ens)
         e = ens.xyze[:, :, 3]
         ens.max_e_applied = self._adaptive_max_e(e)
         ens.flag_max_e = _max_e_flag(e, ens.max_e_applied)
+        ens.valid &= ~ens.flag_max_e
         ens.xyze[ens.flag_max_e] = np.ma.masked
 
     def _to_enu(self, ens):
@@ -1437,8 +1474,15 @@ class ProcessADCP:
         """Depth-grid ENU velocities and amplitudes in a single pass.
 
         Combines the work of _regrid_enu and _regrid_amp, calling interp1
-        once per ping on a concatenated (nbins, 5) array instead of twice
+        once per ping on a concatenated (nbins, 6) array instead of twice
         on separate arrays. Output arrays use NaN instead of masked values.
+
+        The sixth column is validity, masked exactly where the cell is
+        invalid, so it rides along at no extra interpolation. `valid_grid` is
+        where it came back finite, and `average_ensembles` counts percent good
+        from it (issue #30). It is the only change this makes to a shared
+        array, so the column must leave `enu_grid` and `amp_grid` bitwise
+        alone, which `tests/test_qc_flags.py` pins.
         """
         npings = ens.dday.size
         ndgrid = self.dgrid.size
@@ -1446,19 +1490,25 @@ class ProcessADCP:
 
         enu_grid = np.full((npings, ndgrid, ncols_enu), np.nan)
         amp_grid = np.full((npings, ndgrid), np.nan)
+        valid_grid = np.zeros((npings, ndgrid), dtype=bool)
 
         depth = self._burst_average_depth(ens)
 
         for i in range(npings):
             amp_col = ens.amp[i].mean(axis=-1, keepdims=True)
-            combined = np.ma.concatenate([ens.enu[i], amp_col], axis=-1)
+            valid_col = np.ma.masked_array(
+                np.ones((ens.valid.shape[1], 1)), mask=~ens.valid[i][:, np.newaxis]
+            )
+            combined = np.ma.concatenate([ens.enu[i], amp_col, valid_col], axis=-1)
             result = interp1(depth[i], combined, self.dgrid, axis=0, method=method)
             result_filled = np.ma.filled(result, np.nan)
             enu_grid[i] = result_filled[:, :ncols_enu]
             amp_grid[i] = result_filled[:, ncols_enu]
+            valid_grid[i] = np.isfinite(result_filled[:, ncols_enu + 1])
 
         ens.enu_grid = enu_grid
         ens.amp_grid = amp_grid
+        ens.valid_grid = valid_grid
 
     def _binmap_one_beam(self, ens, beam_number):
         """Binmap single ping data for a single beam by linear interpolation.
@@ -1678,6 +1728,12 @@ class ProcessADCP:
 
         uvwe = np.ma.zeros((npings, ndgrid, 4), dtype=np.float32)
 
+        # Percent good comes from here, not from what survives in `uvwe`.
+        # False, not True: a chunk the reader cannot return skips the loop
+        # body below without raising a single flag, and a True default would
+        # publish it as 100 % good (issue #30).
+        valid = np.zeros((npings, ndgrid), dtype=bool)
+
         pg = np.zeros((npings, ndgrid), dtype=np.int8)
         amp = np.ma.zeros((npings, ndgrid), dtype=np.float32)
 
@@ -1729,6 +1785,7 @@ class ProcessADCP:
 
             uvwe[idx0:idx1] = ens.enu
             amp[idx0:idx1] = ens.amp.mean(axis=-1)  # Average over beams... why?
+            valid[idx0:idx1] = ens.valid
 
         # Apply the error velocity threshold to the record as a whole. Running
         # `_edit` inside the loop made `ens_size` the window the standard
@@ -1746,15 +1803,18 @@ class ProcessADCP:
         # The record-wide counterpart of `_edit`'s `flag_max_e`. The two
         # beam-space flags were raised per chunk inside the loop, so on this
         # path the three do not share a lifecycle (issue #30).
-        uvwe[_max_e_flag(e, max_e)] = np.ma.masked
+        flag_max_e = _max_e_flag(e, max_e)
+        uvwe[flag_max_e] = np.ma.masked
+        valid &= ~flag_max_e
         max_e_applied[:] = max_e
 
         # Percent good is binary for single-ping data: 100 where the ping
-        # survived editing, 0 where it was edited out. Binmapped data can
-        # carry unmasked NaN, so test for that as well as for the mask.
-        u = uvwe[..., 0]
-        good = np.isfinite(np.ma.filled(u, np.nan)) & ~np.ma.getmaskarray(u)
-        pg[:] = 100 * good.astype(np.int8)
+        # survived editing, 0 where it was edited out. Counted from the flags
+        # the criteria raised rather than read back out of `uvwe`, so it does
+        # not depend on the masking `_edit` performs as a side effect
+        # (issue #30). `ndgrid` here is the instrument bin count, so nothing
+        # is gridded between the flags and the count.
+        pg[:] = 100 * valid.astype(np.int8)
 
         self.ave = Bunch(
             u=uvwe[..., 0],
@@ -1847,7 +1907,11 @@ class ProcessADCP:
                 uvwe_std[i] = np.nanstd(ens.enu_grid, axis=0)
                 amp[i] = np.nanmean(ens.amp_grid, axis=0)
 
-            ngood[i] = np.sum(~np.isnan(ens.enu_grid[..., 0]), axis=0)
+            # Counted from the validity gridded alongside the velocities in
+            # `_regrid_enu_amp`, not from what came back finite there
+            # (issue #30). The two are the same array today; the point is that
+            # the count no longer depends on `_edit` masking as a side effect.
+            ngood[i] = np.sum(ens.valid_grid, axis=0)
             # Widen before multiplying: ngood is int32 storage, and
             # 100 * ngood wraps once ngood > 21474836, which would turn the
             # best bins negative (issue #94). ngood itself is int32 rather than
@@ -2039,12 +2103,18 @@ class ProcessADCP:
             uvwe_inst = ens.enu.mean(axis=0)
             uvwe_std_inst = ens.enu.std(axis=0)
 
-            # `count` returns a platform int, so `100 * ngood_inst` is wide
-            # enough not to wrap. Do not "tidy" this to a narrow integer: at
-            # more than 327 good pings an int16 product overflows and pg goes
-            # negative, which is what issue #94 was in `average_ensembles`. The
-            # float storage arrays above are only written after pg is computed.
-            ngood_inst = ens.enu[..., 0].count(axis=0)
+            # Counted from the flags rather than from what survived in
+            # `ens.enu` (issue #30). Every ping of a burst sits on one tiled
+            # depth vector, so the count is exact on the instrument bins and
+            # only the count is interpolated onto the depth grid below.
+            #
+            # The sum of a boolean array is a platform int, as `count` was, so
+            # `100 * ngood_inst` is wide enough not to wrap. Do not "tidy"
+            # this to a narrow integer: at more than 327 good pings an int16
+            # product overflows and pg goes negative, which is what issue #94
+            # was in `average_ensembles`. The float storage arrays above are
+            # only written after pg is computed.
+            ngood_inst = np.sum(ens.valid, axis=0)
             pgi_inst = 100 * ngood_inst // nprofs
 
             if pg_condition is not None:
