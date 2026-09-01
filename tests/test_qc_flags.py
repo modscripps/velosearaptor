@@ -534,3 +534,71 @@ def test_an_unreadable_chunk_is_zero_percent_good(rootdir, monkeypatch):
     assert (pg[idx0:idx1] == 0).all()
     assert (pg[:idx0] == 100).any()
     assert (pg[idx1:] == 100).any()
+
+
+# --------------------------------------------- one reason per rejected cell
+
+
+def _reasons(ens):
+    return [np.asarray(ens[f"reason_{name}"]) for name in madcp.QC_CRITERIA]
+
+
+@pytest.mark.parametrize("config", ["average_ensembles", "burst_average_ensembles"])
+def test_the_reasons_partition_the_rejected_cells(rootdir, monkeypatch, config):
+    """Every rejected cell is attributed to exactly one criterion.
+
+    This is what lets the published counts sum to `nprofs - ngood`. The raw
+    flags overlap, so publishing them directly would double-count.
+    """
+    _, calls = _run(rootdir, monkeypatch, config, method="_edit")
+
+    for _, after, ens in calls:
+        reasons = _reasons(ens)
+        stacked = np.stack(reasons, axis=-1)
+        # Disjoint: no cell carries two reasons.
+        assert stacked.sum(axis=-1).max() <= 1
+        # Complete: their union is exactly the mask editing produced.
+        assert np.array_equal(_or(reasons), after)
+        assert np.array_equal(_or(reasons), ~np.asarray(ens.valid))
+
+
+@pytest.mark.parametrize("config", CONFIGURATIONS)
+def test_the_correlation_test_fires_on_cells_that_carry_no_data(
+    rootdir, monkeypatch, config
+):
+    """The exclusion in the precedence rule is not defensive.
+
+    `_correlation_flag` compares the fill data underneath already-masked
+    cells, and `_mask_binmapped` writes 0 there, which is below any
+    threshold. Without this, the partition test above would hold for the
+    wrong reason. The burst file is the one configuration where it does not
+    happen, so it is excluded from the assertion.
+    """
+    _, calls = _run(rootdir, monkeypatch, config)
+
+    overlap = sum(
+        int((np.asarray(ens.flag_cor) & np.asarray(ens.flag_no_data)).sum())
+        for _, _, ens in calls
+    )
+    if config == "burst_average_ensembles":
+        assert overlap == 0
+    else:
+        assert overlap > 0
+        # And the precedence rule removes it from the correlation reason.
+        for _, _, ens in calls:
+            assert not (np.asarray(ens.reason_cor) & np.asarray(ens.flag_no_data)).any()
+
+
+def test_the_attribution_helper_takes_its_parameters_explicitly():
+    """No `self` and no ensemble, so the rule is testable on its own."""
+    nodata = np.array([[True, False, False, False]])
+    cor = np.array([[True, True, False, False]])
+    maskbins = np.array([[True, True, True, False]])
+
+    a, c, m = madcp._attributed_flags(nodata, cor, maskbins)
+    assert np.array_equal(a, [[True, False, False, False]])
+    assert np.array_equal(c, [[False, True, False, False]])
+    assert np.array_equal(m, [[False, False, True, False]])
+    # Disjoint and complete over the union of the inputs.
+    assert np.array_equal(a | c | m, nodata | cor | maskbins)
+    assert (a.astype(int) + c.astype(int) + m.astype(int)).max() == 1

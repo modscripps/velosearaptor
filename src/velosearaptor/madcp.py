@@ -185,6 +185,33 @@ def _max_e_flag(e, max_e_applied):
     return np.ma.filled(np.abs(e) > max_e_applied, False)
 
 
+# The editing criteria, in the order they are applied. That order is also the
+# precedence that makes the published counts disjoint (issue #30).
+QC_CRITERIA = ("nodata", "cor", "maskbins", "max_e")
+
+
+def _attributed_flags(flag_no_data, flag_cor, flag_maskbins):
+    """The beam-space criteria, made disjoint so each cell has one reason.
+
+    The raw flags overlap, and the overlap is not a nuisance, it is a
+    misattribution. `_correlation_flag` compares the fill data underneath
+    already-masked cells, and `_mask_binmapped` writes 0 there, which is below
+    any correlation threshold. So `flag_cor` fires on essentially every cell
+    `flag_no_data` already claimed: 100% of them under binmapping, which is
+    29% of everything `flag_cor` reports. Publishing the raw flags as
+    per-criterion counts would report that as correlation failure (issue #30).
+
+    Precedence is the order the criteria are applied. `flag_max_e` needs no
+    exclusion: it is computed on an error velocity these three have already
+    masked, and `_max_e_flag` fills masked cells with False.
+    """
+    return (
+        flag_no_data,
+        flag_cor & ~flag_no_data,
+        flag_maskbins & ~(flag_no_data | flag_cor),
+    )
+
+
 class ProcessADCP:
     """Moored ADCP Processing.
 
@@ -1353,6 +1380,12 @@ class ProcessADCP:
         `ens.valid` is the complement of the flags raised so far, and is what
         percent good is counted from. `_edit` narrows it with `flag_max_e`;
         `process_pings` applies that flag itself, once over the whole record.
+
+        `reason_nodata`, `reason_cor` and `reason_maskbins` are the same
+        criteria made disjoint by precedence, so that each rejected cell is
+        attributed to exactly one of them. They are what the published
+        `nbad_*` counts are built from; `ens.valid` is unaffected, since the
+        union is the same either way.
         """
         ep = self.editparams
         ens.flag_no_data_beam = _no_data_flag(ens.vel)
@@ -1361,6 +1394,11 @@ class ProcessADCP:
         ens.flag_cor = _cell_flag(ens.flag_cor_beam, self.ibad)
         ens.flag_maskbins = _maskbins_flag(ens.flag_cor.shape, ep.maskbins)
         ens.valid = ~(ens.flag_no_data | ens.flag_cor | ens.flag_maskbins)
+        (
+            ens.reason_nodata,
+            ens.reason_cor,
+            ens.reason_maskbins,
+        ) = _attributed_flags(ens.flag_no_data, ens.flag_cor, ens.flag_maskbins)
 
         ens.xyze[ens.flag_cor] = np.ma.masked
         # Before the standard deviation in `_edit`, not after: bins the user
@@ -1397,6 +1435,8 @@ class ProcessADCP:
         ens.max_e_applied = self._adaptive_max_e(e)
         ens.flag_max_e = _max_e_flag(e, ens.max_e_applied)
         ens.valid &= ~ens.flag_max_e
+        # Already disjoint from the other three, so it is the flag unchanged.
+        ens.reason_max_e = ens.flag_max_e
         ens.xyze[ens.flag_max_e] = np.ma.masked
 
     def _to_enu(self, ens):
