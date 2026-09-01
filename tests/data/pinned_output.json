@@ -1756,6 +1756,78 @@
       1999
      ]
     },
+    "nbad_cor": {
+     "attrs": {},
+     "checksum": "39e34479927af5136bc232af35b5d9db4fd5b78e9c2ff2ff08e11552dfaf3560",
+     "dims": [
+      "z",
+      "time"
+     ],
+     "dtype": "|i1",
+     "kind": "data_var",
+     "max": 1,
+     "mean": 0.18543021510755378,
+     "min": 0,
+     "n_invalid": 0,
+     "shape": [
+      40,
+      1999
+     ]
+    },
+    "nbad_maskbins": {
+     "attrs": {},
+     "checksum": "a60058edb4e4be790c67428486e42996792a1d134d3e7c6c406275a0a9c90ea5",
+     "dims": [
+      "z",
+      "time"
+     ],
+     "dtype": "|i1",
+     "kind": "data_var",
+     "max": 0,
+     "mean": 0.0,
+     "min": 0,
+     "n_invalid": 0,
+     "shape": [
+      40,
+      1999
+     ]
+    },
+    "nbad_max_e": {
+     "attrs": {},
+     "checksum": "7587c79d7ebeffb1191f90bc27ad859a6e891ee5b89604c8a1bdf082ea824e32",
+     "dims": [
+      "z",
+      "time"
+     ],
+     "dtype": "|i1",
+     "kind": "data_var",
+     "max": 1,
+     "mean": 0.039032016008004,
+     "min": 0,
+     "n_invalid": 0,
+     "shape": [
+      40,
+      1999
+     ]
+    },
+    "nbad_nodata": {
+     "attrs": {},
+     "checksum": "8db6cffeaf89143cf44e37e8bb7012257b8cc319f6ba54d67d10d8e7ac70e4b7",
+     "dims": [
+      "z",
+      "time"
+     ],
+     "dtype": "|i1",
+     "kind": "data_var",
+     "max": 1,
+     "mean": 0.01710855427713857,
+     "min": 0,
+     "n_invalid": 0,
+     "shape": [
+      40,
+      1999
+     ]
+    },
     "pg": {
      "attrs": {
       "comment": {
@@ -2280,6 +2352,78 @@
      "n_invalid": 0,
      "n_zero": 0,
      "shape": [
+      1999
+     ]
+    },
+    "nbad_cor": {
+     "attrs": {},
+     "checksum": "56c219600e85695207be6a8ef7ce38bfae9ab6a7b21027d818753802dfce19fb",
+     "dims": [
+      "z",
+      "time"
+     ],
+     "dtype": "|i1",
+     "kind": "data_var",
+     "max": 1,
+     "mean": 0.4500393053669692,
+     "min": 0,
+     "n_invalid": 0,
+     "shape": [
+      35,
+      1999
+     ]
+    },
+    "nbad_maskbins": {
+     "attrs": {},
+     "checksum": "16d914f9086670fdd6fff8a9595bf50836b5ae6282b259e3bd9e649f9b792802",
+     "dims": [
+      "z",
+      "time"
+     ],
+     "dtype": "|i1",
+     "kind": "data_var",
+     "max": 0,
+     "mean": 0.0,
+     "min": 0,
+     "n_invalid": 0,
+     "shape": [
+      35,
+      1999
+     ]
+    },
+    "nbad_max_e": {
+     "attrs": {},
+     "checksum": "f2c832e9b5a4e8261b02af3f5c936c20be0a051d6f1ab8bb010dfd669bbf8e28",
+     "dims": [
+      "z",
+      "time"
+     ],
+     "dtype": "|i1",
+     "kind": "data_var",
+     "max": 1,
+     "mean": 0.02492674908883013,
+     "min": 0,
+     "n_invalid": 0,
+     "shape": [
+      35,
+      1999
+     ]
+    },
+    "nbad_nodata": {
+     "attrs": {},
+     "checksum": "bab0659bdd2a27532d8eac50d975273ca758344fef20c6f0358299546793d71b",
+     "dims": [
+      "z",
+      "time"
+     ],
+     "dtype": "|i1",
+     "kind": "data_var",
+     "max": 1,
+     "mean": 0.04332166083041521,
+     "min": 0,
+     "n_invalid": 0,
+     "shape": [
+      35,
       1999
      ]
     },

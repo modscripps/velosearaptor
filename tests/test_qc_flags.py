@@ -602,3 +602,96 @@ def test_the_attribution_helper_takes_its_parameters_explicitly():
     # Disjoint and complete over the union of the inputs.
     assert np.array_equal(a | c | m, nodata | cor | maskbins)
     assert (a.astype(int) + c.astype(int) + m.astype(int)).max() == 1
+
+
+# ------------------------------------------------ the published nbad counts
+
+
+NBAD = tuple(f"nbad_{name}" for name in madcp.QC_CRITERIA)
+
+
+def test_process_pings_publishes_the_reason_for_every_rejected_ping(
+    rootdir, monkeypatch
+):
+    """`pg` says how many pings survived; these say why the rest did not."""
+    seen = {}
+    original = madcp._max_e_flag
+
+    def recorder(e, max_e_applied):
+        flag = original(e, max_e_applied)
+        seen["flag"] = flag.copy()
+        return flag
+
+    monkeypatch.setattr(madcp, "_max_e_flag", recorder)
+    calls = _record_edit(monkeypatch, "_edit_masks")
+    proc = _proc(rootdir)
+    proc.process_pings(ens_size=500)
+
+    assert len(calls) > 1, "the record was not chunked"
+    for name in ("nodata", "cor", "maskbins"):
+        expected = np.concatenate(
+            [np.asarray(ens[f"reason_{name}"]) for _, _, ens in calls], axis=0
+        )
+        assert np.array_equal(proc.ave[f"nbad_{name}"], expected.astype(np.int8))
+    assert np.array_equal(proc.ave.nbad_max_e, seen["flag"].astype(np.int8))
+
+
+def test_process_pings_counts_partition_the_rejected_pings(rootdir):
+    """Exactly: `pg` is 100 where good, and one count is 1 where not."""
+    proc = _proc(rootdir)
+    proc.process_pings()
+
+    total = sum(proc.ave[name].astype(np.int32) for name in NBAD)
+    good = proc.ave.pg == 100
+    assert np.array_equal(total, (~good).astype(np.int32))
+    assert total.max() == 1
+    for name in NBAD:
+        assert proc.ave[name].dtype == np.int8
+
+
+def test_process_pings_counts_stay_int8_and_unmasked(rootdir):
+    """`z` is the instrument bin axis, so there is no off-profile cell here.
+
+    Masking these the way `pg` is masked would promote them to float64 and
+    more than double the largest product this package writes.
+    """
+    proc = _proc(rootdir)
+    proc.process_pings()
+
+    for name in NBAD:
+        assert proc.ds[name].dtype == np.int8
+        assert proc.ds[name].dims == ("z", "time")
+        assert np.isfinite(proc.ds[name].values).all()
+
+
+def test_an_unreadable_chunk_has_no_rejection_reason(rootdir, monkeypatch):
+    """Nothing was read, so no criterion rejected anything.
+
+    `pg` is already 0 there and `u` is NaN, so the cell is not ambiguous.
+    """
+    proc = _proc(rootdir)
+    reads = []
+    original = proc.m.read
+
+    def read(start=None, stop=None, **kwargs):
+        reads.append((start, stop))
+        if len(reads) == 2:
+            return None
+        return original(start=start, stop=stop, **kwargs)
+
+    monkeypatch.setattr(proc.m, "read", read)
+    proc.process_pings(ens_size=500)
+
+    assert len(reads) > 2, "the dropped chunk was the last one"
+    offset = reads[0][0]
+    idx0, idx1 = reads[1][0] - offset, reads[1][1] - offset
+    for name in NBAD:
+        assert (proc.ave[name][idx0:idx1] == 0).all()
+        # Guard against a vacuous pass (the whole array being zero would
+        # make the assertion above meaningless) for whichever criteria this
+        # file's default `editparams` actually raises. `maskbins` is `None`
+        # by default (see `test_the_maskbins_flag_marks_the_declared_bins`),
+        # so `nbad_maskbins` is zero everywhere here, not just in the
+        # dropped chunk, and is exempt from the guard for that reason.
+        if proc.ave[name].any():
+            assert proc.ave[name][:idx0].any() or proc.ave[name][idx1:].any()

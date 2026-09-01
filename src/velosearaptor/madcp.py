@@ -1774,6 +1774,12 @@ class ProcessADCP:
         # publish it as 100 % good (issue #30).
         valid = np.zeros((npings, ndgrid), dtype=bool)
 
+        # Percent good says how many pings survived. These say why the rest
+        # did not, one reason per rejected cell (issue #30). `int8` because
+        # there is one ping per cell on this path, so every count is 0 or 1,
+        # and this is the largest product the package writes.
+        nbad = {name: np.zeros((npings, ndgrid), dtype=np.int8) for name in QC_CRITERIA}
+
         pg = np.zeros((npings, ndgrid), dtype=np.int8)
         amp = np.ma.zeros((npings, ndgrid), dtype=np.float32)
 
@@ -1826,6 +1832,8 @@ class ProcessADCP:
             uvwe[idx0:idx1] = ens.enu
             amp[idx0:idx1] = ens.amp.mean(axis=-1)  # Average over beams... why?
             valid[idx0:idx1] = ens.valid
+            for name in ("nodata", "cor", "maskbins"):
+                nbad[name][idx0:idx1] = ens[f"reason_{name}"]
 
         # Apply the error velocity threshold to the record as a whole. Running
         # `_edit` inside the loop made `ens_size` the window the standard
@@ -1846,6 +1854,9 @@ class ProcessADCP:
         flag_max_e = _max_e_flag(e, max_e)
         uvwe[flag_max_e] = np.ma.masked
         valid &= ~flag_max_e
+        # The record-wide criterion, written after the loop where it is
+        # raised. It is already disjoint from the other three.
+        nbad["max_e"][:] = flag_max_e
         max_e_applied[:] = max_e
 
         # Percent good is binary for single-ping data: 100 where the ping
@@ -1862,6 +1873,10 @@ class ProcessADCP:
             w=uvwe[..., 2],
             e=uvwe[..., 3],
             pg=pg,
+            nbad_nodata=nbad["nodata"],
+            nbad_cor=nbad["cor"],
+            nbad_maskbins=nbad["maskbins"],
+            nbad_max_e=nbad["max_e"],
             amp=amp,
             temperature=temperature,
             pressure=pressure,
