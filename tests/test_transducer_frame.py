@@ -185,19 +185,40 @@ def test_burst_transducer_product_is_the_burst_mean(rootdir):
 
 
 def test_burst_pg_limit_and_masking_agree_on_the_bin_axis(rootdir):
-    """On the bin axis, screened and masked are the same condition.
+    """On the bin axis, screened and masked are the same condition, both ways.
 
-    In the depth frame `pg` is the interpolated `pgi_inst`, so a grid cell
-    can read at or above `pg_limit` while the bin it was fed from was
-    screened out. Nothing is interpolated here, so the two agree.
+    `pg_limit` masks the bins whose percent good falls below it. In the
+    transducer frame `pg` is that same per-bin percent good, so `pg` below
+    the limit and a masked velocity are one condition. In the depth frame
+    they come apart: `interp1` widens the mask of a screened bin onto both
+    grid cells touching it, while the interpolated `pg` at those cells is a
+    blend with unscreened neighbours and can still read at or above the
+    limit. Asserting only that a screened cell is masked would not
+    distinguish the frames, because that direction holds in both.
     """
     proc = _burst(rootdir)
     proc.burst_average_ensembles(vertical_frame="transducer")
-    ds = proc.ds
+    limit = proc.editparams.pg_limit
+    pg = proc.ds.pg.values
+    u = proc.ds.u.values
 
-    screened = ds.pg.values < proc.editparams.pg_limit
-    assert screened.any(), "pg_limit should bind somewhere on this file"
-    assert np.all(np.isnan(ds.u.values[screened]))
+    # Transducer frame: the biconditional holds in both directions.
+    sampled = np.isfinite(pg)  # exclude intervals with fewer than two pings
+    screened = sampled & (pg < limit)
+    kept = sampled & (pg >= limit)
+    assert screened.any() and kept.any(), "pg_limit should bind somewhere on this file"
+    assert np.all(np.isnan(u[screened]))
+    assert np.all(np.isfinite(u[kept]))  # the direction that is frame-specific
+
+    # Depth frame: kept cells can still be masked, because a screened
+    # neighbour's mask reaches them without dragging pg below the limit.
+    proc_depth = _burst(rootdir)
+    proc_depth.burst_average_ensembles()
+    pg_depth = proc_depth.ds.pg.values
+    u_depth = proc_depth.ds.u.values
+    sampled_depth = np.isfinite(pg_depth)
+    kept_depth = sampled_depth & (pg_depth >= limit)
+    assert np.any(np.isnan(u_depth[kept_depth]))
 
 
 def test_burst_percent_good_identity_is_frame_dependent(rootdir):
