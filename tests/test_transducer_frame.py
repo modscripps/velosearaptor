@@ -7,6 +7,7 @@ instrument's own bin axis instead and publishes it as `z`, the axis
 interval alongside it as a derived coordinate.
 """
 
+import numpy as np
 import pytest
 
 from velosearaptor.madcp import ProcessADCP
@@ -67,3 +68,88 @@ def test_depth_frame_is_the_default(rootdir):
     assert proc.ds.attrs["vertical_frame"] == "depth"
     assert "depth" in proc.ds.dims
     assert "z" not in proc.ds.dims
+
+
+# --- average_ensembles on the bin axis ----------------------------------
+
+
+def test_average_ensembles_publishes_the_bin_axis(rootdir):
+    """`z` is the instrument's range vector, not the universal depth grid."""
+    proc = _proc(rootdir, UPLOOKER)
+    proc.average_ensembles(vertical_frame="transducer")
+    ds = proc.ds
+
+    assert "z" in ds.dims
+    assert "depth" not in ds.dims
+    # A subset, because `_ave2nc` drops levels carrying no velocity.
+    assert np.all(np.isin(ds.z.values, proc.tsdat.dep))
+    assert not np.any(np.isin(ds.z.values, proc.dgrid))
+
+
+def test_average_ensembles_transducer_mean_is_reproducible(rootdir):
+    """The published mean is the mean of the ensemble's own bins.
+
+    Reproduced from the pieces rather than compared against the depth-frame
+    product, so this asserts that the frame switch changed the axis and
+    nothing else.
+    """
+    proc = _proc(rootdir, UPLOOKER)
+    proc.average_ensembles(vertical_frame="transducer")
+    ds = proc.ds
+
+    ens = proc.read_ensemble(0)
+    proc._qc(ens)
+    proc._to_enu(ens)
+    expected = np.nanmean(np.ma.filled(ens.enu, np.nan), axis=0)
+
+    idx = np.searchsorted(proc.tsdat.dep, ds.z.values)
+    for j, name in enumerate(["u", "v", "w", "e"]):
+        np.testing.assert_array_equal(
+            ds[name].values[:, 0], expected[idx, j].astype(np.float32)
+        )
+
+
+def test_rejected_cells_stay_out_of_the_transducer_mean(rootdir):
+    """The data under the mask of `ens.enu` is finite, not NaN.
+
+    `numpy.ma` only flips mask bits, so a QC-rejected cell still carries the
+    raw -32768 fill rotated into earth coordinates. `np.nanmean` reads no
+    mask. Averaging `ens.enu` without filling to NaN first would put every
+    rejected cell back into the published velocity, with nothing NaN in the
+    output to show for it (issue #129).
+    """
+    proc = _proc(rootdir, UPLOOKER)
+    ens = proc.read_ensemble(0)
+    proc._qc(ens)
+    proc._to_enu(ens)
+    # Guard the premise: there is something to reject, and it is finite
+    # under the mask.
+    rejected = ~ens.valid
+    assert rejected.any()
+    assert np.isfinite(ens.enu.data[rejected][:, 0]).any()
+
+    proc.average_ensembles(vertical_frame="transducer")
+    ds = proc.ds
+
+    masked_mean = np.ma.filled(ens.enu[:, :, 0].mean(axis=0), np.nan)
+    idx = np.searchsorted(proc.tsdat.dep, ds.z.values)
+    np.testing.assert_allclose(
+        ds.u.values[:, 0], masked_mean[idx].astype(np.float32), rtol=1e-6
+    )
+
+
+def test_percent_good_is_a_ping_count_on_the_bin_axis(rootdir):
+    """`pg` counts pings per bin, with nothing interpolated in between."""
+    proc = _proc(rootdir, UPLOOKER)
+    proc.average_ensembles(vertical_frame="transducer")
+    ds = proc.ds
+
+    ngood = ds.ngood.values
+    npings = np.broadcast_to(ds.npings.values[np.newaxis, :], ngood.shape)
+    # An interval with no pings is skipped and divides by zero; `pg` is NaN
+    # there and the identity has nothing to say about it.
+    good = np.isfinite(ds.pg.values) & (npings > 0)
+    assert good.any()
+    assert np.all(ngood[good] <= npings[good])
+    expected = 100 * ngood[good] // npings[good]
+    np.testing.assert_array_equal(ds.pg.values[good], expected)

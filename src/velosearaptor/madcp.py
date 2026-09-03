@@ -1585,6 +1585,26 @@ class ProcessADCP:
             depth = ens.depth
         return depth
 
+    def _averaging_axis(self):
+        """The vertical axis an averaging run accumulates on.
+
+        In the depth frame that is the universal grid built from
+        `dgridparams`, and every ping is interpolated onto it. In the
+        transducer frame it is the instrument's own range vector,
+        `arange(NCells) * CellSize + Bin1Dist`, constant for the deployment,
+        and nothing is interpolated onto it at all (issue #129).
+
+        Returns
+        -------
+        transducer : bool
+            Whether this run is in the transducer frame.
+        zaxis : array-like
+            The vertical coordinate to publish.
+
+        """
+        transducer = getattr(self, "_vertical_frame", "depth") == "transducer"
+        return transducer, self.tsdat.dep if transducer else self.dgrid
+
     def _regrid_enu(self, ens, method="linear"):
         """Depth-grid enu velocities."""
         shape = (ens.dday.size, self.dgrid.size, ens.enu.shape[-1])
@@ -2082,7 +2102,8 @@ class ProcessADCP:
         else:
             logger.info(f"Averaging ensembles {indices[0]} to {indices[-1]}")
         nens = len(indices)
-        ndgrid = len(self.dgrid)
+        transducer, zaxis = self._averaging_axis()
+        ndgrid = len(zaxis)
         uvwe = np.full((nens, ndgrid, 4), np.nan, dtype=np.float32)
         uvwe_std = np.full((nens, ndgrid, 4), np.nan, dtype=np.float32)
 
@@ -2109,9 +2130,28 @@ class ProcessADCP:
                 self._qc(ens)
                 max_e_applied[i] = ens.max_e_applied
                 self._to_enu(ens)  # transform to earth coords (east, north, up)
-                self._regrid_enu_amp(ens)
+                if transducer:
+                    # Filled to NaN, not handed over as a masked array. The
+                    # data under the mask of `ens.enu` is the raw -32768
+                    # fill rotated into earth coordinates, a finite number,
+                    # because `numpy.ma` only flips mask bits. `np.nanmean`
+                    # below reads `np.isnan` and no mask, so averaging
+                    # `ens.enu` itself would put every cell the QC criteria
+                    # rejected back into the published velocity, silently and
+                    # with nothing NaN to show for it. `_regrid_enu_amp`
+                    # fills for the same reason on the depth frame.
+                    enu = np.ma.filled(ens.enu, np.nan)
+                    amp_bins = np.ma.filled(ens.amp.mean(axis=-1), np.nan)
+                    valid = ens.valid
+                    reason = {n: ens[f"reason_{n}"] for n in QC_CRITERIA}
+                else:
+                    self._regrid_enu_amp(ens)
+                    enu = ens.enu_grid
+                    amp_bins = ens.amp_grid
+                    valid = ens.valid_grid
+                    reason = ens.reason_grid
 
-                nprofs = ens.enu_grid.shape[0]
+                nprofs = enu.shape[0]
             else:
                 nprofs = 0
             npings[i] = nprofs
@@ -2119,17 +2159,19 @@ class ProcessADCP:
                 continue
 
             with np.errstate(all="ignore"):
-                uvwe[i] = np.nanmean(ens.enu_grid, axis=0)
-                uvwe_std[i] = np.nanstd(ens.enu_grid, axis=0)
-                amp[i] = np.nanmean(ens.amp_grid, axis=0)
+                uvwe[i] = np.nanmean(enu, axis=0)
+                uvwe_std[i] = np.nanstd(enu, axis=0)
+                amp[i] = np.nanmean(amp_bins, axis=0)
 
-            # Counted from the validity gridded alongside the velocities in
-            # `_regrid_enu_amp`, not from what came back finite there
-            # (issue #30). The two are the same array; the count is built
-            # from the flags, which is what the mask is built from too.
-            ngood[i] = np.sum(ens.valid_grid, axis=0)
+            # Counted from the validity that rode alongside the velocities,
+            # not from what came back finite (issue #30). On the depth grid
+            # that validity was interpolated in `_regrid_enu_amp`; on the
+            # bin axis it is the flag itself, so the count is a ping count
+            # per bin and the four rejection reasons partition it exactly
+            # (issue #129).
+            ngood[i] = np.sum(valid, axis=0)
             for name in QC_CRITERIA:
-                nbad[name][i] = np.sum(ens.reason_grid[name], axis=0)
+                nbad[name][i] = np.sum(reason[name], axis=0)
             # Widen before multiplying: ngood is int32 storage, and
             # 100 * ngood wraps once ngood > 21474836, which would turn the
             # best bins negative (issue #94). ngood itself is int32 rather than
@@ -2170,7 +2212,7 @@ class ProcessADCP:
             max_e_applied=max_e_applied,
             dday=dday,
             yearbase=self.yearbase,
-            dep=self.dgrid,
+            dep=zaxis,
             editparams=self.editparams,
             tgridparams=self.tgridparams,
             dgridparams=self.dgridparams,
