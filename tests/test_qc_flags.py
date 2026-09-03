@@ -478,12 +478,15 @@ def test_average_ensembles_percent_good_is_the_gridded_validity(rootdir, monkeyp
         assert np.array_equal(valid_grid, ~np.isnan(ens.enu_grid[..., 0]))
 
 
-def test_the_validity_column_leaves_the_regridding_alone(rootdir):
-    """The extra column must not move the velocities or the amplitudes.
+def test_the_extra_columns_leave_the_regridding_alone(rootdir):
+    """Ten columns must give exactly what four plus amplitude gave.
 
-    `_regrid_enu_amp` writes into a shared `interp1` call that was
-    deliberately reduced to one call per ping, so this is the one place where
-    counting from the flags touches published numbers.
+    `_regrid_enu_amp` was deliberately reduced to one `interp1` call per
+    ping, and the published velocities and amplitudes come out of it. The
+    validity column and the four reason columns ride along in that same
+    call, so this rebuilds the call without any of them and compares. It is
+    the only guard on the one place counting from flags touches a published
+    array.
     """
     proc = _proc(rootdir)
     ens = proc.read_ensemble(0)
@@ -534,3 +537,317 @@ def test_an_unreadable_chunk_is_zero_percent_good(rootdir, monkeypatch):
     assert (pg[idx0:idx1] == 0).all()
     assert (pg[:idx0] == 100).any()
     assert (pg[idx1:] == 100).any()
+
+
+# --------------------------------------------- one reason per rejected cell
+
+
+def _reasons(ens):
+    return [np.asarray(ens[f"reason_{name}"]) for name in madcp.QC_CRITERIA]
+
+
+@pytest.mark.parametrize("config", ["average_ensembles", "burst_average_ensembles"])
+def test_the_reasons_partition_the_rejected_cells(rootdir, monkeypatch, config):
+    """Every rejected cell is attributed to exactly one criterion.
+
+    This is what lets the published counts sum to `nprofs - ngood`. The raw
+    flags overlap, so publishing them directly would double-count.
+    """
+    _, calls = _run(rootdir, monkeypatch, config, method="_edit")
+
+    for _, after, ens in calls:
+        reasons = _reasons(ens)
+        stacked = np.stack(reasons, axis=-1)
+        # Disjoint: no cell carries two reasons.
+        assert stacked.sum(axis=-1).max() <= 1
+        # Complete: their union is exactly the mask editing produced.
+        assert np.array_equal(_or(reasons), after)
+        assert np.array_equal(_or(reasons), ~np.asarray(ens.valid))
+
+
+@pytest.mark.parametrize("config", CONFIGURATIONS)
+def test_the_correlation_test_fires_on_cells_that_carry_no_data(
+    rootdir, monkeypatch, config
+):
+    """The exclusion in the precedence rule is not defensive.
+
+    `_correlation_flag` compares the fill data underneath already-masked
+    cells, and `_mask_binmapped` writes 0 there, which is below any
+    threshold. Without this, the partition test above would hold for the
+    wrong reason. The burst file is the one configuration where it does not
+    happen, so it is excluded from the assertion.
+    """
+    _, calls = _run(rootdir, monkeypatch, config)
+
+    overlap = sum(
+        int((np.asarray(ens.flag_cor) & np.asarray(ens.flag_no_data)).sum())
+        for _, _, ens in calls
+    )
+    if config == "burst_average_ensembles":
+        assert overlap == 0
+    else:
+        assert overlap > 0
+        # And the precedence rule removes it from the correlation reason.
+        for _, _, ens in calls:
+            assert not (np.asarray(ens.reason_cor) & np.asarray(ens.flag_no_data)).any()
+
+
+def test_the_attribution_helper_takes_its_parameters_explicitly():
+    """No `self` and no ensemble, so the rule is testable on its own."""
+    nodata = np.array([[True, False, False, False]])
+    cor = np.array([[True, True, False, False]])
+    maskbins = np.array([[True, True, True, False]])
+
+    a, c, m = madcp._attributed_flags(nodata, cor, maskbins)
+    assert np.array_equal(a, [[True, False, False, False]])
+    assert np.array_equal(c, [[False, True, False, False]])
+    assert np.array_equal(m, [[False, False, True, False]])
+    # Disjoint and complete over the union of the inputs.
+    assert np.array_equal(a | c | m, nodata | cor | maskbins)
+    assert (a.astype(int) + c.astype(int) + m.astype(int)).max() == 1
+
+
+# ------------------------------------------------ the published nbad counts
+
+
+NBAD = tuple(f"nbad_{name}" for name in madcp.QC_CRITERIA)
+
+
+def test_process_pings_publishes_the_reason_for_every_rejected_ping(
+    rootdir, monkeypatch
+):
+    """`pg` says how many pings survived; these say why the rest did not."""
+    seen = {}
+    original = madcp._max_e_flag
+
+    def recorder(e, max_e_applied):
+        flag = original(e, max_e_applied)
+        seen["flag"] = flag.copy()
+        return flag
+
+    monkeypatch.setattr(madcp, "_max_e_flag", recorder)
+    calls = _record_edit(monkeypatch, "_edit_masks")
+    proc = _proc(rootdir)
+    proc.process_pings(ens_size=500)
+
+    assert len(calls) > 1, "the record was not chunked"
+    for name in ("nodata", "cor", "maskbins"):
+        expected = np.concatenate(
+            [np.asarray(ens[f"reason_{name}"]) for _, _, ens in calls], axis=0
+        )
+        assert np.array_equal(proc.ave[f"nbad_{name}"], expected.astype(np.int8))
+    assert np.array_equal(proc.ave.nbad_max_e, seen["flag"].astype(np.int8))
+
+
+def test_process_pings_counts_partition_the_rejected_pings(rootdir):
+    """Exactly: `pg` is 100 where good, and one count is 1 where not."""
+    proc = _proc(rootdir)
+    proc.process_pings()
+
+    total = sum(proc.ave[name].astype(np.int32) for name in NBAD)
+    good = proc.ave.pg == 100
+    assert np.array_equal(total, (~good).astype(np.int32))
+    assert total.max() == 1
+    for name in NBAD:
+        assert proc.ave[name].dtype == np.int8
+
+
+def test_process_pings_counts_stay_int8_and_unmasked(rootdir):
+    """`z` is the instrument bin axis, so there is no off-profile cell here.
+
+    Masking these the way `pg` is masked would promote them to float64 and
+    more than double the largest product this package writes.
+    """
+    proc = _proc(rootdir)
+    proc.process_pings()
+
+    for name in NBAD:
+        assert proc.ds[name].dtype == np.int8
+        assert proc.ds[name].dims == ("z", "time")
+        # `int8` cannot carry NaN, so the interesting failure mode is the
+        # masking `_ave2nc` applies to the two averaging paths reaching this
+        # one by mistake, which would wrap the values in a masked array.
+        assert not np.ma.isMaskedArray(proc.ds[name].values)
+
+
+def test_an_unreadable_chunk_has_no_rejection_reason(rootdir, monkeypatch):
+    """Nothing was read, so no criterion rejected anything.
+
+    `pg` is already 0 there and `u` is NaN, so the cell is not ambiguous.
+    """
+    proc = _proc(rootdir)
+    # Declare bad bins so `nbad_maskbins` fires on every ping that was read.
+    # Without this it is zero record-wide and the guard below would be
+    # vacuous for it, which is the one criterion this test most needs to
+    # bite on: `maskbins` rejects every ping it touches, so a dropped chunk
+    # reading 0 is only meaningful when the rest of the record reads 1.
+    proc.editparams.maskbins = proc.generate_binmask([4, 5])
+    reads = []
+    original = proc.m.read
+
+    def read(start=None, stop=None, **kwargs):
+        reads.append((start, stop))
+        if len(reads) == 2:
+            return None
+        return original(start=start, stop=stop, **kwargs)
+
+    monkeypatch.setattr(proc.m, "read", read)
+    proc.process_pings(ens_size=500)
+
+    assert len(reads) > 2, "the dropped chunk was the last one"
+    offset = reads[0][0]
+    idx0, idx1 = reads[1][0] - offset, reads[1][1] - offset
+    for name in NBAD:
+        assert (proc.ave[name][idx0:idx1] == 0).all()
+        assert proc.ave[name][:idx0].any() or proc.ave[name][idx1:].any()
+
+
+def test_burst_counts_partition_the_rejected_pings(rootdir, monkeypatch):
+    """Counted on the instrument bins, where the partition is exact.
+
+    Checked before the interpolation onto the depth grid, because `interp1`
+    on a count is what smears it.
+    """
+    _, calls = _run(rootdir, monkeypatch, "burst_average_ensembles", method="_edit")
+
+    for _, _, ens in calls:
+        counts = [
+            np.sum(np.asarray(ens[f"reason_{name}"]), axis=0)
+            for name in madcp.QC_CRITERIA
+        ]
+        nprofs = ens.enu.shape[0]
+        ngood = np.sum(np.asarray(ens.valid), axis=0)
+        assert np.array_equal(sum(counts), nprofs - ngood)
+
+
+def test_burst_counts_are_nan_off_the_profile(rootdir):
+    """A grid depth the instrument never reached is not "0 pings rejected".
+
+    Same treatment `pg` and `ngood` already get on this path (issue #82).
+    """
+    proc = _burst_proc(rootdir)
+    proc.burst_average_ensembles()
+
+    off = np.isnan(proc.ave.ngood)
+    assert off.any(), "no off-profile cell in this file"
+    for name in NBAD:
+        assert proc.ave[name].dtype == np.float64
+        assert np.isnan(proc.ave[name][off]).all()
+        assert np.isfinite(proc.ave[name][~off]).all()
+
+
+def test_burst_counts_ignore_the_interpolated_bin(rootdir):
+    """An interpolated bin is not measured data, so its counts stand.
+
+    `pg` and `ngood` are deliberately left alone there and these follow.
+    """
+    plain = _burst_proc(rootdir)
+    plain.burst_average_ensembles()
+    interp = _burst_proc(rootdir)
+    interp.burst_average_ensembles(interpolate_bin=3)
+
+    for name in NBAD:
+        assert np.array_equal(plain.ave[name], interp.ave[name], equal_nan=True), name
+
+
+def test_every_invalid_grid_cell_on_the_profile_has_a_reason(rootdir, monkeypatch):
+    """Gridding loses no attribution.
+
+    `interp1` reads exactly the two bracketing bins, so a grid cell is
+    invalid for a ping precisely when at least one bracketing bin was, and
+    its reason set is the union of those bins' reasons.
+    """
+    _, calls = _run(rootdir, monkeypatch, "average_ensembles", method="_edit")
+
+    n_invalid = n_attributed = 0
+    for _, _, ens in calls:
+        on_profile = ~np.isnan(ens.amp_grid)
+        invalid = (~ens.valid_grid) & on_profile
+        fired = np.zeros_like(invalid)
+        for name in madcp.QC_CRITERIA:
+            fired |= ens.reason_grid[name]
+        n_invalid += int(invalid.sum())
+        n_attributed += int((invalid & fired).sum())
+
+    assert n_invalid > 0
+    assert n_attributed == n_invalid
+
+
+def test_average_ensembles_counts_are_the_gridded_reasons(rootdir, monkeypatch):
+    """Each published count is the sum of the gridded reason it names.
+
+    Run with `maskbins` set so `nbad_maskbins` is nonzero and takes part in
+    the comparison below; without it a column swap involving that variable
+    would pass unnoticed.
+    """
+    calls = _record_edit(monkeypatch, "_edit")
+    proc = _proc(rootdir)
+    proc.editparams.maskbins = proc.generate_binmask([4, 5])
+    proc.average_ensembles()
+
+    assert calls, "no ensemble reached _edit"
+    for _, _, ens in calls:
+        for name in madcp.QC_CRITERIA:
+            grid = ens.reason_grid[name]
+            assert grid.dtype == bool
+            assert grid.shape == ens.enu_grid.shape[:2]
+
+    for name in madcp.QC_CRITERIA:
+        expected = np.array(
+            [np.sum(ens.reason_grid[name], axis=0) for _, _, ens in calls]
+        )
+        assert np.array_equal(proc.ave[f"nbad_{name}"], expected)
+    assert proc.ave["nbad_maskbins"].any(), "maskbins never fired"
+
+
+def test_burst_counts_match_their_named_reason_in_bin_space(rootdir, monkeypatch):
+    """The interpolated count for each criterion is built from its own sum.
+
+    The published values are these bin-space sums interpolated onto the
+    depth grid and floored independently, and `floor(a) + floor(b)` can fall
+    short of `floor(a + b)` (issue #30), so comparing the published grid
+    values against a hand-rolled interpolation would mean reimplementing
+    that arithmetic here. Instead this captures the array
+    `burst_average_ensembles` hands to `interp1` before any interpolation or
+    flooring runs, and checks each of its four reason columns against the
+    same sum computed independently by name. That is what would catch the
+    counts landing under the wrong `nbad_*` name, for instance a slip
+    between the order `counts_inst` is assembled in and the order
+    `QC_CRITERIA` is unpacked in afterwards.
+    """
+    captured = []
+    original_interp1 = madcp.interp1
+    ncols = 2 + len(madcp.QC_CRITERIA)
+
+    def recorder(*args, **kwargs):
+        y_old = args[1]
+        if getattr(y_old, "ndim", 0) == 2 and y_old.shape[-1] == ncols:
+            captured.append(np.asarray(y_old))
+        return original_interp1(*args, **kwargs)
+
+    monkeypatch.setattr(madcp, "interp1", recorder)
+    _, calls = _run(rootdir, monkeypatch, "burst_average_ensembles", method="_edit")
+
+    assert len(captured) == len(calls)
+    for (_, _, ens), counts_inst in zip(calls, captured):
+        for j, name in enumerate(madcp.QC_CRITERIA):
+            expected = np.sum(np.asarray(ens[f"reason_{name}"]), axis=0)
+            assert np.array_equal(counts_inst[:, 2 + j], expected)
+
+
+def test_average_ensembles_counts_are_nan_off_the_profile(rootdir):
+    """A grid depth the instrument never reached is not "0 pings rejected".
+
+    The bundled file does not reach this on its default grid, so the grid is
+    extended past the profile to construct it. This is the `average_ensembles`
+    half of the rule `tests/test_qc_flags.py` already checks on the burst path.
+    """
+    proc = _proc(rootdir, dgridparams={"dtop": 20, "dbot": 400, "d_interval": 4})
+    proc.average_ensembles()
+
+    off = np.isnan(proc.ds.amp.values)
+    assert off.any(), "the extended grid still lies inside the profile"
+    for name in NBAD:
+        assert proc.ds[name].dtype == np.float64
+        assert np.isnan(proc.ds[name].values[off]).all()
+        assert np.isfinite(proc.ds[name].values[~off]).all()

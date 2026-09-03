@@ -185,6 +185,33 @@ def _max_e_flag(e, max_e_applied):
     return np.ma.filled(np.abs(e) > max_e_applied, False)
 
 
+# The editing criteria, in the order they are applied. That order is also the
+# precedence that makes the published counts disjoint (issue #30).
+QC_CRITERIA = ("nodata", "cor", "maskbins", "max_e")
+
+
+def _attributed_flags(flag_no_data, flag_cor, flag_maskbins):
+    """The beam-space criteria, made disjoint so each cell has one reason.
+
+    The raw flags overlap. The overlap is a misattribution.
+    `_correlation_flag` compares the fill data underneath
+    already-masked cells, and `_mask_binmapped` writes 0 there, which is below
+    any correlation threshold. So `flag_cor` fires on essentially every cell
+    `flag_no_data` already claimed: 100% of them under binmapping, which is
+    29% of everything `flag_cor` reports. Publishing the raw flags as
+    per-criterion counts would report that as correlation failure (issue #30).
+
+    Precedence is the order the criteria are applied. `flag_max_e` needs no
+    exclusion: it is computed on an error velocity these three have already
+    masked, and `_max_e_flag` fills masked cells with False.
+    """
+    return (
+        flag_no_data,
+        flag_cor & ~flag_no_data,
+        flag_maskbins & ~(flag_no_data | flag_cor),
+    )
+
+
 class ProcessADCP:
     """Moored ADCP Processing.
 
@@ -1353,6 +1380,12 @@ class ProcessADCP:
         `ens.valid` is the complement of the flags raised so far, and is what
         percent good is counted from. `_edit` narrows it with `flag_max_e`;
         `process_pings` applies that flag itself, once over the whole record.
+
+        `reason_nodata`, `reason_cor` and `reason_maskbins` are the same
+        criteria made disjoint by precedence, so that each rejected cell is
+        attributed to exactly one of them. They are what the published
+        `nbad_*` counts are built from; `ens.valid` is unaffected, since the
+        union is the same either way.
         """
         ep = self.editparams
         ens.flag_no_data_beam = _no_data_flag(ens.vel)
@@ -1361,6 +1394,11 @@ class ProcessADCP:
         ens.flag_cor = _cell_flag(ens.flag_cor_beam, self.ibad)
         ens.flag_maskbins = _maskbins_flag(ens.flag_cor.shape, ep.maskbins)
         ens.valid = ~(ens.flag_no_data | ens.flag_cor | ens.flag_maskbins)
+        (
+            ens.reason_nodata,
+            ens.reason_cor,
+            ens.reason_maskbins,
+        ) = _attributed_flags(ens.flag_no_data, ens.flag_cor, ens.flag_maskbins)
 
         ens.xyze[ens.flag_cor] = np.ma.masked
         # Before the standard deviation in `_edit`, not after: bins the user
@@ -1397,6 +1435,9 @@ class ProcessADCP:
         ens.max_e_applied = self._adaptive_max_e(e)
         ens.flag_max_e = _max_e_flag(e, ens.max_e_applied)
         ens.valid &= ~ens.flag_max_e
+        # Already disjoint from the other three, so it is the flag unchanged.
+        # Aliased on purpose: nothing downstream mutates a flag in place.
+        ens.reason_max_e = ens.flag_max_e
         ens.xyze[ens.flag_max_e] = np.ma.masked
 
     def _to_enu(self, ens):
@@ -1474,7 +1515,7 @@ class ProcessADCP:
         """Depth-grid ENU velocities and amplitudes in a single pass.
 
         Combines the work of _regrid_enu and _regrid_amp, calling interp1
-        once per ping on a concatenated (nbins, 6) array instead of twice
+        once per ping on a concatenated (nbins, 10) array instead of twice
         on separate arrays. Output arrays use NaN instead of masked values.
 
         The sixth column is validity, masked exactly where the cell is
@@ -1483,6 +1524,14 @@ class ProcessADCP:
         from it (issue #30). It is the only change this makes to a shared
         array, so the column must leave `enu_grid` and `amp_grid` bitwise
         alone, which `tests/test_qc_flags.py` pins.
+
+        The last four columns are the disjoint rejection reasons, encoded 1.0
+        where the criterion fired and 0.0 where it did not. A grid cell
+        carries a reason when the interpolated column comes back above zero,
+        which means at least one of the two bracketing bins carried it. A
+        cell fed by two bins rejected for different reasons therefore counts
+        both, which is the only place the published counts exceed
+        `nprofs - ngood`.
         """
         npings = ens.dday.size
         ndgrid = self.dgrid.size
@@ -1491,6 +1540,9 @@ class ProcessADCP:
         enu_grid = np.full((npings, ndgrid, ncols_enu), np.nan)
         amp_grid = np.full((npings, ndgrid), np.nan)
         valid_grid = np.zeros((npings, ndgrid), dtype=bool)
+        reason_grid = {
+            name: np.zeros((npings, ndgrid), dtype=bool) for name in QC_CRITERIA
+        }
 
         depth = self._burst_average_depth(ens)
 
@@ -1499,16 +1551,28 @@ class ProcessADCP:
             valid_col = np.ma.masked_array(
                 np.ones((ens.valid.shape[1], 1)), mask=~ens.valid[i][:, np.newaxis]
             )
-            combined = np.ma.concatenate([ens.enu[i], amp_col, valid_col], axis=-1)
+            # 1.0 where the criterion fired, 0.0 where it did not, unmasked.
+            # `interp1` reads the two bracketing bins, so a positive result
+            # means at least one of them carried that reason.
+            reason_cols = np.stack(
+                [ens[f"reason_{name}"][i].astype(float) for name in QC_CRITERIA],
+                axis=-1,
+            )
+            combined = np.ma.concatenate(
+                [ens.enu[i], amp_col, valid_col, reason_cols], axis=-1
+            )
             result = interp1(depth[i], combined, self.dgrid, axis=0, method=method)
             result_filled = np.ma.filled(result, np.nan)
             enu_grid[i] = result_filled[:, :ncols_enu]
             amp_grid[i] = result_filled[:, ncols_enu]
             valid_grid[i] = np.isfinite(result_filled[:, ncols_enu + 1])
+            for j, name in enumerate(QC_CRITERIA):
+                reason_grid[name][i] = result_filled[:, ncols_enu + 2 + j] > 0
 
         ens.enu_grid = enu_grid
         ens.amp_grid = amp_grid
         ens.valid_grid = valid_grid
+        ens.reason_grid = reason_grid
 
     def _binmap_one_beam(self, ens, beam_number):
         """Binmap single ping data for a single beam by linear interpolation.
@@ -1734,6 +1798,12 @@ class ProcessADCP:
         # publish it as 100 % good (issue #30).
         valid = np.zeros((npings, ndgrid), dtype=bool)
 
+        # Percent good says how many pings survived. These say why the rest
+        # did not, one reason per rejected cell (issue #30). `int8` because
+        # there is one ping per cell on this path, so every count is 0 or 1,
+        # and this is the largest product the package writes.
+        nbad = {name: np.zeros((npings, ndgrid), dtype=np.int8) for name in QC_CRITERIA}
+
         pg = np.zeros((npings, ndgrid), dtype=np.int8)
         amp = np.ma.zeros((npings, ndgrid), dtype=np.float32)
 
@@ -1786,6 +1856,12 @@ class ProcessADCP:
             uvwe[idx0:idx1] = ens.enu
             amp[idx0:idx1] = ens.amp.mean(axis=-1)  # Average over beams... why?
             valid[idx0:idx1] = ens.valid
+            # The three criteria raised in this chunk. `reason_max_e` is not
+            # among them: this path calls `_edit_masks`, never `_edit`, so
+            # the record-wide error velocity flag genuinely does not exist
+            # here yet, and is filled in after the loop below.
+            for name in ("nodata", "cor", "maskbins"):
+                nbad[name][idx0:idx1] = ens[f"reason_{name}"]
 
         # Apply the error velocity threshold to the record as a whole. Running
         # `_edit` inside the loop made `ens_size` the window the standard
@@ -1806,6 +1882,9 @@ class ProcessADCP:
         flag_max_e = _max_e_flag(e, max_e)
         uvwe[flag_max_e] = np.ma.masked
         valid &= ~flag_max_e
+        # The record-wide criterion, written after the loop where it is
+        # raised. It is already disjoint from the other three.
+        nbad["max_e"][:] = flag_max_e
         max_e_applied[:] = max_e
 
         # Percent good is binary for single-ping data: 100 where the ping
@@ -1822,6 +1901,10 @@ class ProcessADCP:
             w=uvwe[..., 2],
             e=uvwe[..., 3],
             pg=pg,
+            nbad_nodata=nbad["nodata"],
+            nbad_cor=nbad["cor"],
+            nbad_maskbins=nbad["maskbins"],
+            nbad_max_e=nbad["max_e"],
             amp=amp,
             temperature=temperature,
             pressure=pressure,
@@ -1875,6 +1958,9 @@ class ProcessADCP:
 
         pg = np.zeros((nens, ndgrid), dtype=np.int8)
         ngood = np.zeros((nens, ndgrid), dtype=np.int32)
+        # `int32` and zero-initialized, following `ngood` on this path. The
+        # masking in `_ave2nc` is what turns an unsampled cell into NaN here.
+        nbad = {name: np.zeros((nens, ndgrid), dtype=np.int32) for name in QC_CRITERIA}
         amp = np.full((nens, ndgrid), np.nan, dtype=np.float32)
 
         temperature = np.full((nens,), np.nan, dtype=np.float32)
@@ -1912,6 +1998,8 @@ class ProcessADCP:
             # (issue #30). The two are the same array today; the point is that
             # the count no longer depends on `_edit` masking as a side effect.
             ngood[i] = np.sum(ens.valid_grid, axis=0)
+            for name in QC_CRITERIA:
+                nbad[name][i] = np.sum(ens.reason_grid[name], axis=0)
             # Widen before multiplying: ngood is int32 storage, and
             # 100 * ngood wraps once ngood > 21474836, which would turn the
             # best bins negative (issue #94). ngood itself is int32 rather than
@@ -1939,6 +2027,10 @@ class ProcessADCP:
             e_std=uvwe_std[..., 3],
             pg=pg,
             ngood=ngood,
+            nbad_nodata=nbad["nodata"],
+            nbad_cor=nbad["cor"],
+            nbad_maskbins=nbad["maskbins"],
+            nbad_max_e=nbad["max_e"],
             amp=amp,
             temperature=temperature,
             pressure=pressure,
@@ -2059,6 +2151,15 @@ class ProcessADCP:
         # from int32 to float64 (issue #82).
         pg = np.full((nens, ndgrid), np.nan, dtype=np.float64)
         ngood = np.full((nens, ndgrid), np.nan, dtype=np.float64)
+
+        # Same NaN initialization and the same reason as `pg` and `ngood`
+        # above: an interval with fewer than two pings is skipped below
+        # without writing, and a grid depth off the profile must not read
+        # "0 pings rejected" (issue #82).
+        nbad = {
+            name: np.full((nens, ndgrid), np.nan, dtype=np.float64)
+            for name in QC_CRITERIA
+        }
         amp = np.ma.zeros((nens, ndgrid), dtype=np.float32)
 
         temperature = np.ma.zeros((nens,), dtype=np.float32)
@@ -2146,23 +2247,35 @@ class ProcessADCP:
             uvwe[i] = uvwe_grid
             uvwe_std[i] = uvwe_std_grid
 
-            # Interpolate pg to universal depth grid. Not overly satisfying but
-            # seems like that's what we need to do here.
+            # One `interp1` call for all six counts together, pg, ngood and
+            # the four reason counts, the way `_regrid_enu_amp` interpolates
+            # velocity and amplitude in a single call. `interp1` takes a 2-D
+            # `y_old` and casts it to float64 internally.
+            #
+            # `np.floor` reproduces the truncation the old `.astype(np.int8)`
+            # and `.astype(np.int32)` performed on `pg` and `ngood`, so those
+            # two published values do not move. The four reason counts are
+            # new on this branch and had no prior `.astype` to preserve;
+            # `np.floor` here only keeps them integer-valued the same way.
+            # Drop it only as a deliberate change.
+            #
             # Depths outside the instrument's profile come back masked. Fill
             # them with NaN rather than casting them to 0, which would claim
             # every ping at that depth was bad.
-            #
-            # `np.floor` reproduces the truncation the old `.astype(np.int8)`
-            # performed on the way in, so the published values do not move and
-            # `pg` stays an integer-valued percentage as it is in the other
-            # two averaging methods. Drop it only as a deliberate change.
-            pgi_grid = interp1(depth, pgi_inst, self.dgrid, axis=0, method="linear")
-            pg[i] = np.floor(np.ma.filled(pgi_grid, np.nan))
-            # Same treatment for `ngood`: NaN off the profile rather than the
-            # 0 that `np.nan_to_num` produced, and `np.floor` for the
-            # truncation the old `astype(np.int32)` did, so it stays a count.
-            ngood_grid = interp1(depth, ngood_inst, self.dgrid, axis=0, method="linear")
-            ngood[i] = np.floor(np.ma.filled(ngood_grid, np.nan))
+            counts_inst = np.column_stack(
+                [pgi_inst, ngood_inst]
+                + [np.sum(ens[f"reason_{name}"], axis=0) for name in QC_CRITERIA]
+            )
+            counts_grid = np.floor(
+                np.ma.filled(
+                    interp1(depth, counts_inst, self.dgrid, axis=0, method="linear"),
+                    np.nan,
+                )
+            )
+            pg[i] = counts_grid[:, 0]
+            ngood[i] = counts_grid[:, 1]
+            for j, name in enumerate(QC_CRITERIA):
+                nbad[name][i] = counts_grid[:, 2 + j]
 
             # Not changed to averaging in instrument-relative coordinates first.
             amp[i] = ens.amp_grid.mean(axis=0)
@@ -2183,6 +2296,10 @@ class ProcessADCP:
             e_std=uvwe_std[..., 3],
             pg=pg,
             ngood=ngood,
+            nbad_nodata=nbad["nodata"],
+            nbad_cor=nbad["cor"],
+            nbad_maskbins=nbad["maskbins"],
+            nbad_max_e=nbad["max_e"],
             amp=amp,
             temperature=temperature,
             pressure=pressure,
@@ -2346,6 +2463,21 @@ class ProcessADCP:
         # don't have any amplitude data (i.e. no data).
         out["pg"] = out.pg.where(~np.isnan(out.amp), other=np.nan)
 
+        # The counts say how many pings each criterion rejected. Off the
+        # instrument's profile no ping was measured at all, so 0 would claim
+        # something that was never true (issue #82).
+        #
+        # Not on `process_pings`, where `z` is the instrument bin axis: every
+        # bin is sampled whenever the ping was read, the only NaN cell is an
+        # unreadable chunk, and `u` and `pg` already report that. Masking
+        # there would promote the counts from int8 to float64 and more than
+        # double the largest product this package writes.
+        if getattr(self, "_processing_method", None) != "process_pings":
+            for name in QC_CRITERIA:
+                var = f"nbad_{name}"
+                if var in out:
+                    out[var] = out[var].where(~np.isnan(out.amp), other=np.nan)
+
         # Drop depth levels that carry no velocity. Keying the drop on the
         # whole Dataset would keep levels alive on the strength of amp alone:
         # editing masks velocities only, so amp can be finite in levels with
@@ -2418,6 +2550,7 @@ class ProcessADCP:
         out = self._add_names_and_units(out)
         out = self._add_depth_offset_comments(out, depth_offset)
         out = self._add_pg_comment(out, getattr(self, "_processing_method", None))
+        out = self._add_nbad_comments(out, getattr(self, "_processing_method", None))
         out = self._drop_absent_ancillary_variables(out)
 
         self.ds = out
@@ -2517,6 +2650,68 @@ class ProcessADCP:
         attrs = dict(ds.pg.attrs)
         attrs["comment"] = f"{cls._PG_COMMENTS[method]} {cls._PG_RDI_NOTE}"
         ds["pg"].attrs = attrs
+        return ds
+
+    # What "rejected by this criterion" means depends on how many pings sit
+    # behind a cell, which differs per path exactly as it does for `pg`.
+    _NBAD_SHARED: ClassVar[str] = (
+        "Each rejected ping is attributed to one criterion only, by the order "
+        "the criteria are applied: nbad_nodata, then nbad_cor, then "
+        "nbad_maskbins, then nbad_max_e. Attribution matters because the raw "
+        "criteria overlap. The correlation test reads the fill values under "
+        "cells that carry no beam data at all, so without the precedence rule "
+        "it would also count nearly every one of those cells as a correlation "
+        "failure, 100% of them where binmapping is on, and those cells are "
+        "29% of everything the correlation test reports there."
+    )
+    _NBAD_COMMENTS: ClassVar[dict] = {
+        "process_pings": (
+            "Whether this criterion rejected the ping at this bin, 0 or 1, "
+            "computed per ping by `process_pings`. The four sum to 1 where "
+            "pg is 0 and to 0 where pg is 100. A bin declared bad through "
+            "`maskbins` carries no velocity for the whole record, so its "
+            "level leaves the published depth axis and `nbad_maskbins` "
+            "reads 0 on this path."
+        ),
+        "average_ensembles": (
+            "Number of pings in each averaging interval that this criterion "
+            "rejected at this grid depth, computed by `average_ensembles` "
+            "after every ping was interpolated onto the universal depth "
+            "grid, the same order `pg` is counted in on this path. A grid "
+            "depth sits between two instrument bins, so a cell fed by two "
+            "bins rejected for different reasons counts in more than one of "
+            "these variables and the four can sum above the number of "
+            "rejected pings. `ngood` carries the count that survived. NaN "
+            "means the depth bin lies outside the instrument's profile and "
+            "nothing was measured there."
+        ),
+        "burst_average_ensembles": (
+            "Number of pings in each burst that this criterion rejected at "
+            "this bin, computed by `burst_average_ensembles` on the "
+            "instrument bins and then interpolated onto the depth grid, the "
+            "same order `pg` is counted in on this path. On the instrument "
+            "bins the four sum exactly to the number of rejected pings. "
+            "Interpolating the counts onto the depth grid floors each one "
+            "independently, so the published values can sum to slightly less "
+            "than the number of rejected pings. NaN "
+            "means the depth bin lies outside the instrument's profile and "
+            "nothing was measured there. An interpolated bin keeps its own "
+            "counts, so the interpolation stays visible."
+        ),
+    }
+
+    @classmethod
+    def _add_nbad_comments(cls, ds, method):
+        """Say what one rejection count means on this path."""
+        if method not in cls._NBAD_COMMENTS:
+            return ds
+        for name in QC_CRITERIA:
+            var = f"nbad_{name}"
+            if var not in ds.variables:
+                continue
+            attrs = dict(ds[var].attrs)
+            attrs["comment"] = f"{cls._NBAD_COMMENTS[method]} {cls._NBAD_SHARED}"
+            ds[var].attrs = attrs
         return ds
 
     @staticmethod

@@ -507,6 +507,7 @@ def cf_conventions():
             "long_name": "number of good pings",
             "standard_name": "number_of_observations",
             "coverage_content_type": "qualityInformation",
+            "ancillary_variables": "nbad_nodata nbad_cor nbad_maskbins nbad_max_e",
             "comment": (
                 "Number of pings per depth bin that passed editing and "
                 "entered the time average. The basis for pg and for the "
@@ -514,6 +515,28 @@ def cf_conventions():
                 "editing; NaN means the depth bin lies outside the "
                 "instrument's profile and nothing was measured there."
             ),
+        },
+        # No standard_name here: CF has no standard name for a per-criterion
+        # rejection count.
+        "nbad_nodata": {
+            "long_name": "pings rejected: no beam data",
+            "units": "1",
+            "coverage_content_type": "qualityInformation",
+        },
+        "nbad_cor": {
+            "long_name": "pings rejected: low correlation",
+            "units": "1",
+            "coverage_content_type": "qualityInformation",
+        },
+        "nbad_maskbins": {
+            "long_name": "pings rejected: bin masked by the user",
+            "units": "1",
+            "coverage_content_type": "qualityInformation",
+        },
+        "nbad_max_e": {
+            "long_name": "pings rejected: error velocity above threshold",
+            "units": "1",
+            "coverage_content_type": "qualityInformation",
         },
         "max_e_applied": {
             "long_name": "applied error velocity threshold",
@@ -530,7 +553,9 @@ def cf_conventions():
             "long_name": "percent good",
             "standard_name": "proportion_of_acceptable_signal_returns_from_acoustic_instrument_in_sea_water",
             "units": "percent",
-            "ancillary_variables": "npings",
+            "ancillary_variables": (
+                "npings nbad_nodata nbad_cor nbad_maskbins nbad_max_e"
+            ),
             "coverage_content_type": "qualityInformation",
         },
         "amp": {
