@@ -263,3 +263,112 @@ def test_burst_interpolate_bin_works_on_the_bin_axis(rootdir):
     assert np.isfinite(ds.u.values[k]).any()
     assert np.all(ds.pg.values[k][np.isfinite(ds.pg.values[k])] == 0)
     assert ds.attrs["interpolate_bin"] == 5
+
+
+# --- the derived bin depth ----------------------------------------------
+
+
+def _uplooker_averaged(rootdir):
+    proc = _proc(rootdir, UPLOOKER)
+    proc.average_ensembles(vertical_frame="transducer")
+    return proc
+
+
+def _downlooker_burst(rootdir):
+    proc = _burst(rootdir)
+    proc.burst_average_ensembles(vertical_frame="transducer")
+    return proc
+
+
+@pytest.mark.parametrize(
+    ("build", "orientation"),
+    [(_uplooker_averaged, "up"), (_downlooker_burst, "down")],
+)
+def test_bin_depth_is_exactly_the_reconstruction(rootdir, build, orientation):
+    """`depth` is `xducer_depth` plus or minus `z`, to the last bit.
+
+    Written so a consumer outside this project does not reimplement the sign
+    rule, which is what makes it worth an extra 2-D field. If it were not
+    exact, reconstructing would be the better advice and the field would not
+    be worth writing. Both orientations, because the sign is the part a
+    reader gets wrong.
+    """
+    proc = build(rootdir)
+    ds = proc.ds
+    assert proc.orientation == orientation
+    sign = -1.0 if orientation == "up" else 1.0
+
+    assert ds.depth.dims == ("z", "time")
+    assert "depth" not in ds.dims
+    expected = ds.xducer_depth.values[np.newaxis, :] + sign * ds.z.values[:, None]
+    np.testing.assert_array_equal(ds.depth.values, expected)
+
+
+def test_bin_depth_says_it_is_derived(rootdir):
+    """The comment has to name the reconstruction and the gsw/seawater gap."""
+    proc = _proc(rootdir, UPLOOKER)
+    proc.average_ensembles(vertical_frame="transducer")
+    comment = proc.ds.depth.attrs["comment"]
+
+    assert "xducer_depth" in comment
+    assert "gsw" in comment and "seawater" in comment
+    assert proc.ds.depth.attrs["standard_name"] == "depth"
+    assert proc.ds.depth.attrs["positive"] == "down"
+
+
+def test_depth_frame_carries_no_derived_depth(rootdir):
+    """A depth-gridded product has a 1-D depth dimension and no comment."""
+    proc = _proc(rootdir, UPLOOKER)
+    proc.average_ensembles()
+    assert proc.ds.depth.dims == ("depth",)
+    assert "comment" not in proc.ds.depth.attrs
+
+
+def test_process_pings_carries_no_derived_depth(rootdir):
+    """The single-ping product is the largest this package writes.
+
+    A float64 `depth(z, time)` beside it would more than double it, so the
+    reconstruction stays the reader's job there, as the `z` attributes say.
+    """
+    proc = _proc(rootdir, UPLOOKER)
+    proc.process_pings()
+    assert "depth" not in proc.ds.variables
+
+
+def test_depth_offset_moves_the_depths_and_not_the_axis(rootdir):
+    """An offset on the instrument's depth says nothing about `z`.
+
+    `z` is a distance from the transducer and is unmoved. `xducer_depth` and
+    the derived `depth` both take the offset, and no velocity changes,
+    because the offset enters the output only (issue #92).
+    """
+    offset = 5.0
+    plain = _proc(rootdir, UPLOOKER)
+    plain.average_ensembles(vertical_frame="transducer")
+    shifted = _proc(rootdir, UPLOOKER, depth_offset=offset)
+    shifted.average_ensembles(vertical_frame="transducer")
+
+    np.testing.assert_array_equal(plain.ds.z.values, shifted.ds.z.values)
+    np.testing.assert_array_equal(plain.ds.u.values, shifted.ds.u.values)
+    np.testing.assert_allclose(
+        shifted.ds.xducer_depth.values, plain.ds.xducer_depth.values + offset
+    )
+    np.testing.assert_allclose(
+        shifted.ds.depth.values, plain.ds.depth.values + offset
+    )
+    assert shifted.ds.attrs["depth_offset"] == offset
+
+
+def test_bin_depth_survives_a_netcdf_round_trip(rootdir, tmp_path):
+    """A non-dimension coordinate has to reach the file as a coordinate."""
+    import xarray as xr
+
+    proc = _proc(rootdir, UPLOOKER)
+    proc.average_ensembles(vertical_frame="transducer")
+    f = tmp_path / "z.nc"
+    proc.ds.to_netcdf(f)
+    back = xr.open_dataset(f)
+
+    assert "depth" in back.coords
+    assert back.depth.dims == ("z", "time")
+    np.testing.assert_array_equal(back.depth.values, proc.ds.depth.values)

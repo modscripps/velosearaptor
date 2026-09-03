@@ -2778,8 +2778,33 @@ class ProcessADCP:
         if frame == "transducer":
             out = out.rename({"depth": "z"})
 
+        # The bin depth of every averaging interval, for a product whose
+        # dimension is not depth. Derived, not measured: exactly
+        # `xducer_depth` plus or minus `z`, the reconstruction the `z`
+        # attributes describe, computed here so that a consumer outside this
+        # project does not have to reimplement the sign rule (issue #129).
+        #
+        # Here and not earlier: until the rename above, `depth` is the
+        # dimension, `has_velocity` indexes it with `isel`, and
+        # `assign_coords(depth=...)` would collide with the dimension
+        # coordinate. Here and not later: `_add_names_and_units` below is
+        # what attaches the CF `depth` entry. `xducer_depth` already carries
+        # any depth offset at this point, so this inherits it.
+        #
+        # Not on `process_pings`, the largest product this package writes,
+        # where a float64 field of this shape would more than double the
+        # file.
+        if frame == "transducer" and method in (
+            "average_ensembles",
+            "burst_average_ensembles",
+        ):
+            sign = -1.0 if self.orientation == "up" else 1.0
+            bin_depth = out["xducer_depth"] + sign * out["z"]
+            out = out.assign_coords(depth=bin_depth.transpose("z", "time"))
+
         # add variable names and units for plotting
         out = self._add_names_and_units(out)
+        out = self._add_bin_depth_comment(out, frame)
         out = self._add_depth_offset_comments(out, depth_offset)
         out = self._add_pg_comment(out, method)
         out = self._add_nbad_comments(out, method)
@@ -2813,6 +2838,36 @@ class ProcessADCP:
                 existing = attrs.get("comment")
                 attrs["comment"] = f"{existing} {note}" if existing else note
                 ds[name].attrs = attrs
+        return ds
+
+    @staticmethod
+    def _add_bin_depth_comment(ds, frame):
+        """Say that a transducer-frame `depth` is derived, and from what.
+
+        Injected after `_add_names_and_units`, which assigns the static
+        `io.cf_conventions` entries wholesale and would otherwise overwrite
+        this, and before `_add_depth_offset_comments`, which appends to the
+        same attribute.
+        """
+        if frame != "transducer" or "depth" not in ds.variables:
+            return ds
+        note = (
+            "Derived quantity, not a measurement, and not a dimension of "
+            "this file: the depth of each bin in each averaging interval, "
+            "computed as xducer_depth plus z for a downlooker and "
+            "xducer_depth minus z for an uplooker. The vertical dimension "
+            "is z, the distance from the transducer, and no velocity was "
+            "interpolated onto a depth axis. xducer_depth comes from "
+            "gsw.z_from_p while the depth gridding path of this package "
+            "uses seawater.depth2, and the two disagree by a few "
+            "centimeters, so this is exactly the reconstruction from the "
+            "published xducer_depth and not exactly the axis a "
+            "depth-gridded run of the same file would have produced."
+        )
+        attrs = dict(ds["depth"].attrs)
+        existing = attrs.get("comment")
+        attrs["comment"] = f"{existing} {note}" if existing else note
+        ds["depth"].attrs = attrs
         return ds
 
     # What `pg` counts differs on every path, and the name it shares with the
