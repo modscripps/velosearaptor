@@ -68,9 +68,13 @@ def _burst_proc(rootdir, **kwargs):
 def _cell_mask(array):
     """The mask of a four-component velocity array, per cell.
 
-    `_to_enu` masks all four components of a rejected cell together, which
-    `test_to_enu_masks_every_component_from_valid` pins, so any component
-    gives the same answer.
+    Reads component 0 on purpose. On `enu`, `_to_enu` masks all four
+    components of a rejected cell together, which
+    `test_to_enu_masks_every_component_from_valid` pins. On `xyze` the
+    components agree without `ibad`, which
+    `test_editing_leaves_the_xyze_mask_alone` pins on entry, and diverge
+    with it, where `beam_to_xyz` masks `e` everywhere; component 0 is the
+    one `flag_no_data` is asserted against either way.
     """
     return np.ma.getmaskarray(array)[:, :, 0]
 
@@ -244,10 +248,14 @@ def test_editing_leaves_the_xyze_mask_alone(rootdir, monkeypatch, config):
     method = "_qc" if averaging else "_qc_flags"
     original = getattr(ProcessADCP, method)
     unchanged = []
+    whole_cell = []
     rejected_here = []
 
     def recorder(self, ens):
         before = np.ma.getmaskarray(ens.xyze).copy()
+        whole_cell.append(
+            np.array_equal(before, before[..., :1].repeat(before.shape[-1], axis=-1))
+        )
         original(self, ens)
         unchanged.append(np.array_equal(np.ma.getmaskarray(ens.xyze), before))
         # A cell editing rejected that was not masked on entry.
@@ -263,6 +271,12 @@ def test_editing_leaves_the_xyze_mask_alone(rootdir, monkeypatch, config):
 
     assert unchanged, f"no ensemble reached {method}"
     assert all(unchanged)
+    # The four components carry one mask on entry, so `flag_no_data`, which
+    # is asserted against component 0, is also under the mask on `e` that
+    # the error velocity threshold sees. This restores the whole-cell
+    # assertion editing used to satisfy on `xyze`, on the configurations
+    # without `ibad`.
+    assert all(whole_cell)
     # Otherwise the equality holds because editing rejected nothing.
     assert any(rejected_here)
 

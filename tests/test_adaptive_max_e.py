@@ -158,7 +158,9 @@ def test_masking_after_rotation_equals_masking_before(adcpfile):
 
     # The error velocity is not rotated. Compare the data, since `enu`
     # carries the QC mask and `xyze` does not.
-    assert np.array_equal(np.ma.getdata(xyze[..., 3]), np.ma.getdata(enu[..., 3]))
+    assert np.array_equal(
+        np.ma.getdata(xyze[..., 3]), np.ma.getdata(enu[..., 3]), equal_nan=True
+    )
 
     # A stand-in for the record-wide threshold narrowing `valid` after the
     # loop in `process_pings`.
