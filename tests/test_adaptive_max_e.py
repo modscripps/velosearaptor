@@ -168,8 +168,8 @@ def test_masking_after_rotation_equals_masking_before(adcpfile):
 
     before = xyze.copy()
     before[~valid] = np.ma.masked
-    # The same arguments `_to_enu` passes; it cannot be called here because
-    # it would apply the QC mask itself.
+    # The same attitude arguments `_to_enu` passes, on a copy masked by hand;
+    # it cannot be called here because it would apply the QC mask itself.
     enu_before = rdi_xyz_enu(
         before,
         ens.heading + proc.magdec,

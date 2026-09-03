@@ -1,4 +1,4 @@
-"""Tests for the QC criteria in velosearaptor.madcp.ProcessADCP."""
+"""Tests for the QC criteria and `ibad` handling in velosearaptor.madcp.ProcessADCP."""
 
 import numpy as np
 import pytest

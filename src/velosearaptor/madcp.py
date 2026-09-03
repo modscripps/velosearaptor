@@ -221,9 +221,8 @@ def _apply_qc(enu, valid):
 
     The criteria raise flags and write nothing to the velocities. This is
     the one place their verdict reaches the data (issue #30). Idempotent, so
-    `process_pings` can apply it per chunk with the three beam-space
-    criteria and once more after its loop with the record-wide error
-    velocity flag.
+    `process_pings` can apply it per chunk with the flags `_qc_flags` raised
+    and once more after its loop with the record-wide error velocity flag.
     """
     enu[~valid] = np.ma.masked
 
@@ -1383,10 +1382,11 @@ class ProcessADCP:
         still compute the error velocity threshold once over the whole
         record (issue #100).
 
-        Writes nothing to `xyze`. The criteria are evaluated on `vel` and
-        `cor` and their verdict reaches the velocities only when `_to_enu`
-        applies `ens.valid` after the rotation (issue #30). `flag_cor_beam`,
-        `flag_cor` and `flag_maskbins` are left on `ens` for the caller.
+        Writes nothing to `xyze`. The criteria are evaluated on `vel`, `cor`
+        and the declared bins, and their verdict reaches the velocities only
+        when `_to_enu` applies `ens.valid` after the rotation (issue #30).
+        `flag_cor_beam`, `flag_cor` and `flag_maskbins` are left on `ens` for
+        the caller.
 
         `flag_no_data_beam` and its cell reduction `flag_no_data` record the
         invalidity that arrives here rather than being caused here. Without
@@ -1894,11 +1894,11 @@ class ProcessADCP:
         #
         # No second pass and no extra array: `rdi_xyz_enu` carries the error
         # velocity through untouched, so `uvwe[..., 3]` holds what `_qc` sees
-        # in `xyze`, already masked by the three beam-space criteria because
-        # `_to_enu` applied `ens.valid` to every chunk. The record-wide flag
-        # narrows `valid` and `_apply_qc` runs a second time, the same way
-        # (issue #30). tests/test_adaptive_max_e.py pins that this equals
-        # masking `xyze` before the rotation.
+        # in `xyze`, already masked by the flags `_qc_flags` raised per chunk,
+        # because `_to_enu` applied `ens.valid` to every chunk. The record-wide
+        # flag narrows `valid` and `_apply_qc` runs once more after the loop,
+        # the same way (issue #30). tests/test_adaptive_max_e.py pins that this
+        # equals masking `xyze` before the rotation.
         e = uvwe[..., 3]
         max_e = self._adaptive_max_e(e)
         # The record-wide counterpart of `_qc`'s `flag_max_e`. The two

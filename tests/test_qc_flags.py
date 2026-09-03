@@ -25,10 +25,10 @@ The flags, in the order they are applied:
 
 `flag_no_data` is the one editing does not cause. Binmapping cannot fill every
 cell of every beam and the instrument rejects beams on its own, so cells reach
-`_qc` already masked, and the three editing flags alone do not add up to the
-mask `_to_enu` applies. Raising it makes `ens.valid`, the complement of the
-four, the whole of that mask, which is what lets percent good be counted from
-the flags (issue #30).
+`_qc_flags` already masked, and the three editing flags alone do not add up
+to the mask `_to_enu` applies. Raising it makes `ens.valid`, the complement of
+the four, the whole of that mask, which is what lets percent good be counted
+from the flags (issue #30).
 
 The lifecycle differs by path and that is the easiest thing to get wrong here.
 `average_ensembles` and `burst_average_ensembles` call `_qc`, so all three
