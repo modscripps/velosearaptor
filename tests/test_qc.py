@@ -1,4 +1,4 @@
-"""Tests for editing/QC behavior in velosearaptor.madcp.ProcessADCP."""
+"""Tests for the QC criteria in velosearaptor.madcp.ProcessADCP."""
 
 import numpy as np
 import pytest
@@ -40,7 +40,7 @@ def test_correlation_test_skips_the_ibad_beam(adcpfile):
     proc.parse_editparams({"min_correlation": 64})
 
     ens = _ensemble(dead_beam_cor=10.0, min_cor_beam=0)
-    proc._edit(ens)
+    proc._qc(ens)
 
     assert not np.asarray(ens.flag_cor).any()
     assert np.asarray(ens.valid).all()
@@ -53,7 +53,7 @@ def test_correlation_test_uses_every_beam_without_ibad(adcpfile):
     proc.parse_editparams({"min_correlation": 64})
 
     ens = _ensemble(dead_beam_cor=10.0, min_cor_beam=0)
-    proc._edit(ens)
+    proc._qc(ens)
 
     assert np.asarray(ens.flag_cor).all()
     assert not np.asarray(ens.valid).any()
@@ -66,7 +66,7 @@ def test_correlation_test_still_rejects_a_good_beam_dropout(adcpfile):
     proc.parse_editparams({"min_correlation": 64})
 
     ens = _ensemble(dead_beam_cor=10.0, min_cor_beam=2)
-    proc._edit(ens)
+    proc._qc(ens)
 
     assert np.asarray(ens.flag_cor).all()
     assert not np.asarray(ens.valid).any()

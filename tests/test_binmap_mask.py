@@ -5,7 +5,7 @@ NaN. `ens.vel`, `ens.amp` and `ens.cor` are masked arrays, so writing NaN
 into them as plain data leaves the mask unset. The NaN then travels into
 `xyze` and poisons every statistic computed over it, most importantly the
 error-velocity standard deviation that sets the adaptive threshold in
-`_edit`. `amp` and `cor` are integer typed on top of that, so their NaN does
+`_qc`. `amp` and `cor` are integer typed on top of that, so their NaN does
 not even survive the assignment: it is cast to whatever the platform makes
 of `uint8(nan)`.
 """
@@ -83,9 +83,9 @@ def test_binmapped_amplitude_and_correlation_are_masked(proc, ensemble):
 
 def test_error_velocity_carries_no_unmasked_nan(proc, ensemble):
     """The mask must survive the beam-to-xyz transform, so that the error
-    velocity `_edit` computes its threshold from is a statistic over real
+    velocity `_qc` computes its threshold from is a statistic over real
     data. Without it `e.std()` is `masked` and the adaptive threshold in
-    `_edit` collapses to `editparams["max_e"]`."""
+    `_qc` collapses to `editparams["max_e"]`."""
     proc._binmap_all_beams(ensemble)
     proc._calculate_xyze(ensemble, ibad=proc.ibad)
 
@@ -162,7 +162,7 @@ def test_sigma_criterion_binds_on_binmapped_data(proc):
     assert in_range.sum() > 0
     assert (~in_range).sum() > 0
 
-    proc._edit(ens)
+    proc._qc(ens)
 
     # The adaptive threshold actually binds, at the level set by the data
     # that is really there.
@@ -175,6 +175,7 @@ def test_sigma_criterion_binds_on_binmapped_data(proc):
     # ... and no in-range cell of the quiet pings is.
     assert not flagged[:-2][in_range[:-2]].any()
     assert not np.asarray(ens.valid)[-2:][in_range[-2:]].any()
+    assert np.asarray(ens.valid)[:-2][in_range[:-2]].all()
 
 
 def test_process_pings_still_runs_with_binmapping(proc):

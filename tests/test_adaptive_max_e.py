@@ -1,6 +1,6 @@
 """The adaptive error velocity threshold must see the right samples (issue #100).
 
-`_edit` sets the applied threshold to `min(max_e, max_e_deviation * std(e))`.
+`_qc` sets the applied threshold to `min(max_e, max_e_deviation * std(e))`.
 Two things put the wrong samples into that standard deviation:
 
 1. `maskbins` was applied *after* `e.std()`, so bins the user declared bad set
@@ -8,7 +8,7 @@ Two things put the wrong samples into that standard deviation:
    bins are noisy their contribution pushes `max_e_deviation * std` past
    `max_e` and the adaptive criterion switches off entirely.
 
-2. In `process_pings`, `_edit` ran once per `ens_size` chunk, so the chunk size
+2. In `process_pings`, `_qc` ran once per `ens_size` chunk, so the chunk size
    was the window the standard deviation was estimated over. `ens_size` is
    documented as a memory knob; two people processing the same file with
    different values published different velocities.
@@ -79,7 +79,7 @@ def test_masked_bins_do_not_set_the_error_velocity_threshold(adcpfile):
 
     ens = _two_population_ensemble(kept_sigma=0.01, masked_sigma=1.0, nbin=nbin)
     kept_e = ens.xyze[:, :half, 3].copy()
-    proc._edit(ens)
+    proc._qc(ens)
 
     # The noisy half alone would drive 2 * std past max_e and switch the
     # adaptive branch off, leaving the fixed 0.2.
@@ -99,7 +99,7 @@ def test_fixed_threshold_still_wins_when_the_data_are_noisy(adcpfile):
     proc.parse_editparams({"max_e": 0.2, "max_e_deviation": 2, "min_correlation": 64})
 
     ens = _two_population_ensemble(kept_sigma=1.0, masked_sigma=1.0)
-    proc._edit(ens)
+    proc._qc(ens)
 
     assert ens.max_e_applied == proc.editparams.max_e
 
@@ -150,7 +150,7 @@ def test_masking_after_rotation_equals_masking_before(adcpfile):
     proc = ProcessADCP(adcpfile, META_DATA, magdec=0.0)
     ens = proc.m.read(start=0, stop=500)
     ens.dday = proc._correct_dday(ens.dday)
-    proc._edit_masks(ens)
+    proc._qc_flags(ens)
 
     xyze = ens.xyze.copy()
     proc._to_enu(ens)
@@ -168,6 +168,8 @@ def test_masking_after_rotation_equals_masking_before(adcpfile):
 
     before = xyze.copy()
     before[~valid] = np.ma.masked
+    # The same arguments `_to_enu` passes; it cannot be called here because
+    # it would apply the QC mask itself.
     enu_before = rdi_xyz_enu(
         before,
         ens.heading + proc.magdec,

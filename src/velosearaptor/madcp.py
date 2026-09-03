@@ -96,11 +96,12 @@ def _masked_bins(maskbins):
     """Bin indices `maskbins` masks, whichever form it was given in.
 
     `maskbins` is documented as a boolean array indexing into the bins (see
-    `ProcessADCP.generate_binmask`), but `_edit` applies it as a plain numpy
-    index, so an integer list of bin numbers masks exactly the same bins and
-    is the natural thing to write in a parameter file. `np.flatnonzero` on
-    such a list silently returns *positions* rather than bin numbers, and
-    drops bin 0 because it is falsy. Dispatch on dtype instead.
+    `ProcessADCP.generate_binmask`), but `_maskbins_flag` applies it as a
+    plain numpy index, so an integer list of bin numbers masks exactly the
+    same bins and is the natural thing to write in a parameter file.
+    `np.flatnonzero` on such a list silently returns *positions* rather than
+    bin numbers, and drops bin 0 because it is falsy. Dispatch on dtype
+    instead.
 
     Returns an empty array for `None`, so callers can treat "no bins" once.
     """
@@ -123,14 +124,17 @@ def _masked_bins(maskbins):
 # `ProcessADCP`. No stage in this module reads mutable pipeline state, so this
 # costs nothing today and is what a composable pipeline would need (issue
 # #15).
+#
+# `_apply_qc` below is the only function here that writes to a velocity
+# array. The criteria read; the mask is applied once, from `ens.valid`.
 
 
 def _correlation_flag(cor, min_correlation):
     """Beams whose correlation is below `min_correlation`.
 
     The full beam axis is kept. Reducing it to a per-cell verdict is
-    `_correlation_cell_flag`, which is where the decisions live that issues
-    #18 and #30 want to change.
+    `_cell_flag`, which is where the decisions live that issues #18 and #30
+    want to change.
     """
     return np.asarray(cor) < min_correlation
 
@@ -144,7 +148,7 @@ def _no_data_flag(vel):
     and some raw-masked cells come back finite from it.
 
     Editing does not cause this and does not mask for it; the cells are
-    already masked when `_edit_masks` is entered. The flag exists so that
+    already masked when `_qc_flags` is entered. The flag exists so that
     validity can be assembled from flags alone, which is what percent good is
     counted from (issue #30).
     """
@@ -1372,25 +1376,26 @@ class ProcessADCP:
             self._raw.coords["bin"] = (("z"), np.arange(self._raw.z.size))
         return self._raw
 
-    def _edit_masks(self, ens):
-        """Mask cells rejected by correlation and by `maskbins`.
+    def _qc_flags(self, ens):
+        """Raise the beam-space QC flags and assemble `ens.valid`.
 
-        Split out of `_edit` so that `process_pings` can run this per chunk
-        and still compute the error velocity threshold once over the whole
+        Split from `_qc` so that `process_pings` can run this per chunk and
+        still compute the error velocity threshold once over the whole
         record (issue #100).
 
-        Both criteria are beam-space quantities, so both flags are computed
-        before anything is written to `xyze`. `flag_cor_beam`, `flag_cor` and
-        `flag_maskbins` are left on `ens` for the caller (issue #30).
+        Writes nothing to `xyze`. The criteria are evaluated on `vel` and
+        `cor` and their verdict reaches the velocities only when `_to_enu`
+        applies `ens.valid` after the rotation (issue #30). `flag_cor_beam`,
+        `flag_cor` and `flag_maskbins` are left on `ens` for the caller.
 
         `flag_no_data_beam` and its cell reduction `flag_no_data` record the
-        invalidity that arrives here rather than being caused here, and
-        nothing is masked for them. Without it the flags do not add up to the
-        mask on `xyze`: on the binmapped per-ping path nearly a third of every
-        invalid cell was already invalid before any criterion looked at it.
+        invalidity that arrives here rather than being caused here. Without
+        it the flags do not add up to the mask `_to_enu` applies: on the
+        binmapped per-ping path nearly a third of every invalid cell was
+        already invalid before any criterion looked at it.
 
         `ens.valid` is the complement of the flags raised so far, and is what
-        percent good is counted from. `_edit` narrows it with `flag_max_e`;
+        percent good is counted from. `_qc` narrows it with `flag_max_e`;
         `process_pings` applies that flag itself, once over the whole record.
 
         `reason_nodata`, `reason_cor` and `reason_maskbins` are the same
@@ -1415,9 +1420,10 @@ class ProcessADCP:
     def _adaptive_max_e(self, e):
         """The error velocity threshold to apply to the samples in `e`.
 
-        `e` is whatever survived `_edit_masks`. Accumulate in float64: the
-        per-ping path hands this a float32 array of the whole record, where a
-        naive float32 sum of squares loses real precision.
+        `e` carries the mask of the criteria applied before this one, so the
+        standard deviation runs over the cells that survived them. Accumulate
+        in float64: the per-ping path hands this a float32 array of the whole
+        record, where a naive float32 sum of squares loses real precision.
         """
         ep = self.editparams
         max_e = min(ep.max_e, np.ma.std(e, dtype=np.float64) * ep.max_e_deviation)
@@ -1426,15 +1432,14 @@ class ProcessADCP:
         # output dataset.
         return float(max_e) if np.isfinite(max_e) else np.nan
 
-    def _edit(self, ens):
-        """Apply editing to xyze.
+    def _qc(self, ens):
+        """Run every QC criterion on an ensemble.
 
-        Leaves the flags of `_edit_masks` and `flag_max_e` on `ens`, and
-        `ens.valid`, their complement. `ens.valid` is `~getmaskarray(xyze)`
-        per cell once this returns, which is what makes percent good
-        computable from the flags (issue #30).
+        Leaves the flags of `_qc_flags` and `flag_max_e` on `ens`, and
+        `ens.valid`, their complement. Writes nothing to `xyze`; `_to_enu`
+        applies `ens.valid` to the rotated velocities (issue #30).
         """
-        self._edit_masks(ens)
+        self._qc_flags(ens)
         # Masked where the criteria above rejected the cell, so the standard
         # deviation runs over the cells that survived them. In particular,
         # bins the user has declared bad must not set the threshold that
@@ -1859,9 +1864,9 @@ class ProcessADCP:
                     # Now we have to recalculate xyze with the binmapped data.
                     self._calculate_xyze(ens, ibad=self.ibad)
 
-                # Only the masks here. The error velocity threshold is
-                # applied after the loop, over the whole record — see below.
-                self._edit_masks(ens)
+                # Only the beam-space criteria here. The error velocity
+                # threshold is applied after the loop, over the whole record.
+                self._qc_flags(ens)
                 self._to_enu(ens)  # transform to earth coords (east, north, up)
 
             else:
@@ -1875,26 +1880,28 @@ class ProcessADCP:
             amp[idx0:idx1] = ens.amp.mean(axis=-1)  # Average over beams... why?
             valid[idx0:idx1] = ens.valid
             # The three criteria raised in this chunk. `reason_max_e` is not
-            # among them: this path calls `_edit_masks`, never `_edit`, so
+            # among them: this path calls `_qc_flags`, never `_qc`, so
             # the record-wide error velocity flag genuinely does not exist
             # here yet, and is filled in after the loop below.
             for name in ("nodata", "cor", "maskbins"):
                 nbad[name][idx0:idx1] = ens[f"reason_{name}"]
 
         # Apply the error velocity threshold to the record as a whole. Running
-        # `_edit` inside the loop made `ens_size` the window the standard
+        # `_qc` inside the loop made `ens_size` the window the standard
         # deviation was estimated over, so the same file processed with
         # different `ens_size` came out with different velocities even though
         # the parameter is documented as a memory knob (issue #100).
         #
         # No second pass and no extra array: `rdi_xyz_enu` carries the error
-        # velocity through untouched, so `uvwe[..., 3]` holds exactly what
-        # `_edit` would have seen in `xyze`, and masking a cell of `enu` in all
-        # four components is equivalent to masking it before the rotation.
-        # Both claims are pinned by tests/test_adaptive_max_e.py.
+        # velocity through untouched, so `uvwe[..., 3]` holds what `_qc` sees
+        # in `xyze`, already masked by the three beam-space criteria because
+        # `_to_enu` applied `ens.valid` to every chunk. The record-wide flag
+        # narrows `valid` and `_apply_qc` runs a second time, the same way
+        # (issue #30). tests/test_adaptive_max_e.py pins that this equals
+        # masking `xyze` before the rotation.
         e = uvwe[..., 3]
         max_e = self._adaptive_max_e(e)
-        # The record-wide counterpart of `_edit`'s `flag_max_e`. The two
+        # The record-wide counterpart of `_qc`'s `flag_max_e`. The two
         # beam-space flags were raised per chunk inside the loop, so on this
         # path the three do not share a lifecycle (issue #30).
         flag_max_e = _max_e_flag(e, max_e)
@@ -1907,10 +1914,8 @@ class ProcessADCP:
 
         # Percent good is binary for single-ping data: 100 where the ping
         # survived editing, 0 where it was edited out. Counted from the flags
-        # the criteria raised rather than read back out of `uvwe`, so it does
-        # not depend on the masking `_edit` performs as a side effect
-        # (issue #30). `ndgrid` here is the instrument bin count, so nothing
-        # is gridded between the flags and the count.
+        # the criteria raised (issue #30). `ndgrid` here is the instrument bin
+        # count, so nothing is gridded between the flags and the count.
         pg[:] = 100 * valid.astype(np.int8)
 
         self.ave = Bunch(
@@ -1994,7 +1999,7 @@ class ProcessADCP:
         for i, iens in enumerate(tqdm(indices)):
             ens = self.read_ensemble(iens)
             if ens is not None:
-                self._edit(ens)
+                self._qc(ens)
                 max_e_applied[i] = ens.max_e_applied
                 self._to_enu(ens)  # transform to earth coords (east, north, up)
                 self._regrid_enu_amp(ens)
@@ -2013,8 +2018,8 @@ class ProcessADCP:
 
             # Counted from the validity gridded alongside the velocities in
             # `_regrid_enu_amp`, not from what came back finite there
-            # (issue #30). The two are the same array today; the point is that
-            # the count no longer depends on `_edit` masking as a side effect.
+            # (issue #30). The two are the same array; the count is built
+            # from the flags, which is what the mask is built from too.
             ngood[i] = np.sum(ens.valid_grid, axis=0)
             for name in QC_CRITERIA:
                 nbad[name][i] = np.sum(ens.reason_grid[name], axis=0)
@@ -2193,7 +2198,7 @@ class ProcessADCP:
         for i, iens in enumerate(tqdm(indices)):
             ens = self.read_ensemble(iens)
             if ens is not None:
-                self._edit(ens)
+                self._qc(ens)
                 max_e_applied[i] = ens.max_e_applied
                 self._to_enu(ens)  # transform to earth coords (east, north, up)
                 self._regrid_enu(ens)
