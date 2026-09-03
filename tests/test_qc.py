@@ -88,3 +88,17 @@ def test_binmap_honors_ibad(adcpfile):
     both_finite = np.isfinite(u_4beam) & np.isfinite(u_3beam)
     assert both_finite.sum() > 0
     assert not np.allclose(u_4beam[both_finite], u_3beam[both_finite])
+
+
+def test_min_correlation_none_disables_the_correlation_test(adcpfile):
+    """`None` switches a criterion off (issue #131). An ensemble that 64
+    would reject in full passes untouched."""
+    proc = ProcessADCP(adcpfile, META_DATA, magdec=0.0)
+    proc.parse_editparams({"min_correlation": None})
+
+    ens = _ensemble(dead_beam_cor=10.0, min_cor_beam=0)
+    proc._qc(ens)
+
+    assert not np.asarray(ens.flag_cor_beam).any()
+    assert not np.asarray(ens.flag_cor).any()
+    assert np.asarray(ens.valid).all()

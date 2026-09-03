@@ -104,6 +104,67 @@ def test_fixed_threshold_still_wins_when_the_data_are_noisy(adcpfile):
     assert ens.max_e_applied == proc.editparams.max_e
 
 
+def test_max_e_deviation_none_leaves_the_fixed_threshold(adcpfile):
+    """`max_e_deviation=None` switches the sigma branch off (issue #131): the
+    threshold is `max_e` on data where 2 sigma would bind well below it."""
+    proc = ProcessADCP(adcpfile, META_DATA, magdec=0.0)
+    proc.parse_editparams(
+        {"max_e": 0.2, "max_e_deviation": None, "min_correlation": 64}
+    )
+
+    ens = _two_population_ensemble(kept_sigma=0.01, masked_sigma=0.01)
+    e = ens.xyze[..., 3].copy()
+    proc._qc(ens)
+
+    assert ens.max_e_applied == 0.2
+    np.testing.assert_array_equal(np.asarray(ens.flag_max_e), np.abs(e) > 0.2)
+
+
+def test_max_e_deviation_none_needs_no_estimate_on_a_masked_ensemble(adcpfile):
+    """With the sigma branch off there is nothing to estimate, so a fully
+    masked ensemble records `max_e` and no longer NaN."""
+    proc = ProcessADCP(adcpfile, META_DATA, magdec=0.0)
+    proc.parse_editparams(
+        {"max_e": 0.2, "max_e_deviation": None, "min_correlation": 64}
+    )
+
+    ens = _two_population_ensemble(kept_sigma=0.01, masked_sigma=0.01)
+    ens.xyze = np.ma.masked_array(ens.xyze.data, mask=True)
+    proc._qc(ens)
+
+    assert ens.max_e_applied == 0.2
+
+
+def test_max_e_none_leaves_the_sigma_branch_uncapped(adcpfile):
+    """`max_e=None` removes the absolute cap: on data where 2 sigma exceeds
+    0.2 the threshold is 2 sigma."""
+    proc = ProcessADCP(adcpfile, META_DATA, magdec=0.0)
+    proc.parse_editparams({"max_e": None, "max_e_deviation": 2, "min_correlation": 64})
+
+    ens = _two_population_ensemble(kept_sigma=1.0, masked_sigma=1.0)
+    e = ens.xyze[..., 3].copy()
+    proc._qc(ens)
+
+    assert ens.max_e_applied == pytest.approx(2 * np.std(e), rel=1e-6)
+    assert ens.max_e_applied > 0.2
+
+
+def test_both_error_velocity_parameters_none_switch_the_test_off(adcpfile):
+    """Both `None`: the threshold is recorded as `inf`, distinct from the NaN
+    of a threshold that could not be estimated, and nothing is rejected."""
+    proc = ProcessADCP(adcpfile, META_DATA, magdec=0.0)
+    proc.parse_editparams(
+        {"max_e": None, "max_e_deviation": None, "min_correlation": 64}
+    )
+
+    ens = _two_population_ensemble(kept_sigma=1.0, masked_sigma=1.0)
+    proc._qc(ens)
+
+    assert ens.max_e_applied == np.inf
+    assert not np.asarray(ens.flag_max_e).any()
+    assert np.asarray(ens.valid).all()
+
+
 @pytest.mark.parametrize("binmap", [False, True])
 def test_ens_size_does_not_change_process_pings_results(adcpfile, binmap):
     """`ens_size` is a memory knob and must not touch the numbers."""
@@ -189,3 +250,20 @@ def test_masking_after_rotation_equals_masking_before(adcpfile):
         np.ma.filled(after, np.nan),
         equal_nan=True,
     )
+
+
+def test_max_e_deviation_none_on_the_burst_path(rootdir):
+    """End to end: on the bundled burst file the sigma branch binds on every
+    burst at the default, and `None` lifts the threshold to `max_e` on all
+    of them."""
+    kwargs = {"magdec": 0.0, "tgridparams": {"burst_average": True}}
+    path = rootdir / "data/24606000.000"
+
+    default = ProcessADCP(path, META_DATA, **kwargs)
+    default.burst_average_ensembles()
+    assert (default.ds.max_e_applied < 0.2).all()
+
+    off = ProcessADCP(path, META_DATA, editparams={"max_e_deviation": None}, **kwargs)
+    off.burst_average_ensembles()
+    assert (off.ds.max_e_applied == 0.2).all()
+    assert off.ds.attrs["max_e_deviation"] == "none"
