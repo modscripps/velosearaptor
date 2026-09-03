@@ -128,6 +128,24 @@ def test_pg_limit_none_is_still_reported_as_none(rootdir):
     assert proc.ds.attrs["pg_limit"] == "none"
 
 
+def test_none_thresholds_are_recorded_and_round_trip(rootdir, tmp_path):
+    """Each threshold switched off with `None` is written as `"none"` and
+    survives netCDF (issue #131)."""
+    proc = _proc(
+        rootdir,
+        CONTINUOUS,
+        editparams={"max_e": None, "max_e_deviation": None, "min_correlation": None},
+    )
+    proc.average_ensembles()
+    path = tmp_path / "none.nc"
+    proc.ds.to_netcdf(path)
+
+    with xr.open_dataset(path) as reopened:
+        for att in ["max_e", "max_e_deviation", "min_correlation"]:
+            assert reopened.attrs[att] == "none", att
+        assert np.isinf(reopened.max_e_applied.values).all()
+
+
 # --- 11.2 dangling ancillary_variables ----------------------------------
 
 

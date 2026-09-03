@@ -27,6 +27,43 @@ Long Ranger ADCPs Commands and Output Data Format*:
 > profiling mode (WM), the blank after transmit distance (WF), and speed of
 > sound.
 
+#### Quality Control
+Four criteria reject cells before anything is averaged, in this order.
+Each is controlled by an entry of `editparams` (see `ProcessADCP`), and
+setting that entry to `None` switches the criterion off.
+
+1. **No data.** A cell whose beam velocities are missing, either because the
+   instrument rejected the beams itself or because bin mapping could not
+   fill the cell. Not configurable.
+2. **Correlation.** A cell is rejected when any beam entering the velocity
+   solution has correlation below `min_correlation` (default 64, the RDI
+   default). A beam excluded via `ibad` is not consulted.
+3. **Declared bins.** Bins listed in `maskbins` are rejected for the whole
+   record. Default `None`.
+4. **Error velocity.** A cell is rejected when its error velocity exceeds
+   `min(max_e, max_e_deviation * std(e))`, with defaults `max_e=0.2` m/s
+   and `max_e_deviation=2`. The standard deviation is taken over the cells
+   the first three criteria kept, per averaging interval in
+   `ProcessADCP.average_ensembles` and `ProcessADCP.burst_average_ensembles`
+   and once over the whole record in `ProcessADCP.process_pings`. With
+   roughly Gaussian error velocity the sigma branch removes a few percent of
+   good cells whenever it binds. `max_e_deviation=None` keeps the fixed
+   threshold alone, `max_e=None` keeps the sigma branch alone, and both
+   `None` switch the test off.
+
+`pg_limit` (default 50) is not a per-cell criterion. It drops a bin from an
+averaging interval when fewer than that percentage of its pings survived,
+and only in `ProcessADCP.burst_average_ensembles`, before the interpolation
+onto the depth grid. The other two methods publish `pg` and leave the
+screening to the user.
+
+The output records what was done. `max_e_applied` is the error velocity
+threshold applied to each interval (`inf` when the test is off, NaN when it
+could not be estimated), `nbad_nodata`, `nbad_cor`, `nbad_maskbins` and
+`nbad_max_e` count the pings each criterion rejected at every published
+cell, and every `editparams` entry is a file attribute, `"none"` where it
+was `None`.
+
 """
 
 import datetime
@@ -134,9 +171,12 @@ def _correlation_flag(cor, min_correlation):
 
     The full beam axis is kept. Reducing it to a per-cell verdict is
     `_cell_flag`, which is where the decisions live that issues #18 and #30
-    want to change.
+    want to change. `None` switches the test off (issue #131).
     """
-    return np.asarray(cor) < min_correlation
+    cor = np.asarray(cor)
+    if min_correlation is None:
+        return np.zeros(cor.shape, dtype=bool)
+    return cor < min_correlation
 
 
 def _no_data_flag(vel):
@@ -184,7 +224,8 @@ def _max_e_flag(e, max_e_applied):
 
     Cells already masked in `e` come back False, so the flag carries only what
     this test rejects. They stay masked either way. A threshold that could not
-    be computed, NaN for a fully masked ensemble, rejects nothing.
+    be computed, NaN for a fully masked ensemble, rejects nothing, and neither
+    does the `inf` of a test that is switched off.
     """
     return np.ma.filled(np.abs(e) > max_e_applied, False)
 
@@ -392,16 +433,23 @@ class ProcessADCP:
     Values for `dbot` and `dtop` are generated if not provided.
 
     **Editing parameters**
-    Provide editing parameters via `editparams`.
-    - `max_e`=0.2,  # absolute max e
-    - `max_e_deviation`=2,  # max in terms of sigma
-    - `min_correlation`=64,  # 64 is RDI default
-    - `maskbins` : Array with booleans indexing into the ADCP bins. Use the
-      convenience method `generate_binmask`.
+    Provide editing parameters via `editparams`. Setting an entry to `None`
+    switches that criterion off. The module notes describe the criteria.
+    - `max_e` : float or None. Absolute error velocity threshold in m/s.
+      Defaults to 0.2.
+    - `max_e_deviation` : float or None. Error velocity threshold in units of
+      the standard deviation of the error velocity. The lower of the two
+      thresholds applies. Defaults to 2.
+    - `min_correlation` : int or None. Beam correlation below which a cell is
+      rejected. Defaults to 64, the RDI default.
+    - `maskbins` : Array with booleans indexing into the ADCP bins, or a list
+      of bin numbers, or None. Use the convenience method `generate_binmask`.
+      Defaults to None.
     - `pg_limit` : float or int or None.
             Percent good limit applied prior to interpolating to the universal
             depth grid in `burst_average_ensembles`. Not applied in
             `average_ensembles` as the user can filter based on pg later.
+            Defaults to 50.
 
     """
 
@@ -1424,13 +1472,26 @@ class ProcessADCP:
         Accumulate in float64: the per-ping path hands this a float32 array
         of the whole record, where a naive float32 sum of squares loses real
         precision.
+
+        Either parameter set to `None` drops its branch (issue #131). With
+        both `None` the test is off and the threshold is `inf`, which is
+        distinct from the NaN of a threshold that could not be estimated.
         """
         ep = self.editparams
-        max_e = min(ep.max_e, np.ma.std(e, dtype=np.float64) * ep.max_e_deviation)
-        # Return a plain float (NaN if the threshold could not be computed,
-        # e.g. for a fully masked ensemble) so it can be propagated to the
-        # output dataset.
-        return float(max_e) if np.isfinite(max_e) else np.nan
+        candidates = []
+        if ep.max_e is not None:
+            candidates.append(ep.max_e)
+        if ep.max_e_deviation is not None:
+            sigma = np.ma.std(e, dtype=np.float64) * ep.max_e_deviation
+            # NaN for a fully masked ensemble. Keep it so the output records
+            # that the threshold could not be computed.
+            if not np.isfinite(sigma):
+                return np.nan
+            candidates.append(sigma)
+        if not candidates:
+            return np.inf
+        # A plain float so it can be propagated to the output dataset.
+        return float(min(candidates))
 
     def _qc(self, ens):
         """Run every QC criterion on an ensemble.

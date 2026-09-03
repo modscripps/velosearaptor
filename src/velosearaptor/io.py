@@ -546,7 +546,11 @@ def cf_conventions():
                 "Error velocity threshold applied to this averaging "
                 "interval: the minimum of the absolute threshold max_e and "
                 "max_e_deviation times the standard deviation of error "
-                "velocity within the interval."
+                "velocity. The standard deviation is taken within the "
+                "interval by average_ensembles and burst_average_ensembles "
+                "and over the whole record by process_pings. inf where the "
+                "test was switched off, NaN where the threshold could not "
+                "be estimated."
             ),
         },
         "pg": {
