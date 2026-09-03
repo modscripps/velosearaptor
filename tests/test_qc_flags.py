@@ -222,19 +222,70 @@ def test_the_record_threshold_flag_reproduces_the_mask_on_the_per_ping_path(
     assert np.array_equal(after, seen["before"] | seen["flag"])
 
 
-def test_editing_masks_whole_cells(rootdir, monkeypatch):
-    """Every criterion masks all four components together.
+@pytest.mark.parametrize("config", CONFIGURATIONS)
+def test_to_enu_masks_every_component_from_valid(rootdir, monkeypatch, config):
+    """`_to_enu` leaves `enu` masked exactly where `ens.valid` is False.
 
-    `_cell_mask` above reads component 0 alone and the flags are per cell, so
-    the tests are only meaningful while this holds.
+    All four components together, so `_cell_mask` above can read component
+    0 alone. On the per-ping path `valid` carries the three beam-space
+    criteria at this point and the error velocity flag is applied to the
+    whole record after the loop, so the equality holds there too.
+
+    `rdi_xyz_enu` also masks `u` and `v` of any ping whose heading, pitch or
+    roll is masked, which `valid` does not record. Neither bundled file has
+    such a ping, so the equality is exact here.
     """
-    calls = _record_edit(monkeypatch, "_edit")
-    proc = _proc(rootdir)
-    proc.average_ensembles()
+    seen = []
+    original = ProcessADCP._to_enu
 
-    for _, _, ens in calls:
-        mask = np.ma.getmaskarray(ens.xyze)
-        assert np.array_equal(mask, mask[:, :, :1].repeat(mask.shape[-1], axis=-1))
+    def recorder(self, ens):
+        original(self, ens)
+        mask = np.ma.getmaskarray(ens.enu)
+        valid = np.asarray(ens.valid)
+        seen.append(all(np.array_equal(mask[..., k], ~valid) for k in range(4)))
+        seen.append((~valid).any())
+
+    monkeypatch.setattr(ProcessADCP, "_to_enu", recorder)
+    if config == "burst_average_ensembles":
+        _burst_proc(rootdir).burst_average_ensembles()
+    elif config == "average_ensembles":
+        _proc(rootdir).average_ensembles()
+    else:
+        _proc(rootdir).process_pings(binmap=config.endswith("binmap"))
+
+    assert seen, "no ensemble reached _to_enu"
+    assert all(seen[0::2])
+    # Otherwise the equality holds because nothing was rejected.
+    assert any(seen[1::2])
+
+
+def test_to_enu_under_ibad_masks_e_entirely_and_the_rest_from_valid(
+    rootdir, monkeypatch
+):
+    """With `ibad`, `beam_to_xyz` masks the error velocity everywhere.
+
+    A three-beam solution has no error velocity, so `e` arrives fully masked
+    and `_to_enu` can add nothing there. `u`, `v` and `w` are masked from
+    `valid` as without `ibad`. `ibad` is outside the four pinned
+    configurations, so nothing else here would see this.
+    """
+    seen = []
+    original = ProcessADCP._to_enu
+
+    def recorder(self, ens):
+        original(self, ens)
+        mask = np.ma.getmaskarray(ens.enu)
+        valid = np.asarray(ens.valid)
+        seen.append(
+            all(np.array_equal(mask[..., k], ~valid) for k in range(3))
+            and bool(mask[..., 3].all())
+        )
+
+    monkeypatch.setattr(ProcessADCP, "_to_enu", recorder)
+    _proc(rootdir, ibad=0).average_ensembles()
+
+    assert seen, "no ensemble reached _to_enu"
+    assert all(seen)
 
 
 # ------------------------------------------------------ the individual flags
@@ -412,6 +463,24 @@ def test_the_flag_helpers_take_their_parameters_explicitly():
     assert np.array_equal(madcp._max_e_flag(e, 0.2), [[False, True, False]])
     # A threshold that could not be computed rejects nothing.
     assert not madcp._max_e_flag(e, np.nan).any()
+
+
+def test_apply_qc_masks_every_component_of_an_invalid_cell():
+    """The one write the QC criteria make, in place and idempotent."""
+    enu = np.ma.asarray(np.ones((2, 3, 4)))
+    valid = np.array([[True, False, True], [True, True, False]])
+    madcp._apply_qc(enu, valid)
+    mask = np.ma.getmaskarray(enu)
+    for k in range(4):
+        assert np.array_equal(mask[..., k], ~valid)
+
+    # Narrowing `valid` and applying again adds the new cells and keeps the
+    # old ones, which is how `process_pings` applies the record-wide flag.
+    narrower = valid & np.array([[True, True, False], [True, True, True]])
+    madcp._apply_qc(enu, narrower)
+    mask = np.ma.getmaskarray(enu)
+    for k in range(4):
+        assert np.array_equal(mask[..., k], ~narrower)
 
 
 # ------------------------------------------------- percent good from the flags

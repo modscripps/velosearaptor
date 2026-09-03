@@ -212,6 +212,18 @@ def _attributed_flags(flag_no_data, flag_cor, flag_maskbins):
     )
 
 
+def _apply_qc(enu, valid):
+    """Mask every component of the cells `valid` rejects, in place.
+
+    The criteria raise flags and write nothing to the velocities. This is
+    the one place their verdict reaches the data (issue #30). Idempotent, so
+    `process_pings` can apply it per chunk with the three beam-space
+    criteria and once more after its loop with the record-wide error
+    velocity flag.
+    """
+    enu[~valid] = np.ma.masked
+
+
 class ProcessADCP:
     """Moored ADCP Processing.
 
@@ -1441,10 +1453,16 @@ class ProcessADCP:
         ens.xyze[ens.flag_max_e] = np.ma.masked
 
     def _to_enu(self, ens):
-        """
-        add enu
-        GV: enu is east, north, up, errvel (optional) whereas xyz are
-        instrument coordinates.
+        """Rotate `xyze` to earth coordinates and apply the QC mask.
+
+        `enu` is east, north, up, error velocity; `xyze` is instrument
+        coordinates. The rotation leaves the error velocity untouched.
+
+        After the rotation every cell `ens.valid` rejects is masked in all
+        four components, which is the only way the QC criteria reach the
+        velocities (issue #30). Everything downstream reads that mask and
+        nothing else. Calling this before the flags exist raises on
+        `ens.valid`, on purpose.
         """
         ens.enu = rdi_xyz_enu(
             ens.xyze,
@@ -1453,6 +1471,7 @@ class ProcessADCP:
             ens.roll,
             orientation=self.orientation,
         )
+        _apply_qc(ens.enu, ens.valid)
 
     def _burst_average_depth(self, ens):
         """Depth-average within a burst.
