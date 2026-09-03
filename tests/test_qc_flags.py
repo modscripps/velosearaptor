@@ -126,8 +126,8 @@ CONFIGURATIONS = (
 def _run(rootdir, monkeypatch, config, method="_qc_flags", **kwargs):
     """Run one of the four pinned configurations, recording calls to `method`.
 
-    `_qc` calls `_qc_flags`, so recording the latter reaches every
-    configuration; recording the former reaches only the two averaging paths.
+    `_qc` calls `_qc_flags`. Recording `_qc_flags` reaches every
+    configuration; recording `_qc` reaches only the two averaging paths.
     """
     calls = _record_qc(monkeypatch, method)
     if config == "burst_average_ensembles":

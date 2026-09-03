@@ -1420,10 +1420,10 @@ class ProcessADCP:
     def _adaptive_max_e(self, e):
         """The error velocity threshold to apply to the samples in `e`.
 
-        `e` carries the mask of the criteria applied before this one, so the
-        standard deviation runs over the cells that survived them. Accumulate
-        in float64: the per-ping path hands this a float32 array of the whole
-        record, where a naive float32 sum of squares loses real precision.
+        `e` carries the mask of the criteria applied before this one.
+        Accumulate in float64: the per-ping path hands this a float32 array
+        of the whole record, where a naive float32 sum of squares loses real
+        precision.
         """
         ep = self.editparams
         max_e = min(ep.max_e, np.ma.std(e, dtype=np.float64) * ep.max_e_deviation)
@@ -1464,9 +1464,9 @@ class ProcessADCP:
 
         After the rotation every cell `ens.valid` rejects is masked in all
         four components, which is the only way the QC criteria reach the
-        velocities (issue #30). Everything downstream reads that mask and
-        nothing else. Calling this before the flags exist raises on
-        `ens.valid`, on purpose.
+        velocities (issue #30). Everything downstream reads that mask for the
+        velocities; the counts read the flags directly. Calling this before
+        the flags exist raises on `ens.valid`, on purpose.
         """
         ens.enu = rdi_xyz_enu(
             ens.xyze,
