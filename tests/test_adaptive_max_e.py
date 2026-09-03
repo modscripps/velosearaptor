@@ -14,14 +14,16 @@ Two things put the wrong samples into that standard deviation:
    different values published different velocities.
 
 The threshold is now computed once over the whole record. `process_pings`
-applies the correlation and `maskbins` masks in the chunk loop and defers the
+raises the correlation and `maskbins` flags in the chunk loop and defers the
 error velocity test until every ping has been read.
 """
 
 import numpy as np
 import pytest
+from pycurrents.adcp.transform import rdi_xyz_enu
 from pycurrents.system import Bunch
 
+from velosearaptor import madcp
 from velosearaptor.madcp import ProcessADCP
 
 META_DATA = {
@@ -84,9 +86,11 @@ def test_masked_bins_do_not_set_the_error_velocity_threshold(adcpfile):
     assert ens.max_e_applied == pytest.approx(2 * np.std(kept_e), rel=1e-6)
     assert ens.max_e_applied < proc.editparams.max_e
 
-    # The masked bins are still masked, and the threshold actually bit.
-    assert np.ma.getmaskarray(ens.xyze)[:, half:, :].all()
-    assert np.ma.getmaskarray(ens.xyze)[:, :half, :].any()
+    # The declared bins are rejected, and the threshold actually bit in the
+    # kept half.
+    assert np.asarray(ens.flag_maskbins)[:, half:].all()
+    assert not np.asarray(ens.valid)[:, half:].any()
+    assert np.asarray(ens.flag_max_e)[:, :half].any()
 
 
 def test_fixed_threshold_still_wins_when_the_data_are_noisy(adcpfile):
@@ -132,13 +136,16 @@ def test_max_e_applied_is_one_value_for_the_whole_record(adcpfile):
     assert np.unique(applied[np.isfinite(applied)]).size == 1
 
 
-def test_masking_before_rotation_equals_masking_after(adcpfile):
-    """Deferring the error velocity test past `_to_enu` has to be a no-op.
+def test_masking_after_rotation_equals_masking_before(adcpfile):
+    """The QC mask is applied to `enu` after the rotation, once.
 
-    The threshold is applied to `xyze` today and to the rotated `enu` after
-    this change, so the two have to agree: the error velocity must survive
-    `rdi_xyz_enu` untouched, and masking one cell of `xyze` must equal masking
-    all four components of the same cell of `enu`.
+    Editing writes nothing to `xyze`; `_to_enu` rotates and then masks every
+    cell `ens.valid` rejects, and `process_pings` narrows `valid` with the
+    record-wide error velocity flag and applies it again (issue #30). Both
+    have to equal masking `xyze` before the rotation, which is what the code
+    did until then: the error velocity must survive `rdi_xyz_enu` untouched,
+    and masking one cell of `xyze` must equal masking all four components of
+    the same cell of `enu`.
     """
     proc = ProcessADCP(adcpfile, META_DATA, magdec=0.0)
     ens = proc.m.read(start=0, stop=500)
@@ -149,28 +156,32 @@ def test_masking_before_rotation_equals_masking_after(adcpfile):
     proc._to_enu(ens)
     enu = ens.enu
 
-    # The error velocity is not rotated.
-    assert np.array_equal(
-        np.ma.filled(xyze[..., 3], np.nan),
-        np.ma.filled(enu[..., 3], np.nan),
-        equal_nan=True,
-    )
+    # The error velocity is not rotated. Compare the data, since `enu`
+    # carries the QC mask and `xyze` does not.
+    assert np.array_equal(np.ma.getdata(xyze[..., 3]), np.ma.getdata(enu[..., 3]))
 
-    over = np.abs(np.ma.filled(xyze[..., 3], 0.0)) > 0.13
-    assert over.sum() > 0
+    # A stand-in for the record-wide threshold narrowing `valid` after the
+    # loop in `process_pings`.
+    over = np.abs(np.ma.getdata(xyze[..., 3])) > 0.13
+    valid = np.asarray(ens.valid) & ~over
+    assert (~valid).sum() > (~np.asarray(ens.valid)).sum()
 
     before = xyze.copy()
-    before[over] = np.ma.masked
-    ens_before = Bunch(ens)
-    ens_before.xyze = before
-    proc._to_enu(ens_before)
+    before[~valid] = np.ma.masked
+    enu_before = rdi_xyz_enu(
+        before,
+        ens.heading + proc.magdec,
+        ens.pitch,
+        ens.roll,
+        orientation=proc.orientation,
+    )
 
     after = enu.copy()
-    after[over] = np.ma.masked
+    madcp._apply_qc(after, valid)
 
-    assert np.array_equal(np.ma.getmaskarray(ens_before.enu), np.ma.getmaskarray(after))
+    assert np.array_equal(np.ma.getmaskarray(enu_before), np.ma.getmaskarray(after))
     assert np.array_equal(
-        np.ma.filled(ens_before.enu, np.nan),
+        np.ma.filled(enu_before, np.nan),
         np.ma.filled(after, np.nan),
         equal_nan=True,
     )

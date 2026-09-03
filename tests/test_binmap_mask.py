@@ -169,11 +169,12 @@ def test_sigma_criterion_binds_on_binmapped_data(proc):
     assert ens.max_e_applied < ep.max_e
     assert np.isclose(ens.max_e_applied, expected_max_e, rtol=1e-3)
 
-    masked = np.ma.getmaskarray(ens.xyze)[:, :, 3]
+    flagged = np.asarray(ens.flag_max_e)
     # Every in-range cell of the two outlier pings is edited out ...
-    assert masked[-2:][in_range[-2:]].all()
+    assert flagged[-2:][in_range[-2:]].all()
     # ... and no in-range cell of the quiet pings is.
-    assert not masked[:-2][in_range[:-2]].any()
+    assert not flagged[:-2][in_range[:-2]].any()
+    assert not np.asarray(ens.valid)[-2:][in_range[-2:]].any()
 
 
 def test_process_pings_still_runs_with_binmapping(proc):

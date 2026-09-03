@@ -65,32 +65,42 @@ def _burst_proc(rootdir, **kwargs):
     return _proc(rootdir, BURST_FILE, tgridparams={"burst_average": True}, **kwargs)
 
 
-def _cell_mask(xyze):
-    """The mask of `xyze`, per cell.
+def _cell_mask(array):
+    """The mask of a four-component velocity array, per cell.
 
-    Every editing step masks all four components of a cell together, which
-    `test_editing_masks_whole_cells` pins, so any component gives the same
-    answer.
+    `_to_enu` masks all four components of a rejected cell together, which
+    `test_to_enu_masks_every_component_from_valid` pins, so any component
+    gives the same answer.
     """
-    return np.ma.getmaskarray(xyze)[:, :, 0]
+    return np.ma.getmaskarray(array)[:, :, 0]
 
 
 def _record_edit(monkeypatch, method):
-    """Capture the cell mask before and after each call to `_edit`/`_edit_masks`.
+    """Capture the mask `xyze` carries into `method` and the mask `_to_enu`
+    leaves on `enu`.
 
-    Returns the list the records land in. Each is the mask before, the mask
-    after, and the ensemble, so a test can compare them against the flags the
-    call left behind.
+    Editing writes nothing to `xyze`. The flags it raises reach the
+    velocities when `_to_enu` applies `ens.valid` after the rotation, so
+    `before` is read off `xyze` on entry to `method` and `after` off `enu`
+    once `_to_enu` returns. Every path calls `_to_enu` on the ensemble
+    right after `method`, so the pairs line up. Returns the list the records
+    land in: the mask before, the mask after, and the ensemble.
     """
     calls = []
+    pending = {}
     original = getattr(ProcessADCP, method)
+    original_to_enu = ProcessADCP._to_enu
 
     def recorder(self, ens):
-        before = _cell_mask(ens.xyze).copy()
+        pending[id(ens)] = _cell_mask(ens.xyze).copy()
         original(self, ens)
-        calls.append((before, _cell_mask(ens.xyze).copy(), ens))
+
+    def to_enu_recorder(self, ens):
+        original_to_enu(self, ens)
+        calls.append((pending.pop(id(ens)), _cell_mask(ens.enu).copy(), ens))
 
     monkeypatch.setattr(ProcessADCP, method, recorder)
+    monkeypatch.setattr(ProcessADCP, "_to_enu", to_enu_recorder)
     return calls
 
 
@@ -140,7 +150,7 @@ def _run(rootdir, monkeypatch, config, method="_edit_masks", **kwargs):
 def test_edit_flags_reproduce_the_mask_on_the_averaging_paths(
     rootdir, monkeypatch, burst
 ):
-    """Per ensemble, `_edit` masks exactly the cells its three flags raise."""
+    """Per ensemble, `_to_enu` masks exactly the cells the three `_edit` flags raise."""
     calls = _record_edit(monkeypatch, "_edit")
     if burst:
         proc = _burst_proc(rootdir)
@@ -220,6 +230,41 @@ def test_the_record_threshold_flag_reproduces_the_mask_on_the_per_ping_path(
     assert seen["flag"].any()
     after = np.ma.getmaskarray(proc.ave.e)
     assert np.array_equal(after, seen["before"] | seen["flag"])
+
+
+@pytest.mark.parametrize("config", CONFIGURATIONS)
+def test_editing_leaves_the_xyze_mask_alone(rootdir, monkeypatch, config):
+    """The criteria raise flags and write nothing to `xyze` (issue #30).
+
+    Editing used to mask `xyze` at three points and everything downstream
+    read that mask. The mask is now applied once, from `ens.valid`, when
+    `_to_enu` returns, so `xyze` leaves editing bitwise as it arrived.
+    """
+    averaging = config in ("average_ensembles", "burst_average_ensembles")
+    method = "_edit" if averaging else "_edit_masks"
+    original = getattr(ProcessADCP, method)
+    unchanged = []
+    rejected_here = []
+
+    def recorder(self, ens):
+        before = np.ma.getmaskarray(ens.xyze).copy()
+        original(self, ens)
+        unchanged.append(np.array_equal(np.ma.getmaskarray(ens.xyze), before))
+        # A cell editing rejected that was not masked on entry.
+        rejected_here.append(bool((~np.asarray(ens.valid) & ~before[..., 0]).any()))
+
+    monkeypatch.setattr(ProcessADCP, method, recorder)
+    if config == "burst_average_ensembles":
+        _burst_proc(rootdir).burst_average_ensembles()
+    elif config == "average_ensembles":
+        _proc(rootdir).average_ensembles()
+    else:
+        _proc(rootdir).process_pings(binmap=config.endswith("binmap"))
+
+    assert unchanged, f"no ensemble reached {method}"
+    assert all(unchanged)
+    # Otherwise the equality holds because editing rejected nothing.
+    assert any(rejected_here)
 
 
 @pytest.mark.parametrize("config", CONFIGURATIONS)
@@ -629,7 +674,7 @@ def test_the_reasons_partition_the_rejected_cells(rootdir, monkeypatch, config):
         stacked = np.stack(reasons, axis=-1)
         # Disjoint: no cell carries two reasons.
         assert stacked.sum(axis=-1).max() <= 1
-        # Complete: their union is exactly the mask editing produced.
+        # Complete: their union is exactly the mask `_to_enu` applied.
         assert np.array_equal(_or(reasons), after)
         assert np.array_equal(_or(reasons), ~np.asarray(ens.valid))
 

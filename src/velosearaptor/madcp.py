@@ -1412,14 +1412,6 @@ class ProcessADCP:
             ens.reason_maskbins,
         ) = _attributed_flags(ens.flag_no_data, ens.flag_cor, ens.flag_maskbins)
 
-        ens.xyze[ens.flag_cor] = np.ma.masked
-        # Before the standard deviation in `_edit`, not after: bins the user
-        # has declared bad must not set the threshold that decides which of
-        # the kept bins survive. When the masked bins are the noisy ones their
-        # contribution pushes `max_e_deviation * sigma` past `max_e` and the
-        # adaptive criterion switches off entirely (issue #100).
-        ens.xyze[ens.flag_maskbins] = np.ma.masked
-
     def _adaptive_max_e(self, e):
         """The error velocity threshold to apply to the samples in `e`.
 
@@ -1443,14 +1435,21 @@ class ProcessADCP:
         computable from the flags (issue #30).
         """
         self._edit_masks(ens)
-        e = ens.xyze[:, :, 3]
+        # Masked where the criteria above rejected the cell, so the standard
+        # deviation runs over the cells that survived them. In particular,
+        # bins the user has declared bad must not set the threshold that
+        # decides which of the kept bins survive: when the masked bins are
+        # the noisy ones their contribution pushes `max_e_deviation * sigma`
+        # past `max_e` and the adaptive criterion switches off entirely
+        # (issue #100). `masked_where` keeps whatever mask `e` already
+        # carries from the transform.
+        e = np.ma.masked_where(~ens.valid, ens.xyze[:, :, 3])
         ens.max_e_applied = self._adaptive_max_e(e)
         ens.flag_max_e = _max_e_flag(e, ens.max_e_applied)
         ens.valid &= ~ens.flag_max_e
         # Already disjoint from the other three, so it is the flag unchanged.
         # Aliased on purpose: nothing downstream mutates a flag in place.
         ens.reason_max_e = ens.flag_max_e
-        ens.xyze[ens.flag_max_e] = np.ma.masked
 
     def _to_enu(self, ens):
         """Rotate `xyze` to earth coordinates and apply the QC mask.
@@ -1862,7 +1861,7 @@ class ProcessADCP:
 
                 # Only the masks here. The error velocity threshold is
                 # applied after the loop, over the whole record — see below.
-                self._edit_masks(ens)  # modifies xyze
+                self._edit_masks(ens)
                 self._to_enu(ens)  # transform to earth coords (east, north, up)
 
             else:
@@ -1899,8 +1898,8 @@ class ProcessADCP:
         # beam-space flags were raised per chunk inside the loop, so on this
         # path the three do not share a lifecycle (issue #30).
         flag_max_e = _max_e_flag(e, max_e)
-        uvwe[flag_max_e] = np.ma.masked
         valid &= ~flag_max_e
+        _apply_qc(uvwe, valid)
         # The record-wide criterion, written after the loop where it is
         # raised. It is already disjoint from the other three.
         nbad["max_e"][:] = flag_max_e
@@ -1995,7 +1994,7 @@ class ProcessADCP:
         for i, iens in enumerate(tqdm(indices)):
             ens = self.read_ensemble(iens)
             if ens is not None:
-                self._edit(ens)  # modifies xyze
+                self._edit(ens)
                 max_e_applied[i] = ens.max_e_applied
                 self._to_enu(ens)  # transform to earth coords (east, north, up)
                 self._regrid_enu_amp(ens)
@@ -2194,7 +2193,7 @@ class ProcessADCP:
         for i, iens in enumerate(tqdm(indices)):
             ens = self.read_ensemble(iens)
             if ens is not None:
-                self._edit(ens)  # modifies xyze
+                self._edit(ens)
                 max_e_applied[i] = ens.max_e_applied
                 self._to_enu(ens)  # transform to earth coords (east, north, up)
                 self._regrid_enu(ens)
