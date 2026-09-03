@@ -34,6 +34,7 @@ BURST = "24606000.000"
 UNIVERSAL = [
     "velosearaptor_version",
     "processing_method",
+    "vertical_frame",
     "orientation",
     "magdec",
     "max_e",
@@ -213,7 +214,7 @@ def test_version_is_recorded(datasets):
 
 def test_depth_grid_recorded_only_where_there_is_one(datasets):
     """`process_pings` does not regrid, so it has no depth grid to report."""
-    for att in ["dtop", "dbot", "d_interval", "averaging_interval_hours"]:
+    for att in ["dtop", "dbot", "d_interval"]:
         assert att not in datasets["process_pings"].attrs
         for method in ["average_ensembles", "burst_average_ensembles"]:
             assert att in datasets[method].attrs
@@ -222,6 +223,18 @@ def test_depth_grid_recorded_only_where_there_is_one(datasets):
     assert ds.attrs["dtop"] == 10
     assert ds.attrs["dbot"] == 165.0
     assert ds.attrs["d_interval"] == 4.0
+
+
+def test_averaging_interval_recorded_on_both_averaging_paths(datasets):
+    """Time averaging is not a property of the vertical frame.
+
+    `averaging_interval_hours` used to be asserted alongside the depth grid
+    parameters. The transducer frame drops the depth grid and keeps the
+    averaging, so the two claims are separate (issue #129).
+    """
+    assert "averaging_interval_hours" not in datasets["process_pings"].attrs
+    for method in ["average_ensembles", "burst_average_ensembles"]:
+        assert "averaging_interval_hours" in datasets[method].attrs
 
 
 def test_dt_hours_recorded_only_where_it_governs(datasets):
