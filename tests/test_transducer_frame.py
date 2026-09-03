@@ -153,3 +153,92 @@ def test_percent_good_is_a_ping_count_on_the_bin_axis(rootdir):
     assert np.all(ngood[good] <= npings[good])
     expected = 100 * ngood[good] // npings[good]
     np.testing.assert_array_equal(ds.pg.values[good], expected)
+
+
+# --- burst_average_ensembles on the bin axis ----------------------------
+
+
+def test_burst_transducer_product_is_the_burst_mean(rootdir):
+    """The published burst mean is the array the depth frame grids from.
+
+    `burst_average_ensembles` already forms the mean on the instrument bins
+    as `uvwe_inst` and then interpolates it onto `self.dgrid`. In the
+    transducer frame it stops there, so the two must agree bitwise.
+    """
+    proc = _burst(rootdir)
+    proc.burst_average_ensembles(vertical_frame="transducer")
+    ds = proc.ds
+
+    ens = proc.read_ensemble(0)
+    proc._qc(ens)
+    proc._to_enu(ens)
+    expected = ens.enu.mean(axis=0)
+    ngood = np.sum(ens.valid, axis=0)
+    pgi = 100 * ngood // ens.enu.shape[0]
+    expected[pgi < proc.editparams.pg_limit, :] = np.ma.masked
+
+    idx = np.searchsorted(proc.tsdat.dep, ds.z.values)
+    np.testing.assert_array_equal(
+        ds.u.values[:, 0],
+        np.ma.filled(expected[idx, 0], np.nan).astype(np.float32),
+    )
+
+
+def test_burst_pg_limit_and_masking_agree_on_the_bin_axis(rootdir):
+    """On the bin axis, screened and masked are the same condition.
+
+    In the depth frame `pg` is the interpolated `pgi_inst`, so a grid cell
+    can read at or above `pg_limit` while the bin it was fed from was
+    screened out. Nothing is interpolated here, so the two agree.
+    """
+    proc = _burst(rootdir)
+    proc.burst_average_ensembles(vertical_frame="transducer")
+    ds = proc.ds
+
+    screened = ds.pg.values < proc.editparams.pg_limit
+    assert screened.any(), "pg_limit should bind somewhere on this file"
+    assert np.all(np.isnan(ds.u.values[screened]))
+
+
+def test_burst_percent_good_identity_is_frame_dependent(rootdir):
+    """`pg == 100 * ngood // npings` holds on the bin axis and not on the grid.
+
+    In the depth frame `pg` and `ngood` are interpolated onto the grid and
+    floored independently, so the identity breaks. That contrast is the
+    clearest statement of what the frame changes about the counts.
+    """
+
+    def _identity(ds):
+        ngood = ds.ngood.values
+        npings = np.broadcast_to(ds.npings.values[np.newaxis, :], ngood.shape)
+        good = np.isfinite(ds.pg.values) & np.isfinite(ngood) & (npings > 0)
+        assert good.any()
+        return ds.pg.values[good], 100 * ngood[good] // npings[good]
+
+    proc = _burst(rootdir)
+    proc.burst_average_ensembles(vertical_frame="transducer")
+    published, expected = _identity(proc.ds)
+    np.testing.assert_array_equal(published, expected)
+
+    proc = _burst(rootdir)
+    proc.burst_average_ensembles()
+    published, expected = _identity(proc.ds)
+    assert not np.array_equal(published, expected)
+
+
+def test_burst_interpolate_bin_works_on_the_bin_axis(rootdir):
+    """`interpolate_bin` is bin-referenced and needs no change.
+
+    It fills the bin from its neighbours before any gridding, so in the
+    transducer frame the filled bin reaches the output directly. `pg` is
+    deliberately left at 0 there, so the interpolation stays visible.
+    """
+    proc = _burst(rootdir, editparams={"maskbins": [5]})
+    proc.burst_average_ensembles(vertical_frame="transducer", interpolate_bin=5)
+    ds = proc.ds
+
+    assert proc.tsdat.dep[5] in ds.z.values
+    k = int(np.flatnonzero(ds.z.values == proc.tsdat.dep[5])[0])
+    assert np.isfinite(ds.u.values[k]).any()
+    assert np.all(ds.pg.values[k][np.isfinite(ds.pg.values[k])] == 0)
+    assert ds.attrs["interpolate_bin"] == 5

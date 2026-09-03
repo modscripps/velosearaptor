@@ -2323,7 +2323,8 @@ class ProcessADCP:
         else:
             logger.info(f"Averaging ensembles {indices[0]} to {indices[-1]}")
         nens = len(indices)
-        ndgrid = len(self.dgrid)
+        transducer, zaxis = self._averaging_axis()
+        ndgrid = len(zaxis)
         uvwe = np.ma.zeros((nens, ndgrid, 4), dtype=np.float32)
         uvwe_std = np.ma.zeros((nens, ndgrid, 4), dtype=np.float32)
 
@@ -2363,10 +2364,13 @@ class ProcessADCP:
                 self._qc(ens)
                 max_e_applied[i] = ens.max_e_applied
                 self._to_enu(ens)  # transform to earth coords (east, north, up)
-                self._regrid_enu(ens)
-                self._regrid_amp(ens)
+                if not transducer:
+                    self._regrid_enu(ens)
+                    self._regrid_amp(ens)
 
-                nprofs = ens.enu_grid.shape[0]
+                # `ens.enu` and `ens.enu_grid` share their first axis,
+                # `ens.dday.size`, so this is the ping count in both frames.
+                nprofs = ens.enu.shape[0]
             else:
                 nprofs = 0
             npings[i] = nprofs
@@ -2424,46 +2428,71 @@ class ProcessADCP:
                 )
                 uvwe_inst[zi, :] = tmp
 
-            # Interpolate burst-average to universal depth grid.
-            uvwe_grid = interp1(depth, uvwe_inst, self.dgrid, axis=0, method="linear")
-            uvwe_std_grid = interp1(
-                depth, uvwe_std_inst, self.dgrid, axis=0, method="linear"
-            )
-            uvwe[i] = uvwe_grid
-            uvwe_std[i] = uvwe_std_grid
-
-            # One `interp1` call for all six counts together, pg, ngood and
-            # the four reason counts, the way `_regrid_enu_amp` interpolates
-            # velocity and amplitude in a single call. `interp1` takes a 2-D
-            # `y_old` and casts it to float64 internally.
-            #
-            # `np.floor` reproduces the truncation the old `.astype(np.int8)`
-            # and `.astype(np.int32)` performed on `pg` and `ngood`, so those
-            # two published values do not move. The four reason counts are
-            # new on this branch and had no prior `.astype` to preserve;
-            # `np.floor` here only keeps them integer-valued the same way.
-            # Drop it only as a deliberate change.
-            #
-            # Depths outside the instrument's profile come back masked. Fill
-            # them with NaN rather than casting them to 0, which would claim
-            # every ping at that depth was bad.
-            counts_inst = np.column_stack(
-                [pgi_inst, ngood_inst]
-                + [np.sum(ens[f"reason_{name}"], axis=0) for name in QC_CRITERIA]
-            )
-            counts_grid = np.floor(
-                np.ma.filled(
-                    interp1(depth, counts_inst, self.dgrid, axis=0, method="linear"),
-                    np.nan,
+            if transducer:
+                # The burst mean is already on the instrument's bins. This
+                # is the array the depth frame interpolates from, published
+                # unchanged (issue #129). `pg_limit` and `interpolate_bin`
+                # above have already acted on it.
+                uvwe[i] = uvwe_inst
+                uvwe_std[i] = uvwe_std_inst
+                # Ping counts per bin. No `np.floor` and no interpolation:
+                # these are the counts themselves, so the four rejection
+                # reasons partition the rejected pings exactly, as they do on
+                # `process_pings`.
+                pg[i] = pgi_inst
+                ngood[i] = ngood_inst
+                for name in QC_CRITERIA:
+                    nbad[name][i] = np.sum(ens[f"reason_{name}"], axis=0)
+                # Beams first, then the pings of the burst, the order
+                # `_regrid_amp` uses before it grids. `ens.amp` is uint8 and
+                # never masked on this path, `_binmap_all_beams` being
+                # reachable only from `process_pings`.
+                amp[i] = ens.amp.mean(axis=-1).mean(axis=0)
+            else:
+                # Interpolate burst-average to universal depth grid.
+                uvwe_grid = interp1(
+                    depth, uvwe_inst, self.dgrid, axis=0, method="linear"
                 )
-            )
-            pg[i] = counts_grid[:, 0]
-            ngood[i] = counts_grid[:, 1]
-            for j, name in enumerate(QC_CRITERIA):
-                nbad[name][i] = counts_grid[:, 2 + j]
+                uvwe_std_grid = interp1(
+                    depth, uvwe_std_inst, self.dgrid, axis=0, method="linear"
+                )
+                uvwe[i] = uvwe_grid
+                uvwe_std[i] = uvwe_std_grid
 
-            # Not changed to averaging in instrument-relative coordinates first.
-            amp[i] = ens.amp_grid.mean(axis=0)
+                # One `interp1` call for all six counts together, pg, ngood and
+                # the four reason counts, the way `_regrid_enu_amp` interpolates
+                # velocity and amplitude in a single call. `interp1` takes a 2-D
+                # `y_old` and casts it to float64 internally.
+                #
+                # `np.floor` reproduces the truncation the old `.astype(np.int8)`
+                # and `.astype(np.int32)` performed on `pg` and `ngood`, so those
+                # two published values do not move. The four reason counts are
+                # new on this branch and had no prior `.astype` to preserve;
+                # `np.floor` here only keeps them integer-valued the same way.
+                # Drop it only as a deliberate change.
+                #
+                # Depths outside the instrument's profile come back masked. Fill
+                # them with NaN rather than casting them to 0, which would claim
+                # every ping at that depth was bad.
+                counts_inst = np.column_stack(
+                    [pgi_inst, ngood_inst]
+                    + [np.sum(ens[f"reason_{name}"], axis=0) for name in QC_CRITERIA]
+                )
+                counts_grid = np.floor(
+                    np.ma.filled(
+                        interp1(
+                            depth, counts_inst, self.dgrid, axis=0, method="linear"
+                        ),
+                        np.nan,
+                    )
+                )
+                pg[i] = counts_grid[:, 0]
+                ngood[i] = counts_grid[:, 1]
+                for j, name in enumerate(QC_CRITERIA):
+                    nbad[name][i] = counts_grid[:, 2 + j]
+
+                # Not changed to averaging in instrument-relative coordinates first.
+                amp[i] = ens.amp_grid.mean(axis=0)
 
             pressure[i] = ens.pressure.mean()
             pressure_std[i] = ens.pressure.std()
@@ -2494,7 +2523,7 @@ class ProcessADCP:
             max_e_applied=max_e_applied,
             dday=dday,
             yearbase=self.yearbase,
-            dep=self.dgrid,
+            dep=zaxis,
             editparams=self.editparams,
             tgridparams=self.tgridparams,
             dgridparams=self.dgridparams,
