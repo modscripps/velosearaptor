@@ -1,6 +1,6 @@
 """The adaptive error velocity threshold must see the right samples (issue #100).
 
-`_edit` sets the applied threshold to `min(max_e, max_e_deviation * std(e))`.
+`_qc` sets the applied threshold to `min(max_e, max_e_deviation * std(e))`.
 Two things put the wrong samples into that standard deviation:
 
 1. `maskbins` was applied *after* `e.std()`, so bins the user declared bad set
@@ -8,20 +8,22 @@ Two things put the wrong samples into that standard deviation:
    bins are noisy their contribution pushes `max_e_deviation * std` past
    `max_e` and the adaptive criterion switches off entirely.
 
-2. In `process_pings`, `_edit` ran once per `ens_size` chunk, so the chunk size
+2. In `process_pings`, `_qc` ran once per `ens_size` chunk, so the chunk size
    was the window the standard deviation was estimated over. `ens_size` is
    documented as a memory knob; two people processing the same file with
    different values published different velocities.
 
 The threshold is now computed once over the whole record. `process_pings`
-applies the correlation and `maskbins` masks in the chunk loop and defers the
+raises the correlation and `maskbins` flags in the chunk loop and defers the
 error velocity test until every ping has been read.
 """
 
 import numpy as np
 import pytest
+from pycurrents.adcp.transform import rdi_xyz_enu
 from pycurrents.system import Bunch
 
+from velosearaptor import madcp
 from velosearaptor.madcp import ProcessADCP
 
 META_DATA = {
@@ -77,16 +79,18 @@ def test_masked_bins_do_not_set_the_error_velocity_threshold(adcpfile):
 
     ens = _two_population_ensemble(kept_sigma=0.01, masked_sigma=1.0, nbin=nbin)
     kept_e = ens.xyze[:, :half, 3].copy()
-    proc._edit(ens)
+    proc._qc(ens)
 
     # The noisy half alone would drive 2 * std past max_e and switch the
     # adaptive branch off, leaving the fixed 0.2.
     assert ens.max_e_applied == pytest.approx(2 * np.std(kept_e), rel=1e-6)
     assert ens.max_e_applied < proc.editparams.max_e
 
-    # The masked bins are still masked, and the threshold actually bit.
-    assert np.ma.getmaskarray(ens.xyze)[:, half:, :].all()
-    assert np.ma.getmaskarray(ens.xyze)[:, :half, :].any()
+    # The declared bins are rejected, and the threshold actually bit in the
+    # kept half.
+    assert np.asarray(ens.flag_maskbins)[:, half:].all()
+    assert not np.asarray(ens.valid)[:, half:].any()
+    assert np.asarray(ens.flag_max_e)[:, :half].any()
 
 
 def test_fixed_threshold_still_wins_when_the_data_are_noisy(adcpfile):
@@ -95,7 +99,7 @@ def test_fixed_threshold_still_wins_when_the_data_are_noisy(adcpfile):
     proc.parse_editparams({"max_e": 0.2, "max_e_deviation": 2, "min_correlation": 64})
 
     ens = _two_population_ensemble(kept_sigma=1.0, masked_sigma=1.0)
-    proc._edit(ens)
+    proc._qc(ens)
 
     assert ens.max_e_applied == proc.editparams.max_e
 
@@ -132,45 +136,56 @@ def test_max_e_applied_is_one_value_for_the_whole_record(adcpfile):
     assert np.unique(applied[np.isfinite(applied)]).size == 1
 
 
-def test_masking_before_rotation_equals_masking_after(adcpfile):
-    """Deferring the error velocity test past `_to_enu` has to be a no-op.
+def test_masking_after_rotation_equals_masking_before(adcpfile):
+    """The QC mask is applied to `enu` after the rotation, once.
 
-    The threshold is applied to `xyze` today and to the rotated `enu` after
-    this change, so the two have to agree: the error velocity must survive
-    `rdi_xyz_enu` untouched, and masking one cell of `xyze` must equal masking
-    all four components of the same cell of `enu`.
+    Editing writes nothing to `xyze`; `_to_enu` rotates and then masks every
+    cell `ens.valid` rejects, and `process_pings` narrows `valid` with the
+    record-wide error velocity flag and applies it again (issue #30). Both
+    have to equal masking `xyze` before the rotation, which is what the code
+    did until then: the error velocity must survive `rdi_xyz_enu` untouched,
+    and masking one cell of `xyze` must equal masking all four components of
+    the same cell of `enu`.
     """
     proc = ProcessADCP(adcpfile, META_DATA, magdec=0.0)
     ens = proc.m.read(start=0, stop=500)
     ens.dday = proc._correct_dday(ens.dday)
-    proc._edit_masks(ens)
+    proc._qc_flags(ens)
 
     xyze = ens.xyze.copy()
     proc._to_enu(ens)
     enu = ens.enu
 
-    # The error velocity is not rotated.
+    # The error velocity is not rotated. Compare the data, since `enu`
+    # carries the QC mask and `xyze` does not.
     assert np.array_equal(
-        np.ma.filled(xyze[..., 3], np.nan),
-        np.ma.filled(enu[..., 3], np.nan),
-        equal_nan=True,
+        np.ma.getdata(xyze[..., 3]), np.ma.getdata(enu[..., 3]), equal_nan=True
     )
 
-    over = np.abs(np.ma.filled(xyze[..., 3], 0.0)) > 0.13
-    assert over.sum() > 0
+    # A stand-in for the record-wide threshold narrowing `valid` after the
+    # loop in `process_pings`.
+    over = np.abs(np.ma.getdata(xyze[..., 3])) > 0.13
+    valid = np.asarray(ens.valid) & ~over
+    assert (~valid).sum() > (~np.asarray(ens.valid)).sum()
 
     before = xyze.copy()
-    before[over] = np.ma.masked
-    ens_before = Bunch(ens)
-    ens_before.xyze = before
-    proc._to_enu(ens_before)
+    before[~valid] = np.ma.masked
+    # The same attitude arguments `_to_enu` passes, on a copy masked by hand;
+    # it cannot be called here because it would apply the QC mask itself.
+    enu_before = rdi_xyz_enu(
+        before,
+        ens.heading + proc.magdec,
+        ens.pitch,
+        ens.roll,
+        orientation=proc.orientation,
+    )
 
     after = enu.copy()
-    after[over] = np.ma.masked
+    madcp._apply_qc(after, valid)
 
-    assert np.array_equal(np.ma.getmaskarray(ens_before.enu), np.ma.getmaskarray(after))
+    assert np.array_equal(np.ma.getmaskarray(enu_before), np.ma.getmaskarray(after))
     assert np.array_equal(
-        np.ma.filled(ens_before.enu, np.nan),
+        np.ma.filled(enu_before, np.nan),
         np.ma.filled(after, np.nan),
         equal_nan=True,
     )

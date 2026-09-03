@@ -6,11 +6,11 @@ of that: every criterion now produces a boolean flag, and the flags are
 carried on `ens` next to the masks they already produce.
 
 Nothing about the output changes, which is the property these tests exist to
-hold. The load-bearing assertion is that the mask each editing step adds is
-exactly the OR of the flags that step raised, on every configuration and every
-call, so the flags are a decomposition of the current behavior and not a
-second implementation of it. `tests/test_pinned_output.py` covers the other
-half, that the published numbers are untouched.
+hold. The criteria write nothing to `xyze`; the mask `_to_enu` applies to the
+rotated velocities is exactly the OR of the flags raised on the ensemble, on
+every configuration and every call, so the flags are what the mask is built
+from and not a second opinion about it. `tests/test_pinned_output.py` covers
+the other half, that the published numbers are untouched.
 
 The flags, in the order they are applied:
 
@@ -25,15 +25,15 @@ The flags, in the order they are applied:
 
 `flag_no_data` is the one editing does not cause. Binmapping cannot fill every
 cell of every beam and the instrument rejects beams on its own, so cells reach
-`_edit` already masked, and the three editing flags alone do not add up to the
-mask on `xyze`. Raising it makes `ens.valid`, the complement of the four,
-assertable against that mask, which is what lets percent good be counted from
-the flags instead of read back out of the damaged array (issue #30).
+`_qc_flags` already masked, and the three editing flags alone do not add up
+to the mask `_to_enu` applies. Raising it makes `ens.valid`, the complement of
+the four, the whole of that mask, which is what lets percent good be counted
+from the flags (issue #30).
 
 The lifecycle differs by path and that is the easiest thing to get wrong here.
-`average_ensembles` and `burst_average_ensembles` call `_edit`, so all three
+`average_ensembles` and `burst_average_ensembles` call `_qc`, so all three
 flags are raised together, once per ensemble. `process_pings` never calls
-`_edit`: it calls `_edit_masks` once per `ens_size` chunk and applies the error
+`_qc`: it calls `_qc_flags` once per `ens_size` chunk and applies the error
 velocity threshold once over the whole record after the loop (issue #100), so
 `flag_cor` and `flag_maskbins` are per chunk while `flag_max_e` is per record.
 Both call patterns are exercised below.
@@ -65,32 +65,46 @@ def _burst_proc(rootdir, **kwargs):
     return _proc(rootdir, BURST_FILE, tgridparams={"burst_average": True}, **kwargs)
 
 
-def _cell_mask(xyze):
-    """The mask of `xyze`, per cell.
+def _cell_mask(array):
+    """The mask of a four-component velocity array, per cell.
 
-    Every editing step masks all four components of a cell together, which
-    `test_editing_masks_whole_cells` pins, so any component gives the same
-    answer.
+    Reads component 0 on purpose. On `enu`, `_to_enu` masks all four
+    components of a rejected cell together, which
+    `test_to_enu_masks_every_component_from_valid` pins. On `xyze` the
+    components agree without `ibad`, which
+    `test_editing_leaves_the_xyze_mask_alone` pins on entry, and diverge
+    with it, where `beam_to_xyz` masks `e` everywhere; component 0 is the
+    one `flag_no_data` is asserted against either way.
     """
-    return np.ma.getmaskarray(xyze)[:, :, 0]
+    return np.ma.getmaskarray(array)[:, :, 0]
 
 
-def _record_edit(monkeypatch, method):
-    """Capture the cell mask before and after each call to `_edit`/`_edit_masks`.
+def _record_qc(monkeypatch, method):
+    """Capture the mask `xyze` carries into `method` and the mask `_to_enu`
+    leaves on `enu`.
 
-    Returns the list the records land in. Each is the mask before, the mask
-    after, and the ensemble, so a test can compare them against the flags the
-    call left behind.
+    Editing writes nothing to `xyze`. The flags it raises reach the
+    velocities when `_to_enu` applies `ens.valid` after the rotation, so
+    `before` is read off `xyze` on entry to `method` and `after` off `enu`
+    once `_to_enu` returns. Every path calls `_to_enu` on the ensemble
+    right after `method`, so the pairs line up. Returns the list the records
+    land in: the mask before, the mask after, and the ensemble.
     """
     calls = []
+    pending = {}
     original = getattr(ProcessADCP, method)
+    original_to_enu = ProcessADCP._to_enu
 
     def recorder(self, ens):
-        before = _cell_mask(ens.xyze).copy()
+        pending[id(ens)] = _cell_mask(ens.xyze).copy()
         original(self, ens)
-        calls.append((before, _cell_mask(ens.xyze).copy(), ens))
+
+    def to_enu_recorder(self, ens):
+        original_to_enu(self, ens)
+        calls.append((pending.pop(id(ens)), _cell_mask(ens.enu).copy(), ens))
 
     monkeypatch.setattr(ProcessADCP, method, recorder)
+    monkeypatch.setattr(ProcessADCP, "_to_enu", to_enu_recorder)
     return calls
 
 
@@ -113,13 +127,13 @@ CONFIGURATIONS = (
 )
 
 
-def _run(rootdir, monkeypatch, config, method="_edit_masks", **kwargs):
+def _run(rootdir, monkeypatch, config, method="_qc_flags", **kwargs):
     """Run one of the four pinned configurations, recording calls to `method`.
 
-    `_edit` calls `_edit_masks`, so recording the latter reaches every
-    configuration; recording the former reaches only the two averaging paths.
+    `_qc` calls `_qc_flags`. Recording `_qc_flags` reaches every
+    configuration; recording `_qc` reaches only the two averaging paths.
     """
-    calls = _record_edit(monkeypatch, method)
+    calls = _record_qc(monkeypatch, method)
     if config == "burst_average_ensembles":
         proc = _burst_proc(rootdir, **kwargs)
         proc.burst_average_ensembles()
@@ -137,11 +151,11 @@ def _run(rootdir, monkeypatch, config, method="_edit_masks", **kwargs):
 
 
 @pytest.mark.parametrize("burst", [False, True])
-def test_edit_flags_reproduce_the_mask_on_the_averaging_paths(
+def test_qc_flags_reproduce_the_mask_on_the_averaging_paths(
     rootdir, monkeypatch, burst
 ):
-    """Per ensemble, `_edit` masks exactly the cells its three flags raise."""
-    calls = _record_edit(monkeypatch, "_edit")
+    """Per ensemble, `_to_enu` masks exactly the cells the three `_qc` flags raise."""
+    calls = _record_qc(monkeypatch, "_qc")
     if burst:
         proc = _burst_proc(rootdir)
         proc.burst_average_ensembles()
@@ -149,7 +163,7 @@ def test_edit_flags_reproduce_the_mask_on_the_averaging_paths(
         proc = _proc(rootdir)
         proc.average_ensembles()
 
-    assert calls, "no ensemble reached _edit"
+    assert calls, "no ensemble reached _qc"
     for before, after, ens in calls:
         flags = _flags(ens, ("flag_cor", "flag_maskbins", "flag_max_e"))
         for flag in flags:
@@ -173,15 +187,15 @@ def test_edit_flags_reproduce_the_mask_on_the_averaging_paths(
 
 
 @pytest.mark.parametrize("binmap", [False, True])
-def test_edit_masks_flags_reproduce_the_chunk_mask_on_the_per_ping_path(
+def test_qc_flags_reproduce_the_chunk_mask_on_the_per_ping_path(
     rootdir, monkeypatch, binmap
 ):
     """`process_pings` runs the two beam-space criteria once per chunk."""
-    calls = _record_edit(monkeypatch, "_edit_masks")
+    calls = _record_qc(monkeypatch, "_qc_flags")
     proc = _proc(rootdir)
     proc.process_pings(binmap=binmap)
 
-    assert calls, "no chunk reached _edit_masks"
+    assert calls, "no chunk reached _qc_flags"
     for before, after, ens in calls:
         flags = _flags(ens, ("flag_cor", "flag_maskbins"))
         assert np.array_equal(after, before | _or(flags))
@@ -222,19 +236,115 @@ def test_the_record_threshold_flag_reproduces_the_mask_on_the_per_ping_path(
     assert np.array_equal(after, seen["before"] | seen["flag"])
 
 
-def test_editing_masks_whole_cells(rootdir, monkeypatch):
-    """Every criterion masks all four components together.
+@pytest.mark.parametrize("config", CONFIGURATIONS)
+def test_editing_leaves_the_xyze_mask_alone(rootdir, monkeypatch, config):
+    """The criteria raise flags and write nothing to `xyze` (issue #30).
 
-    `_cell_mask` above reads component 0 alone and the flags are per cell, so
-    the tests are only meaningful while this holds.
+    Editing used to mask `xyze` at three points and everything downstream
+    read that mask. The mask is now applied once, from `ens.valid`, when
+    `_to_enu` returns, so `xyze` leaves editing bitwise as it arrived.
     """
-    calls = _record_edit(monkeypatch, "_edit")
-    proc = _proc(rootdir)
-    proc.average_ensembles()
+    averaging = config in ("average_ensembles", "burst_average_ensembles")
+    method = "_qc" if averaging else "_qc_flags"
+    original = getattr(ProcessADCP, method)
+    unchanged = []
+    whole_cell = []
+    rejected_here = []
 
-    for _, _, ens in calls:
-        mask = np.ma.getmaskarray(ens.xyze)
-        assert np.array_equal(mask, mask[:, :, :1].repeat(mask.shape[-1], axis=-1))
+    def recorder(self, ens):
+        before = np.ma.getmaskarray(ens.xyze).copy()
+        whole_cell.append(
+            np.array_equal(before, before[..., :1].repeat(before.shape[-1], axis=-1))
+        )
+        original(self, ens)
+        unchanged.append(np.array_equal(np.ma.getmaskarray(ens.xyze), before))
+        # A cell editing rejected that was not masked on entry.
+        rejected_here.append(bool((~np.asarray(ens.valid) & ~before[..., 0]).any()))
+
+    monkeypatch.setattr(ProcessADCP, method, recorder)
+    if config == "burst_average_ensembles":
+        _burst_proc(rootdir).burst_average_ensembles()
+    elif config == "average_ensembles":
+        _proc(rootdir).average_ensembles()
+    else:
+        _proc(rootdir).process_pings(binmap=config.endswith("binmap"))
+
+    assert unchanged, f"no ensemble reached {method}"
+    assert all(unchanged)
+    # The four components carry one mask on entry, so `flag_no_data`, which
+    # is asserted against component 0, is also under the mask on `e` that
+    # the error velocity threshold sees. This restores the whole-cell
+    # assertion editing used to satisfy on `xyze`, on the configurations
+    # without `ibad`.
+    assert all(whole_cell)
+    # Otherwise the equality holds because editing rejected nothing.
+    assert any(rejected_here)
+
+
+@pytest.mark.parametrize("config", CONFIGURATIONS)
+def test_to_enu_masks_every_component_from_valid(rootdir, monkeypatch, config):
+    """`_to_enu` leaves `enu` masked exactly where `ens.valid` is False.
+
+    All four components together, so `_cell_mask` above can read component
+    0 alone. On the per-ping path `valid` carries the three beam-space
+    criteria at this point and the error velocity flag is applied to the
+    whole record after the loop, so the equality holds there too.
+
+    `rdi_xyz_enu` also masks `u` and `v` of any ping whose heading, pitch or
+    roll is masked, which `valid` does not record. Neither bundled file has
+    such a ping, so the equality is exact here.
+    """
+    seen = []
+    original = ProcessADCP._to_enu
+
+    def recorder(self, ens):
+        original(self, ens)
+        mask = np.ma.getmaskarray(ens.enu)
+        valid = np.asarray(ens.valid)
+        seen.append(all(np.array_equal(mask[..., k], ~valid) for k in range(4)))
+        seen.append((~valid).any())
+
+    monkeypatch.setattr(ProcessADCP, "_to_enu", recorder)
+    if config == "burst_average_ensembles":
+        _burst_proc(rootdir).burst_average_ensembles()
+    elif config == "average_ensembles":
+        _proc(rootdir).average_ensembles()
+    else:
+        _proc(rootdir).process_pings(binmap=config.endswith("binmap"))
+
+    assert seen, "no ensemble reached _to_enu"
+    assert all(seen[0::2])
+    # Otherwise the equality holds because nothing was rejected.
+    assert any(seen[1::2])
+
+
+def test_to_enu_under_ibad_masks_e_entirely_and_the_rest_from_valid(
+    rootdir, monkeypatch
+):
+    """With `ibad`, `beam_to_xyz` masks the error velocity everywhere.
+
+    A three-beam solution has no error velocity, so `e` arrives fully masked
+    and `_to_enu` can add nothing there. `u`, `v` and `w` are masked from
+    `valid` as without `ibad`. `ibad` is outside the four pinned
+    configurations, so nothing else here would see this.
+    """
+    seen = []
+    original = ProcessADCP._to_enu
+
+    def recorder(self, ens):
+        original(self, ens)
+        mask = np.ma.getmaskarray(ens.enu)
+        valid = np.asarray(ens.valid)
+        seen.append(
+            all(np.array_equal(mask[..., k], ~valid) for k in range(3))
+            and bool(mask[..., 3].all())
+        )
+
+    monkeypatch.setattr(ProcessADCP, "_to_enu", recorder)
+    _proc(rootdir, ibad=0).average_ensembles()
+
+    assert seen, "no ensemble reached _to_enu"
+    assert all(seen)
 
 
 # ------------------------------------------------------ the individual flags
@@ -246,7 +356,7 @@ def test_the_maskbins_flag_marks_the_declared_bins(rootdir, monkeypatch):
     Follows `test_adaptive_max_e.py`, which masks the same noisy bins of this
     file.
     """
-    calls = _record_edit(monkeypatch, "_edit")
+    calls = _record_qc(monkeypatch, "_qc")
     proc = _proc(rootdir)
     masked_bins = [4, 5]
     proc.editparams.maskbins = proc.generate_binmask(masked_bins)
@@ -268,7 +378,7 @@ def test_the_maskbins_flag_takes_bin_numbers_as_well_as_a_mask(rootdir, monkeypa
     masked_bins = [0, 7]
     flags = {}
     for form in ("mask", "numbers"):
-        calls = _record_edit(monkeypatch, "_edit")
+        calls = _record_qc(monkeypatch, "_qc")
         proc = _proc(rootdir)
         proc.editparams.maskbins = (
             proc.generate_binmask(masked_bins) if form == "mask" else masked_bins
@@ -287,7 +397,7 @@ def test_the_per_beam_correlation_flag_reduces_to_the_cell_flag(rootdir, monkeyp
     whole-cell rejection of issue #30 both need, and it is free here because
     the correlation test produces it before reducing.
     """
-    calls = _record_edit(monkeypatch, "_edit")
+    calls = _record_qc(monkeypatch, "_qc")
     proc = _proc(rootdir)
     proc.average_ensembles()
 
@@ -308,7 +418,7 @@ def test_the_cell_correlation_flag_ignores_ibad_beams(rootdir, monkeypatch):
     keeping the full beam axis.
     """
     ibad = 2
-    calls = _record_edit(monkeypatch, "_edit")
+    calls = _record_qc(monkeypatch, "_qc")
     proc = _proc(rootdir, ibad=ibad)
     proc.average_ensembles()
 
@@ -376,7 +486,7 @@ def test_the_no_data_cell_flag_ignores_ibad_beams(rootdir, monkeypatch):
 
 def test_the_threshold_flag_is_the_error_velocity_test(rootdir, monkeypatch):
     """`flag_max_e` marks the surviving cells above the applied threshold."""
-    calls = _record_edit(monkeypatch, "_edit")
+    calls = _record_qc(monkeypatch, "_qc")
     proc = _proc(rootdir)
     proc.average_ensembles()
 
@@ -414,6 +524,24 @@ def test_the_flag_helpers_take_their_parameters_explicitly():
     assert not madcp._max_e_flag(e, np.nan).any()
 
 
+def test_apply_qc_masks_every_component_of_an_invalid_cell():
+    """The one write the QC criteria make, in place and idempotent."""
+    enu = np.ma.asarray(np.ones((2, 3, 4)))
+    valid = np.array([[True, False, True], [True, True, False]])
+    madcp._apply_qc(enu, valid)
+    mask = np.ma.getmaskarray(enu)
+    for k in range(4):
+        assert np.array_equal(mask[..., k], ~valid)
+
+    # Narrowing `valid` and applying again adds the new cells and keeps the
+    # old ones, which is how `process_pings` applies the record-wide flag.
+    narrower = valid & np.array([[True, True, False], [True, True, True]])
+    madcp._apply_qc(enu, narrower)
+    mask = np.ma.getmaskarray(enu)
+    for k in range(4):
+        assert np.array_equal(mask[..., k], ~narrower)
+
+
 # ------------------------------------------------- percent good from the flags
 
 
@@ -434,7 +562,7 @@ def test_process_pings_percent_good_is_the_assembled_validity(rootdir, monkeypat
         return flag
 
     monkeypatch.setattr(madcp, "_max_e_flag", recorder)
-    calls = _record_edit(monkeypatch, "_edit_masks")
+    calls = _record_qc(monkeypatch, "_qc_flags")
     proc = _proc(rootdir)
     proc.process_pings(ens_size=500)
 
@@ -452,7 +580,7 @@ def test_burst_percent_good_is_the_validity_count(rootdir, monkeypatch):
     exact in bin space and the gridding of the count is unchanged (issue #30,
     decision of 2026-08-31).
     """
-    _, calls = _run(rootdir, monkeypatch, "burst_average_ensembles", method="_edit")
+    _, calls = _run(rootdir, monkeypatch, "burst_average_ensembles", method="_qc")
 
     counted = False
     for _, _, ens in calls:
@@ -470,7 +598,7 @@ def test_average_ensembles_percent_good_is_the_gridded_validity(rootdir, monkeyp
     gridding. Validity rides as one more column of the single `interp1` call
     in `_regrid_enu_amp`, so it costs no extra interpolation.
     """
-    _, calls = _run(rootdir, monkeypatch, "average_ensembles", method="_edit")
+    _, calls = _run(rootdir, monkeypatch, "average_ensembles", method="_qc")
 
     for _, _, ens in calls:
         valid_grid = np.asarray(ens.valid_grid)
@@ -490,7 +618,7 @@ def test_the_extra_columns_leave_the_regridding_alone(rootdir):
     """
     proc = _proc(rootdir)
     ens = proc.read_ensemble(0)
-    proc._edit(ens)
+    proc._qc(ens)
     proc._to_enu(ens)
     proc._regrid_enu_amp(ens)
 
@@ -509,7 +637,7 @@ def test_the_extra_columns_leave_the_regridding_alone(rootdir):
 
 
 def test_an_unreadable_chunk_is_zero_percent_good(rootdir, monkeypatch):
-    """Pings the reader cannot return never reach `_edit_masks`.
+    """Pings the reader cannot return never reach `_qc_flags`.
 
     Validity assembled from flags has no entry for them, so the array it
     assembles into starts False and they come out 0 % good. Reading `pg` back
@@ -553,14 +681,14 @@ def test_the_reasons_partition_the_rejected_cells(rootdir, monkeypatch, config):
     This is what lets the published counts sum to `nprofs - ngood`. The raw
     flags overlap, so publishing them directly would double-count.
     """
-    _, calls = _run(rootdir, monkeypatch, config, method="_edit")
+    _, calls = _run(rootdir, monkeypatch, config, method="_qc")
 
     for _, after, ens in calls:
         reasons = _reasons(ens)
         stacked = np.stack(reasons, axis=-1)
         # Disjoint: no cell carries two reasons.
         assert stacked.sum(axis=-1).max() <= 1
-        # Complete: their union is exactly the mask editing produced.
+        # Complete: their union is exactly the mask `_to_enu` applied.
         assert np.array_equal(_or(reasons), after)
         assert np.array_equal(_or(reasons), ~np.asarray(ens.valid))
 
@@ -626,7 +754,7 @@ def test_process_pings_publishes_the_reason_for_every_rejected_ping(
         return flag
 
     monkeypatch.setattr(madcp, "_max_e_flag", recorder)
-    calls = _record_edit(monkeypatch, "_edit_masks")
+    calls = _record_qc(monkeypatch, "_qc_flags")
     proc = _proc(rootdir)
     proc.process_pings(ens_size=500)
 
@@ -708,7 +836,7 @@ def test_burst_counts_partition_the_rejected_pings(rootdir, monkeypatch):
     Checked before the interpolation onto the depth grid, because `interp1`
     on a count is what smears it.
     """
-    _, calls = _run(rootdir, monkeypatch, "burst_average_ensembles", method="_edit")
+    _, calls = _run(rootdir, monkeypatch, "burst_average_ensembles", method="_qc")
 
     for _, _, ens in calls:
         counts = [
@@ -757,7 +885,7 @@ def test_every_invalid_grid_cell_on_the_profile_has_a_reason(rootdir, monkeypatc
     invalid for a ping precisely when at least one bracketing bin was, and
     its reason set is the union of those bins' reasons.
     """
-    _, calls = _run(rootdir, monkeypatch, "average_ensembles", method="_edit")
+    _, calls = _run(rootdir, monkeypatch, "average_ensembles", method="_qc")
 
     n_invalid = n_attributed = 0
     for _, _, ens in calls:
@@ -780,12 +908,12 @@ def test_average_ensembles_counts_are_the_gridded_reasons(rootdir, monkeypatch):
     the comparison below; without it a column swap involving that variable
     would pass unnoticed.
     """
-    calls = _record_edit(monkeypatch, "_edit")
+    calls = _record_qc(monkeypatch, "_qc")
     proc = _proc(rootdir)
     proc.editparams.maskbins = proc.generate_binmask([4, 5])
     proc.average_ensembles()
 
-    assert calls, "no ensemble reached _edit"
+    assert calls, "no ensemble reached _qc"
     for _, _, ens in calls:
         for name in madcp.QC_CRITERIA:
             grid = ens.reason_grid[name]
@@ -826,7 +954,7 @@ def test_burst_counts_match_their_named_reason_in_bin_space(rootdir, monkeypatch
         return original_interp1(*args, **kwargs)
 
     monkeypatch.setattr(madcp, "interp1", recorder)
-    _, calls = _run(rootdir, monkeypatch, "burst_average_ensembles", method="_edit")
+    _, calls = _run(rootdir, monkeypatch, "burst_average_ensembles", method="_qc")
 
     assert len(captured) == len(calls)
     for (_, _, ens), counts_inst in zip(calls, captured):
