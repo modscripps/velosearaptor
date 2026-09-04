@@ -44,15 +44,16 @@ averaging interval is written alongside it as a derived 2-D coordinate
 `ProcessADCP.process_pings` is always in this frame and does not average, so
 it publishes `z` and leaves the reconstruction to the reader.
 
-Beyond the axis, the frame changes the counts. `pg`, `ngood` and the four
-`nbad_*` counts become ping counts per bin, with no interpolation between
-the flags the criteria raised and the count, so the four rejection counts
-partition the rejected pings exactly. A bin's coverage becomes the coverage
-of the measurement itself and no longer depends on where the grid fell.
+The frame changes more than the axis. `ngood` and the four `nbad_*` counts
+become ping counts per bin and `pg` the percentage derived from `ngood`,
+with no interpolation between the flags the criteria raised and the count,
+so the four rejection counts partition the rejected pings exactly. A bin's
+coverage becomes the coverage of the measurement itself and no longer
+depends on where the grid fell. `dtop`, `dbot` and `d_interval` are not
+written, because nothing read them.
 
 `maskbins` and `interpolate_bin` are bin-referenced already and are
-unchanged, and `pg_limit` still screens the burst path. `dtop`, `dbot` and
-`d_interval` are not written, because nothing read them. Levels carrying no
+unchanged, and `pg_limit` still screens the burst path. Levels carrying no
 velocity anywhere in the record still leave the published axis, so `z` is a
 subset of `arange(NCells) * CellSize + Bin1Dist` and index k of `z` is not
 in general bin k.
