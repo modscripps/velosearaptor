@@ -2806,8 +2806,9 @@ class ProcessADCP:
         out = self._add_names_and_units(out)
         out = self._add_bin_depth_comment(out, frame)
         out = self._add_depth_offset_comments(out, depth_offset)
-        out = self._add_pg_comment(out, method)
-        out = self._add_nbad_comments(out, method)
+        out = self._add_pg_comment(out, method, frame)
+        out = self._add_nbad_comments(out, method, frame)
+        out = self._add_ngood_comment(out, method, frame)
         out = self._drop_absent_ancillary_variables(out)
 
         self.ds = out
@@ -2876,7 +2877,7 @@ class ProcessADCP:
     # `_add_names_and_units` assigns it wholesale, so it cannot be stored
     # per path.
     _PG_COMMENTS: ClassVar[dict] = {
-        "process_pings": (
+        ("process_pings", "transducer"): (
             "Fraction of pings with a valid velocity at this bin, computed "
             "per ping by `process_pings`. It is binary, 0 or 100: 100 means "
             "the ping survived editing at this bin, 0 means it was edited "
@@ -2886,7 +2887,7 @@ class ProcessADCP:
             "they choose differently; with no averaging window there is "
             "nothing to choose here."
         ),
-        "average_ensembles": (
+        ("average_ensembles", "depth"): (
             "Fraction of the pings in each averaging interval with a valid "
             "velocity at this grid depth, computed by `average_ensembles` "
             "after every ping was interpolated onto the universal depth "
@@ -2903,7 +2904,7 @@ class ProcessADCP:
             "of the interval counts those pings as bad. `ngood` carries the "
             "sample count this is derived from."
         ),
-        "burst_average_ensembles": (
+        ("burst_average_ensembles", "depth"): (
             "Fraction of the pings in each burst with a valid velocity at "
             "this bin, computed by `burst_average_ensembles` on "
             "instrument-relative bins and then interpolated onto the "
@@ -2920,6 +2921,30 @@ class ProcessADCP:
             "bin stays visible in the product. `ngood` carries the sample "
             "count this is derived from."
         ),
+        ("average_ensembles", "transducer"): (
+            "Fraction of the pings in each averaging interval with a valid "
+            "velocity at this bin, computed by `average_ensembles` on the "
+            "instrument's own bins. Nothing was interpolated between the "
+            "flags the editing criteria raised and this count, so it is a "
+            "ping count per bin and not a count on a grid the pings were "
+            "moved onto. It therefore does not absorb mooring knockdown, "
+            "and it is not widened by `interp1` the way the depth-gridded "
+            "counterpart of this path is; both of those are properties of "
+            "the depth grid, not of the measurement. `ngood` carries the "
+            "sample count this is derived from."
+        ),
+        ("burst_average_ensembles", "transducer"): (
+            "Fraction of the pings in each burst with a valid velocity at "
+            "this bin, computed by `burst_average_ensembles` on the "
+            "instrument's own bins and published there. On the depth grid "
+            "this same count is interpolated and floored, and reads as a "
+            "fraction at a grid depth; here it is the ping count itself, so "
+            "`pg` below the `pg_limit` attribute and a masked velocity are "
+            "the same condition, which they are not on the grid. A bin "
+            "filled in by `interpolate_bin` keeps its own value of 0, so an "
+            "interpolated bin stays visible in the product. `ngood` carries "
+            "the sample count this is derived from."
+        ),
     }
 
     _PG_RDI_NOTE = (
@@ -2930,12 +2955,13 @@ class ProcessADCP:
     )
 
     @classmethod
-    def _add_pg_comment(cls, ds, method):
+    def _add_pg_comment(cls, ds, method, frame):
         """Say which of the three quantities called `pg` this one is."""
-        if "pg" not in ds.variables or method not in cls._PG_COMMENTS:
+        key = (method, frame)
+        if "pg" not in ds.variables or key not in cls._PG_COMMENTS:
             return ds
         attrs = dict(ds.pg.attrs)
-        attrs["comment"] = f"{cls._PG_COMMENTS[method]} {cls._PG_RDI_NOTE}"
+        attrs["comment"] = f"{cls._PG_COMMENTS[key]} {cls._PG_RDI_NOTE}"
         ds["pg"].attrs = attrs
         return ds
 
@@ -2952,7 +2978,7 @@ class ProcessADCP:
         "29% of everything the correlation test reports there."
     )
     _NBAD_COMMENTS: ClassVar[dict] = {
-        "process_pings": (
+        ("process_pings", "transducer"): (
             "Whether this criterion rejected the ping at this bin, 0 or 1, "
             "computed per ping by `process_pings`. The four sum to 1 where "
             "pg is 0 and to 0 where pg is 100. A bin declared bad through "
@@ -2960,7 +2986,7 @@ class ProcessADCP:
             "level leaves the published depth axis and `nbad_maskbins` "
             "reads 0 on this path."
         ),
-        "average_ensembles": (
+        ("average_ensembles", "depth"): (
             "Number of pings in each averaging interval that this criterion "
             "rejected at this grid depth, computed by `average_ensembles` "
             "after every ping was interpolated onto the universal depth "
@@ -2972,7 +2998,7 @@ class ProcessADCP:
             "means the depth bin lies outside the instrument's profile and "
             "nothing was measured there."
         ),
-        "burst_average_ensembles": (
+        ("burst_average_ensembles", "depth"): (
             "Number of pings in each burst that this criterion rejected at "
             "this bin, computed by `burst_average_ensembles` on the "
             "instrument bins and then interpolated onto the depth grid, the "
@@ -2985,20 +3011,81 @@ class ProcessADCP:
             "nothing was measured there. An interpolated bin keeps its own "
             "counts, so the interpolation stays visible."
         ),
+        ("average_ensembles", "transducer"): (
+            "Number of pings in each averaging interval that this criterion "
+            "rejected at this bin, computed by `average_ensembles` on the "
+            "instrument's own bins. Nothing was interpolated between the "
+            "flags and the counts, so the four partition the rejected pings "
+            "exactly and cannot sum above the number rejected, which they "
+            "can on the depth grid where a cell is fed by two bins. NaN "
+            "means the averaging interval carried fewer than two pings and "
+            "nothing was averaged."
+        ),
+        ("burst_average_ensembles", "transducer"): (
+            "Number of pings in each burst that this criterion rejected at "
+            "this bin, computed by `burst_average_ensembles` on the "
+            "instrument's own bins and published there. The four sum "
+            "exactly to the number of rejected pings, which they do not "
+            "after the interpolation and independent flooring the depth "
+            "grid needs. NaN means the burst carried fewer than two pings "
+            "and nothing was averaged. An interpolated bin keeps its own "
+            "counts, so the interpolation stays visible."
+        ),
     }
 
     @classmethod
-    def _add_nbad_comments(cls, ds, method):
+    def _add_nbad_comments(cls, ds, method, frame):
         """Say what one rejection count means on this path."""
-        if method not in cls._NBAD_COMMENTS:
+        key = (method, frame)
+        if key not in cls._NBAD_COMMENTS:
             return ds
         for name in QC_CRITERIA:
             var = f"nbad_{name}"
             if var not in ds.variables:
                 continue
             attrs = dict(ds[var].attrs)
-            attrs["comment"] = f"{cls._NBAD_COMMENTS[method]} {cls._NBAD_SHARED}"
+            attrs["comment"] = f"{cls._NBAD_COMMENTS[key]} {cls._NBAD_SHARED}"
             ds[var].attrs = attrs
+        return ds
+
+    # `ngood` is the one count that carries a static comment in
+    # `io.cf_conventions`, and that comment says NaN means the depth bin
+    # lies outside the instrument's profile. On the bin axis there is no
+    # off-profile cell, so the sentence has to be replaced rather than
+    # appended to (issue #129). Only the transducer frame is registered
+    # here; in the depth frame the static text stands.
+    _NGOOD_COMMENTS: ClassVar[dict] = {
+        ("average_ensembles", "transducer"): (
+            "Number of pings per instrument bin that passed editing and "
+            "entered the time average, counted by `average_ensembles` on "
+            "the bins themselves. The basis for pg and for the velocity "
+            "standard errors. Zero means no ping survived editing. NaN "
+            "means the averaging interval carried fewer than two pings and "
+            "nothing was averaged; unlike the depth-gridded product of this "
+            "path, every cell here lies within the instrument's profile."
+        ),
+        ("burst_average_ensembles", "transducer"): (
+            "Number of pings per instrument bin that passed editing and "
+            "entered the burst average, counted by "
+            "`burst_average_ensembles` on the bins themselves and published "
+            "there rather than interpolated onto a depth grid. The basis "
+            "for pg and for the velocity standard errors. Zero means no "
+            "ping survived editing. NaN means the burst carried fewer than "
+            "two pings and nothing was averaged; unlike the depth-gridded "
+            "product of this path, every cell here lies within the "
+            "instrument's profile."
+        ),
+    }
+
+    @classmethod
+    def _add_ngood_comment(cls, ds, method, frame):
+        """Replace the off-profile sentence where there is no off-profile."""
+        key = (method, frame)
+        if "ngood" not in ds.variables or key not in cls._NGOOD_COMMENTS:
+            return ds
+        attrs = dict(ds.ngood.attrs)
+        attrs["comment"] = cls._NGOOD_COMMENTS[key]
+        ds["ngood"].attrs = attrs
         return ds
 
     @staticmethod

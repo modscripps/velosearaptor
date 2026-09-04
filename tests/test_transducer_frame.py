@@ -372,3 +372,39 @@ def test_bin_depth_survives_a_netcdf_round_trip(rootdir, tmp_path):
     assert "depth" in back.coords
     assert back.depth.dims == ("z", "time")
     np.testing.assert_array_equal(back.depth.values, proc.ds.depth.values)
+
+
+# --- provenance comments ------------------------------------------------
+
+
+@pytest.mark.parametrize("var", ["pg", "ngood", "nbad_cor"])
+def test_counts_say_they_are_ping_counts_on_the_bin_axis(rootdir, var):
+    """The count comments are frame-dependent, not only path-dependent."""
+    plain = _proc(rootdir, UPLOOKER)
+    plain.average_ensembles()
+    shifted = _proc(rootdir, UPLOOKER)
+    shifted.average_ensembles(vertical_frame="transducer")
+
+    assert plain.ds[var].attrs["comment"] != shifted.ds[var].attrs["comment"]
+    assert "average_ensembles" in shifted.ds[var].attrs["comment"]
+
+
+def test_ngood_does_not_claim_an_off_profile_nan_on_the_bin_axis(rootdir):
+    """`io.cf_conventions` gives `ngood` a static off-profile sentence.
+
+    There is no off-profile cell on the bin axis, so that sentence has to be
+    replaced rather than appended to.
+    """
+    proc = _proc(rootdir, UPLOOKER)
+    proc.average_ensembles(vertical_frame="transducer")
+    comment = proc.ds.ngood.attrs["comment"]
+    assert "outside the instrument's profile" not in comment
+
+
+def test_z_attributes_describe_both_averaging_frames(rootdir):
+    """The `z` comment used to say the averaging methods always regrid."""
+    proc = _proc(rootdir, UPLOOKER)
+    proc.average_ensembles(vertical_frame="transducer")
+    comment = proc.ds.z.attrs["comment"]
+    assert "average_ensembles" in comment
+    assert "burst_average_ensembles" in comment
