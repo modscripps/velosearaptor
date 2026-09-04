@@ -27,6 +27,36 @@ Long Ranger ADCPs Commands and Output Data Format*:
 > profiling mode (WM), the blank after transmit distance (WF), and speed of
 > sound.
 
+#### Vertical Frame
+Two vertical coordinates are possible and the output attribute
+`vertical_frame` records which one a file carries.
+
+`depth` is the default for `ProcessADCP.average_ensembles` and
+`ProcessADCP.burst_average_ensembles`. Every ping is interpolated onto the
+universal depth grid built from `dgridparams` before anything is averaged,
+and the vertical coordinate is water depth.
+
+`transducer` skips that interpolation. The vertical coordinate is the
+instrument's own `dep` above, published as `z`, and the bin depth of each
+averaging interval is written alongside it as a derived 2-D coordinate
+`depth(z, time)`, equal to `xducer_depth` plus `z` for a downlooker and
+`xducer_depth` minus `z` for an uplooker.
+`ProcessADCP.process_pings` is always in this frame and does not average, so
+it publishes `z` and leaves the reconstruction to the reader.
+
+Beyond the axis, the frame changes the counts. `pg`, `ngood` and the four
+`nbad_*` counts become ping counts per bin, with no interpolation between
+the flags the criteria raised and the count, so the four rejection counts
+partition the rejected pings exactly. A bin's coverage becomes the coverage
+of the measurement itself and no longer depends on where the grid fell.
+
+`maskbins` and `interpolate_bin` are bin-referenced already and are
+unchanged, and `pg_limit` still screens the burst path. `dtop`, `dbot` and
+`d_interval` are not written, because nothing read them. Levels carrying no
+velocity anywhere in the record still leave the published axis, so `z` is a
+subset of `arange(NCells) * CellSize + Bin1Dist` and index k of `z` is not
+in general bin k.
+
 #### Quality Control
 Four criteria reject cells before anything is averaged, in this order.
 Each is controlled by an entry of `editparams` (see `ProcessADCP`), and
@@ -454,6 +484,12 @@ class ProcessADCP:
     - `dinterval` : Vertical grid size in m. Defaults to 5m.
 
     Values for `dbot` and `dtop` are generated if not provided.
+
+    The depth grid is used only in the default vertical frame. Pass
+    `vertical_frame="transducer"` to `average_ensembles` or
+    `burst_average_ensembles` to keep the instrument's own bins instead, in
+    which case `dgridparams` governs nothing. See the "Vertical Frame"
+    section of the module notes.
 
     **Editing parameters**
     Provide editing parameters via `editparams`. Setting an entry to `None`

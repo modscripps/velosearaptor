@@ -353,9 +353,7 @@ def test_depth_offset_moves_the_depths_and_not_the_axis(rootdir):
     np.testing.assert_allclose(
         shifted.ds.xducer_depth.values, plain.ds.xducer_depth.values + offset
     )
-    np.testing.assert_allclose(
-        shifted.ds.depth.values, plain.ds.depth.values + offset
-    )
+    np.testing.assert_allclose(shifted.ds.depth.values, plain.ds.depth.values + offset)
     assert shifted.ds.attrs["depth_offset"] == offset
 
 
@@ -432,3 +430,34 @@ def test_z_attributes_describe_both_averaging_frames(rootdir):
     assert "burst_average_ensembles" in comment
     assert "by default" in comment
     assert "derived two-dimensional coordinate" in comment
+
+
+# --- the empty-bin drop -------------------------------------------------
+
+
+def test_a_masked_bin_leaves_the_bin_axis(rootdir):
+    """`has_velocity` drops empty levels in every frame, this one included.
+
+    So the published `z` is a subset of the instrument's range vector, not
+    all of it, and a reader must not assume that index k of `z` is bin k.
+    `z` is published explicitly, so nothing is silently renumbered, and
+    `maskbins` in the attributes says which bins were declared bad.
+    """
+    control = _proc(rootdir, UPLOOKER)
+    control.average_ensembles(vertical_frame="transducer")
+
+    proc = _proc(rootdir, UPLOOKER, editparams={"maskbins": [3]})
+    proc.average_ensembles(vertical_frame="transducer")
+    ds = proc.ds
+
+    # Against a control rather than against the full bin count, so the test
+    # asserts that masking bin 3 removes bin 3 and nothing else, without
+    # assuming bin 3 is the only bin this file leaves empty.
+    masked_out = proc.tsdat.dep[3]
+    assert masked_out in control.ds.z.values
+    assert masked_out not in ds.z.values
+    np.testing.assert_array_equal(
+        ds.z.values, control.ds.z.values[control.ds.z.values != masked_out]
+    )
+    assert np.all(np.isin(ds.z.values, proc.tsdat.dep))
+    np.testing.assert_array_equal(ds.attrs["maskbins"], [3])
