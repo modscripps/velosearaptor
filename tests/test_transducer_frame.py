@@ -389,6 +389,20 @@ def test_counts_say_they_are_ping_counts_on_the_bin_axis(rootdir, var):
     assert "average_ensembles" in shifted.ds[var].attrs["comment"]
 
 
+@pytest.mark.parametrize("var", ["pg", "ngood", "nbad_cor"])
+def test_burst_counts_say_they_are_ping_counts_on_the_bin_axis(rootdir, var):
+    """The same is true on the burst path, and its comments are registered
+    separately from `average_ensembles`, under their own
+    `("burst_average_ensembles", "transducer")` key."""
+    plain = _burst(rootdir)
+    plain.burst_average_ensembles()
+    shifted = _burst(rootdir)
+    shifted.burst_average_ensembles(vertical_frame="transducer")
+
+    assert plain.ds[var].attrs["comment"] != shifted.ds[var].attrs["comment"]
+    assert "burst_average_ensembles" in shifted.ds[var].attrs["comment"]
+
+
 def test_ngood_does_not_claim_an_off_profile_nan_on_the_bin_axis(rootdir):
     """`io.cf_conventions` gives `ngood` a static off-profile sentence.
 
@@ -402,9 +416,19 @@ def test_ngood_does_not_claim_an_off_profile_nan_on_the_bin_axis(rootdir):
 
 
 def test_z_attributes_describe_both_averaging_frames(rootdir):
-    """The `z` comment used to say the averaging methods always regrid."""
+    """The `z` comment used to say the averaging methods always regrid.
+
+    The old text claimed flatly that the averaging methods "regrid onto
+    water depth and publish that as their vertical coordinate". The
+    rewrite qualifies that as the default and adds that the transducer
+    frame keeps this axis and derives a two-dimensional bin-depth
+    coordinate instead, so pin substance the old text did not have rather
+    than method names it already mentioned.
+    """
     proc = _proc(rootdir, UPLOOKER)
     proc.average_ensembles(vertical_frame="transducer")
     comment = proc.ds.z.attrs["comment"]
     assert "average_ensembles" in comment
     assert "burst_average_ensembles" in comment
+    assert "by default" in comment
+    assert "derived two-dimensional coordinate" in comment
