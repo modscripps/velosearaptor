@@ -27,6 +27,37 @@ Long Ranger ADCPs Commands and Output Data Format*:
 > profiling mode (WM), the blank after transmit distance (WF), and speed of
 > sound.
 
+#### Vertical Frame
+Two vertical coordinates are possible and the output attribute
+`vertical_frame` records which one a file carries.
+
+`depth` is the default for `ProcessADCP.average_ensembles` and
+`ProcessADCP.burst_average_ensembles`. Every ping is interpolated onto the
+universal depth grid built from `dgridparams` before anything is averaged,
+and the vertical coordinate is water depth.
+
+`transducer` skips that interpolation. The vertical coordinate is the
+instrument's own `dep` above, published as `z`, and the bin depth of each
+averaging interval is written alongside it as a derived 2-D coordinate
+`depth(z, time)`, equal to `xducer_depth` plus `z` for a downlooker and
+`xducer_depth` minus `z` for an uplooker.
+`ProcessADCP.process_pings` is always in this frame and does not average, so
+it publishes `z` and leaves the reconstruction to the reader.
+
+The frame changes more than the axis. `ngood` and the four `nbad_*` counts
+become ping counts per bin and `pg` the percentage derived from `ngood`,
+with no interpolation between the flags the criteria raised and the count,
+so the four rejection counts partition the rejected pings exactly. A bin's
+coverage becomes the coverage of the measurement itself and no longer
+depends on where the grid fell. `dtop`, `dbot` and `d_interval` are not
+written, because nothing read them.
+
+`maskbins` and `interpolate_bin` are bin-referenced already and are
+unchanged, and `pg_limit` still screens the burst path. Levels carrying no
+velocity anywhere in the record still leave the published axis, so `z` is a
+subset of `arange(NCells) * CellSize + Bin1Dist` and index k of `z` is not
+in general bin k.
+
 #### Quality Control
 Four criteria reject cells before anything is averaged, in this order.
 Each is controlled by an entry of `editparams` (see `ProcessADCP`), and
@@ -268,6 +299,29 @@ def _apply_qc(enu, valid):
     enu[~valid] = np.ma.masked
 
 
+# The two vertical frames a processed file can be published in. "depth" is
+# water depth on the universal grid built from `dgridparams`; "transducer"
+# is the instrument's own bin axis, the distance from the transducer to the
+# center of each bin, published as `z` (issue #129).
+VERTICAL_FRAMES = ("depth", "transducer")
+
+
+def _parse_vertical_frame(vertical_frame):
+    """Validate the vertical frame asked of an averaging method.
+
+    Raises rather than falling back. A typo that quietly gridded onto depth
+    would publish a product in the frame the caller did not ask for, and the
+    `vertical_frame` attribute would agree with the product rather than with
+    the request, so nothing in the file would show the mistake.
+    """
+    if vertical_frame not in VERTICAL_FRAMES:
+        raise ValueError(
+            f"vertical_frame={vertical_frame!r} is not a vertical frame. "
+            f"Choose one of {VERTICAL_FRAMES}."
+        )
+    return vertical_frame
+
+
 class ProcessADCP:
     """Moored ADCP Processing.
 
@@ -431,6 +485,12 @@ class ProcessADCP:
     - `dinterval` : Vertical grid size in m. Defaults to 5m.
 
     Values for `dbot` and `dtop` are generated if not provided.
+
+    The depth grid is used only in the default vertical frame. Pass
+    `vertical_frame="transducer"` to `average_ensembles` or
+    `burst_average_ensembles` to keep the instrument's own bins instead, in
+    which case `dgridparams` governs nothing. See the "Vertical Frame"
+    section of the module notes.
 
     **Editing parameters**
     Provide editing parameters via `editparams`. Setting an entry to `None`
@@ -1562,6 +1622,26 @@ class ProcessADCP:
             depth = ens.depth
         return depth
 
+    def _averaging_axis(self):
+        """The vertical axis an averaging run accumulates on.
+
+        In the depth frame that is the universal grid built from
+        `dgridparams`, and every ping is interpolated onto it. In the
+        transducer frame it is the instrument's own range vector,
+        `arange(NCells) * CellSize + Bin1Dist`, constant for the deployment,
+        and nothing is interpolated onto it at all (issue #129).
+
+        Returns
+        -------
+        transducer : bool
+            Whether this run is in the transducer frame.
+        zaxis : array-like
+            The vertical coordinate to publish.
+
+        """
+        transducer = getattr(self, "_vertical_frame", "depth") == "transducer"
+        return transducer, self.tsdat.dep if transducer else self.dgrid
+
     def _regrid_enu(self, ens, method="linear"):
         """Depth-grid enu velocities."""
         shape = (ens.dday.size, self.dgrid.size, ens.enu.shape[-1])
@@ -1996,7 +2076,15 @@ class ProcessADCP:
             # npings=npings,
             dday=dday,
             yearbase=self.yearbase,
-            dep=ens.dep,  # <<<<----- BAD!!! This a fudge because I don't want to calculated a depth vector. We use the depth vector from the last ensemble.
+            # The transducer-relative range vector,
+            # `arange(NCells) * CellSize + Bin1Dist`. `pycurrents` rebuilds
+            # it from file-level attributes on every read, so every ensemble
+            # returns the same values and this is the array `ens.dep` held.
+            # Taken from the auxiliary data rather than from the loop
+            # variable, which is None when the reader cannot return the last
+            # chunk, where `ens.dep` raised. `_ave2nc` renames this axis
+            # to `z`.
+            dep=self.tsdat.dep,
             editparams=self.editparams,
             tgridparams=self.tgridparams,
             # dgridparams=self.dgridparams,
@@ -2006,11 +2094,16 @@ class ProcessADCP:
         )
 
         self._processing_method = "process_pings"
+        # This path does not regrid and never has, so its axis is the
+        # distance from the transducer (issue #96). Recorded so that
+        # `_ave2nc` can key the axis handling on the frame rather than on
+        # which method ran (issue #129).
+        self._vertical_frame = "transducer"
         self._ave2nc()
         self._add_meta_data_to_ds()
         self._log_processing_params()
 
-    def average_ensembles(self, start=None, stop=None):
+    def average_ensembles(self, start=None, stop=None, vertical_frame="depth"):
         """Time-averaging.
 
         Adds results as dictionary under `ave` and as `xarray.Dataset` under `ds`.
@@ -2025,8 +2118,18 @@ class ProcessADCP:
         stop : int
             Range start for averaging. Index into start times of averaging
             intervals.
+        vertical_frame : {"depth", "transducer"}, optional
+            Vertical coordinate of the output. "depth" (the default)
+            interpolates every ping onto the universal depth grid built from
+            `dgridparams` and publishes water depth as `depth`. "transducer"
+            skips that interpolation and keeps the instrument's own bins,
+            publishing the distance from the transducer as `z` and the bin
+            depth of each averaging interval as a derived 2-D coordinate
+            `depth(z, time)`. See the "Vertical Frame" section of the module
+            notes.
 
         """
+        self._vertical_frame = _parse_vertical_frame(vertical_frame)
 
         nens_orig = len(self.start_ddays)
         indices_orig = np.arange(nens_orig)
@@ -2036,7 +2139,8 @@ class ProcessADCP:
         else:
             logger.info(f"Averaging ensembles {indices[0]} to {indices[-1]}")
         nens = len(indices)
-        ndgrid = len(self.dgrid)
+        transducer, zaxis = self._averaging_axis()
+        ndgrid = len(zaxis)
         uvwe = np.full((nens, ndgrid, 4), np.nan, dtype=np.float32)
         uvwe_std = np.full((nens, ndgrid, 4), np.nan, dtype=np.float32)
 
@@ -2063,9 +2167,28 @@ class ProcessADCP:
                 self._qc(ens)
                 max_e_applied[i] = ens.max_e_applied
                 self._to_enu(ens)  # transform to earth coords (east, north, up)
-                self._regrid_enu_amp(ens)
+                if transducer:
+                    # Filled to NaN, not handed over as a masked array. The
+                    # data under the mask of `ens.enu` is the raw -32768
+                    # fill rotated into earth coordinates, a finite number,
+                    # because `numpy.ma` only flips mask bits. `np.nanmean`
+                    # below reads `np.isnan` and no mask, so averaging
+                    # `ens.enu` itself would put every cell the QC criteria
+                    # rejected back into the published velocity, silently and
+                    # with nothing NaN to show for it. `_regrid_enu_amp`
+                    # fills for the same reason on the depth frame.
+                    enu = np.ma.filled(ens.enu, np.nan)
+                    amp_bins = np.ma.filled(ens.amp.mean(axis=-1), np.nan)
+                    valid = ens.valid
+                    reason = {n: ens[f"reason_{n}"] for n in QC_CRITERIA}
+                else:
+                    self._regrid_enu_amp(ens)
+                    enu = ens.enu_grid
+                    amp_bins = ens.amp_grid
+                    valid = ens.valid_grid
+                    reason = ens.reason_grid
 
-                nprofs = ens.enu_grid.shape[0]
+                nprofs = enu.shape[0]
             else:
                 nprofs = 0
             npings[i] = nprofs
@@ -2073,17 +2196,19 @@ class ProcessADCP:
                 continue
 
             with np.errstate(all="ignore"):
-                uvwe[i] = np.nanmean(ens.enu_grid, axis=0)
-                uvwe_std[i] = np.nanstd(ens.enu_grid, axis=0)
-                amp[i] = np.nanmean(ens.amp_grid, axis=0)
+                uvwe[i] = np.nanmean(enu, axis=0)
+                uvwe_std[i] = np.nanstd(enu, axis=0)
+                amp[i] = np.nanmean(amp_bins, axis=0)
 
-            # Counted from the validity gridded alongside the velocities in
-            # `_regrid_enu_amp`, not from what came back finite there
-            # (issue #30). The two are the same array; the count is built
-            # from the flags, which is what the mask is built from too.
-            ngood[i] = np.sum(ens.valid_grid, axis=0)
+            # Counted from the validity that rode alongside the velocities,
+            # not from what came back finite (issue #30). On the depth grid
+            # that validity was interpolated in `_regrid_enu_amp`; on the
+            # bin axis it is the flag itself, so the count is a ping count
+            # per bin and the four rejection reasons partition it exactly
+            # (issue #129).
+            ngood[i] = np.sum(valid, axis=0)
             for name in QC_CRITERIA:
-                nbad[name][i] = np.sum(ens.reason_grid[name], axis=0)
+                nbad[name][i] = np.sum(reason[name], axis=0)
             # Widen before multiplying: ngood is int32 storage, and
             # 100 * ngood wraps once ngood > 21474836, which would turn the
             # best bins negative (issue #94). ngood itself is int32 rather than
@@ -2124,7 +2249,7 @@ class ProcessADCP:
             max_e_applied=max_e_applied,
             dday=dday,
             yearbase=self.yearbase,
-            dep=self.dgrid,
+            dep=zaxis,
             editparams=self.editparams,
             tgridparams=self.tgridparams,
             dgridparams=self.dgridparams,
@@ -2183,7 +2308,9 @@ class ProcessADCP:
             )
         return neighbors
 
-    def burst_average_ensembles(self, start=None, stop=None, interpolate_bin=None):
+    def burst_average_ensembles(
+        self, start=None, stop=None, interpolate_bin=None, vertical_frame="depth"
+    ):
         """Time-averaging prior to depth-gridding.
 
         Uses pre-defined editing parameters that can be updated with
@@ -2208,8 +2335,19 @@ class ProcessADCP:
             The interpolated bin keeps its own `pg` and `ngood`, which is zero
             for a masked bin, so the interpolation stays visible in the output.
             Defaults to None (no interpolation).
+        vertical_frame : {"depth", "transducer"}, optional
+            Vertical coordinate of the output. "depth" (the default)
+            interpolates every ping onto the universal depth grid built from
+            `dgridparams` and publishes water depth as `depth`. "transducer"
+            skips that interpolation and keeps the instrument's own bins,
+            publishing the distance from the transducer as `z` and the bin
+            depth of each averaging interval as a derived 2-D coordinate
+            `depth(z, time)`. See the "Vertical Frame" section of the module
+            notes.
 
         """
+        self._vertical_frame = _parse_vertical_frame(vertical_frame)
+
         pg_condition = self.editparams.pg_limit
         # Kept for the output attributes: an interpolated bin is not measured
         # data, so which bin was filled in has to be recoverable from the file.
@@ -2222,24 +2360,30 @@ class ProcessADCP:
         else:
             logger.info(f"Averaging ensembles {indices[0]} to {indices[-1]}")
         nens = len(indices)
-        ndgrid = len(self.dgrid)
+        transducer, zaxis = self._averaging_axis()
+        ndgrid = len(zaxis)
         uvwe = np.ma.zeros((nens, ndgrid, 4), dtype=np.float32)
         uvwe_std = np.ma.zeros((nens, ndgrid, 4), dtype=np.float32)
 
-        # `pg` and `ngood` are float and start at NaN so that a grid cell the
-        # instrument never sampled stays distinguishable from one where every
-        # ping was rejected, which reads 0. For `pg`, float64 keeps the
-        # published dtype, which `_ave2nc` already promotes when it masks `pg`
-        # on `amp`. `ngood` is masked by nothing, so its off-grid cells reached
-        # the file as "0 good pings"; giving it NaN changes its published dtype
-        # from int32 to float64 (issue #82).
+        # `pg` and `ngood` are float and start at NaN so that a cell where
+        # nothing was measured stays distinguishable from one where every ping
+        # was rejected, which reads 0. Both frames leave such cells behind. On
+        # the depth grid it is a grid cell the instrument never sampled. On the
+        # instrument's bins there is no off-grid cell, and what stays NaN is a
+        # burst that carried fewer than two pings and was skipped below without
+        # writing (issue #129). For `pg`, float64 keeps the published dtype,
+        # which `_ave2nc` already promotes when it masks `pg` on `amp`. `ngood`
+        # is masked by nothing, so those cells reached the file as "0 good
+        # pings"; giving it NaN changes its published dtype from int32 to
+        # float64 (issue #82).
         pg = np.full((nens, ndgrid), np.nan, dtype=np.float64)
         ngood = np.full((nens, ndgrid), np.nan, dtype=np.float64)
 
         # Same NaN initialization and the same reason as `pg` and `ngood`
-        # above: an interval with fewer than two pings is skipped below
-        # without writing, and a grid depth off the profile must not read
-        # "0 pings rejected" (issue #82).
+        # above: a cell where nothing was measured must not read "0 pings
+        # rejected" (issue #82). A burst with fewer than two pings is skipped
+        # below without writing, in either frame, and on the depth grid a grid
+        # depth off the profile is unwritten too.
         nbad = {
             name: np.full((nens, ndgrid), np.nan, dtype=np.float64)
             for name in QC_CRITERIA
@@ -2262,10 +2406,13 @@ class ProcessADCP:
                 self._qc(ens)
                 max_e_applied[i] = ens.max_e_applied
                 self._to_enu(ens)  # transform to earth coords (east, north, up)
-                self._regrid_enu(ens)
-                self._regrid_amp(ens)
+                if not transducer:
+                    self._regrid_enu(ens)
+                    self._regrid_amp(ens)
 
-                nprofs = ens.enu_grid.shape[0]
+                # `ens.enu` and `ens.enu_grid` share their first axis,
+                # `ens.dday.size`, so this is the ping count in both frames.
+                nprofs = ens.enu.shape[0]
             else:
                 nprofs = 0
             npings[i] = nprofs
@@ -2323,46 +2470,71 @@ class ProcessADCP:
                 )
                 uvwe_inst[zi, :] = tmp
 
-            # Interpolate burst-average to universal depth grid.
-            uvwe_grid = interp1(depth, uvwe_inst, self.dgrid, axis=0, method="linear")
-            uvwe_std_grid = interp1(
-                depth, uvwe_std_inst, self.dgrid, axis=0, method="linear"
-            )
-            uvwe[i] = uvwe_grid
-            uvwe_std[i] = uvwe_std_grid
-
-            # One `interp1` call for all six counts together, pg, ngood and
-            # the four reason counts, the way `_regrid_enu_amp` interpolates
-            # velocity and amplitude in a single call. `interp1` takes a 2-D
-            # `y_old` and casts it to float64 internally.
-            #
-            # `np.floor` reproduces the truncation the old `.astype(np.int8)`
-            # and `.astype(np.int32)` performed on `pg` and `ngood`, so those
-            # two published values do not move. The four reason counts are
-            # new on this branch and had no prior `.astype` to preserve;
-            # `np.floor` here only keeps them integer-valued the same way.
-            # Drop it only as a deliberate change.
-            #
-            # Depths outside the instrument's profile come back masked. Fill
-            # them with NaN rather than casting them to 0, which would claim
-            # every ping at that depth was bad.
-            counts_inst = np.column_stack(
-                [pgi_inst, ngood_inst]
-                + [np.sum(ens[f"reason_{name}"], axis=0) for name in QC_CRITERIA]
-            )
-            counts_grid = np.floor(
-                np.ma.filled(
-                    interp1(depth, counts_inst, self.dgrid, axis=0, method="linear"),
-                    np.nan,
+            if transducer:
+                # The burst mean is already on the instrument's bins. This
+                # is the array the depth frame interpolates from, published
+                # unchanged (issue #129). `pg_limit` and `interpolate_bin`
+                # above have already acted on it.
+                uvwe[i] = uvwe_inst
+                uvwe_std[i] = uvwe_std_inst
+                # Ping counts per bin. No `np.floor` and no interpolation:
+                # these are the counts themselves, so the four rejection
+                # reasons partition the rejected pings exactly, as they do on
+                # `process_pings`.
+                pg[i] = pgi_inst
+                ngood[i] = ngood_inst
+                for name in QC_CRITERIA:
+                    nbad[name][i] = np.sum(ens[f"reason_{name}"], axis=0)
+                # Beams first, then the pings of the burst, the order
+                # `_regrid_amp` uses before it grids. `ens.amp` is uint8 and
+                # never masked on this path, `_binmap_all_beams` being
+                # reachable only from `process_pings`.
+                amp[i] = ens.amp.mean(axis=-1).mean(axis=0)
+            else:
+                # Interpolate burst-average to universal depth grid.
+                uvwe_grid = interp1(
+                    depth, uvwe_inst, self.dgrid, axis=0, method="linear"
                 )
-            )
-            pg[i] = counts_grid[:, 0]
-            ngood[i] = counts_grid[:, 1]
-            for j, name in enumerate(QC_CRITERIA):
-                nbad[name][i] = counts_grid[:, 2 + j]
+                uvwe_std_grid = interp1(
+                    depth, uvwe_std_inst, self.dgrid, axis=0, method="linear"
+                )
+                uvwe[i] = uvwe_grid
+                uvwe_std[i] = uvwe_std_grid
 
-            # Not changed to averaging in instrument-relative coordinates first.
-            amp[i] = ens.amp_grid.mean(axis=0)
+                # One `interp1` call for all six counts together, pg, ngood and
+                # the four reason counts, the way `_regrid_enu_amp` interpolates
+                # velocity and amplitude in a single call. `interp1` takes a 2-D
+                # `y_old` and casts it to float64 internally.
+                #
+                # `np.floor` reproduces the truncation the old `.astype(np.int8)`
+                # and `.astype(np.int32)` performed on `pg` and `ngood`, so those
+                # two published values do not move. The four reason counts are
+                # new on this branch and had no prior `.astype` to preserve;
+                # `np.floor` here only keeps them integer-valued the same way.
+                # Drop it only as a deliberate change.
+                #
+                # Depths outside the instrument's profile come back masked. Fill
+                # them with NaN rather than casting them to 0, which would claim
+                # every ping at that depth was bad.
+                counts_inst = np.column_stack(
+                    [pgi_inst, ngood_inst]
+                    + [np.sum(ens[f"reason_{name}"], axis=0) for name in QC_CRITERIA]
+                )
+                counts_grid = np.floor(
+                    np.ma.filled(
+                        interp1(
+                            depth, counts_inst, self.dgrid, axis=0, method="linear"
+                        ),
+                        np.nan,
+                    )
+                )
+                pg[i] = counts_grid[:, 0]
+                ngood[i] = counts_grid[:, 1]
+                for j, name in enumerate(QC_CRITERIA):
+                    nbad[name][i] = counts_grid[:, 2 + j]
+
+                # Not changed to averaging in instrument-relative coordinates first.
+                amp[i] = ens.amp_grid.mean(axis=0)
 
             pressure[i] = ens.pressure.mean()
             pressure_std[i] = ens.pressure.std()
@@ -2393,7 +2565,7 @@ class ProcessADCP:
             max_e_applied=max_e_applied,
             dday=dday,
             yearbase=self.yearbase,
-            dep=self.dgrid,
+            dep=zaxis,
             editparams=self.editparams,
             tgridparams=self.tgridparams,
             dgridparams=self.dgridparams,
@@ -2480,9 +2652,16 @@ class ProcessADCP:
     def _log_processing_params(self):
         """Write processing parameters to log file."""
 
+        frame = getattr(self, "_vertical_frame", "depth")
         logger.info("processing settings")
         logger.info("-------------------")
-        self._log_params(self.dgridparams)
+        logger.info(("vertical_frame", ":", frame))
+        # The depth grid parameters govern nothing when the product stays on
+        # the instrument's bins. That is true of `process_pings`, which has
+        # always logged them anyway, as much as of an averaging method asked
+        # for the transducer frame (issue #129).
+        if frame == "depth":
+            self._log_params(self.dgridparams)
         self._log_params(self.tgridparams)
         self._log_params(self.editparams)
         logger.info("-------------------")
@@ -2509,6 +2688,11 @@ class ProcessADCP:
         # load npz file
         dat = self.ave.copy()
         dat = Bunch(dat)
+        # Which axis this product is on, and which method produced it. The
+        # two are separate questions and `_ave2nc` used to ask the second
+        # where it meant the first (issue #129).
+        frame = getattr(self, "_vertical_frame", "depth")
+        method = getattr(self, "_processing_method", None)
         # identify variables
         k = dat.keys()
         varsint = []
@@ -2551,12 +2735,16 @@ class ProcessADCP:
         # instrument's profile no ping was measured at all, so 0 would claim
         # something that was never true (issue #82).
         #
-        # Not on `process_pings`, where `z` is the instrument bin axis: every
-        # bin is sampled whenever the ping was read, the only NaN cell is an
-        # unreadable chunk, and `u` and `pg` already report that. Masking
-        # there would promote the counts from int8 to float64 and more than
-        # double the largest product this package writes.
-        if getattr(self, "_processing_method", None) != "process_pings":
+        # Keyed on the path, not on the vertical frame, which is easy to
+        # misread because `process_pings` is the transducer frame. The reason
+        # it is off there is that the path carries one ping per cell, so the
+        # counts are int8 and every one is 0 or 1; masking would promote them
+        # to float64 and more than double the largest product this package
+        # writes. On the two averaging paths the mask still does something in
+        # the transducer frame: an interval with fewer than two pings is
+        # skipped without writing, leaving `amp` NaN, and unmasked those
+        # cells would read "0 pings rejected" where nothing was measured.
+        if method != "process_pings":
             for name in QC_CRITERIA:
                 var = f"nbad_{name}"
                 if var in out:
@@ -2606,10 +2794,12 @@ class ProcessADCP:
         if depth_offset:
             out["xducer_depth"] = out["xducer_depth"] + depth_offset
             # `depth` is water depth and moves with the instrument. The
-            # `process_pings` axis is a distance from the transducer, renamed
-            # to `z` below, and an offset on the instrument's depth says
-            # nothing about it.
-            if getattr(self, "_processing_method", None) != "process_pings":
+            # transducer-frame axis is a distance from the transducer,
+            # renamed to `z` below, and an offset on the instrument's depth
+            # says nothing about it. In that frame the offset moves
+            # `xducer_depth` alone, and the 2-D `depth` coordinate built
+            # from it below inherits the correction.
+            if frame == "depth":
                 out = out.assign_coords(depth=out.depth.values + depth_offset)
             # The measurement stays in `pressure`. This is what a sensor at
             # the corrected depth would have read, so that recomputing depth
@@ -2619,22 +2809,48 @@ class ProcessADCP:
                 gsw.p_from_z(-out.xducer_depth.values, self.lat),
             )
 
-        # `process_pings` does not regrid, so its vertical axis is the
+        # A product that was not regridded has a vertical axis which is the
         # distance from the transducer to the center of each bin, not water
-        # depth, and it runs upwards for an uplooker. Publish it as `z`, the
-        # name the raw dataset already uses for the same quantity, so that
-        # `depth` always means water depth. Bin depth stays recoverable per
-        # ping as xducer_depth +/- z. `_add_names_and_units` runs after the
-        # rename and therefore attaches the `z` attributes, not the `depth`
-        # ones.
-        if getattr(self, "_processing_method", None) == "process_pings":
+        # depth, and which runs upwards for an uplooker. Publish it as `z`,
+        # the name the raw dataset already uses for the same quantity, so
+        # that `depth` always means water depth. `process_pings` is always in
+        # this frame; the two averaging methods are when asked for it
+        # (issue #129). `_add_names_and_units` runs after the rename and
+        # therefore attaches the `z` attributes, not the `depth` ones.
+        if frame == "transducer":
             out = out.rename({"depth": "z"})
+
+        # The bin depth of every averaging interval, for a product whose
+        # dimension is not depth. Derived, not measured: exactly
+        # `xducer_depth` plus or minus `z`, the reconstruction the `z`
+        # attributes describe, computed here so that a consumer outside this
+        # project does not have to reimplement the sign rule (issue #129).
+        #
+        # Here and not earlier: until the rename above, `depth` is the
+        # dimension, `has_velocity` indexes it with `isel`, and
+        # `assign_coords(depth=...)` would collide with the dimension
+        # coordinate. Here and not later: `_add_names_and_units` below is
+        # what attaches the CF `depth` entry. `xducer_depth` already carries
+        # any depth offset at this point, so this inherits it.
+        #
+        # Not on `process_pings`, the largest product this package writes,
+        # where a float64 field of this shape would more than double the
+        # file.
+        if frame == "transducer" and method in (
+            "average_ensembles",
+            "burst_average_ensembles",
+        ):
+            sign = -1.0 if self.orientation == "up" else 1.0
+            bin_depth = out["xducer_depth"] + sign * out["z"]
+            out = out.assign_coords(depth=bin_depth.transpose("z", "time"))
 
         # add variable names and units for plotting
         out = self._add_names_and_units(out)
+        out = self._add_bin_depth_comment(out, frame)
         out = self._add_depth_offset_comments(out, depth_offset)
-        out = self._add_pg_comment(out, getattr(self, "_processing_method", None))
-        out = self._add_nbad_comments(out, getattr(self, "_processing_method", None))
+        out = self._add_pg_comment(out, method, frame)
+        out = self._add_nbad_comments(out, method, frame)
+        out = self._add_ngood_comment(out, method, frame)
         out = self._drop_absent_ancillary_variables(out)
 
         self.ds = out
@@ -2667,13 +2883,43 @@ class ProcessADCP:
                 ds[name].attrs = attrs
         return ds
 
+    @staticmethod
+    def _add_bin_depth_comment(ds, frame):
+        """Say that a transducer-frame `depth` is derived, and from what.
+
+        Injected after `_add_names_and_units`, which assigns the static
+        `io.cf_conventions` entries wholesale and would otherwise overwrite
+        this, and before `_add_depth_offset_comments`, which appends to the
+        same attribute.
+        """
+        if frame != "transducer" or "depth" not in ds.variables:
+            return ds
+        note = (
+            "Derived quantity, not a measurement, and not a dimension of "
+            "this file: the depth of each bin in each averaging interval, "
+            "computed as xducer_depth plus z for a downlooker and "
+            "xducer_depth minus z for an uplooker. The vertical dimension "
+            "is z, the distance from the transducer, and no velocity was "
+            "interpolated onto a depth axis. xducer_depth comes from "
+            "gsw.z_from_p while the depth gridding path of this package "
+            "uses seawater.depth2, and the two disagree by a few "
+            "centimeters, so this is exactly the reconstruction from the "
+            "published xducer_depth and not exactly the axis a "
+            "depth-gridded run of the same file would have produced."
+        )
+        attrs = dict(ds["depth"].attrs)
+        existing = attrs.get("comment")
+        attrs["comment"] = f"{existing} {note}" if existing else note
+        ds["depth"].attrs = attrs
+        return ds
+
     # What `pg` counts differs on every path, and the name it shares with the
     # instrument's own field means something else again (issue #82). The text
     # is injected here because `io.cf_conventions` returns one static dict and
     # `_add_names_and_units` assigns it wholesale, so it cannot be stored
     # per path.
     _PG_COMMENTS: ClassVar[dict] = {
-        "process_pings": (
+        ("process_pings", "transducer"): (
             "Fraction of pings with a valid velocity at this bin, computed "
             "per ping by `process_pings`. It is binary, 0 or 100: 100 means "
             "the ping survived editing at this bin, 0 means it was edited "
@@ -2683,7 +2929,7 @@ class ProcessADCP:
             "they choose differently; with no averaging window there is "
             "nothing to choose here."
         ),
-        "average_ensembles": (
+        ("average_ensembles", "depth"): (
             "Fraction of the pings in each averaging interval with a valid "
             "velocity at this grid depth, computed by `average_ensembles` "
             "after every ping was interpolated onto the universal depth "
@@ -2700,7 +2946,7 @@ class ProcessADCP:
             "of the interval counts those pings as bad. `ngood` carries the "
             "sample count this is derived from."
         ),
-        "burst_average_ensembles": (
+        ("burst_average_ensembles", "depth"): (
             "Fraction of the pings in each burst with a valid velocity at "
             "this bin, computed by `burst_average_ensembles` on "
             "instrument-relative bins and then interpolated onto the "
@@ -2717,6 +2963,32 @@ class ProcessADCP:
             "bin stays visible in the product. `ngood` carries the sample "
             "count this is derived from."
         ),
+        ("average_ensembles", "transducer"): (
+            "Fraction of the pings in each averaging interval with a valid "
+            "velocity at this bin, computed by `average_ensembles` on the "
+            "instrument's own bins. Nothing was interpolated between the "
+            "flags the editing criteria raised and this count, so it is a "
+            "ping count per bin and not a count on a grid the pings were "
+            "moved onto. It therefore does not absorb mooring knockdown, "
+            "and it is not widened by `interp1` the way the depth-gridded "
+            "counterpart of this path is; both of those are properties of "
+            "the depth grid, not of the measurement. `ngood` carries the "
+            "sample count this is derived from."
+        ),
+        ("burst_average_ensembles", "transducer"): (
+            "Fraction of the pings in each burst with a valid velocity at "
+            "this bin, computed by `burst_average_ensembles` on the "
+            "instrument's own bins and published there. On the depth grid "
+            "this same count is interpolated and floored, and reads as a "
+            "fraction at a grid depth; here it is the ping count itself, so "
+            "everywhere except a bin filled in by `interpolate_bin`, `pg` "
+            "below the `pg_limit` attribute and a masked velocity are the "
+            "same condition, which they are not on the grid. The filled bin "
+            "is the one exception because it keeps its own value of 0 while "
+            "carrying a finite velocity, which is what makes an "
+            "interpolated bin stay visible in the product. `ngood` carries "
+            "the sample count this is derived from."
+        ),
     }
 
     _PG_RDI_NOTE = (
@@ -2727,12 +2999,13 @@ class ProcessADCP:
     )
 
     @classmethod
-    def _add_pg_comment(cls, ds, method):
+    def _add_pg_comment(cls, ds, method, frame):
         """Say which of the three quantities called `pg` this one is."""
-        if "pg" not in ds.variables or method not in cls._PG_COMMENTS:
+        key = (method, frame)
+        if "pg" not in ds.variables or key not in cls._PG_COMMENTS:
             return ds
         attrs = dict(ds.pg.attrs)
-        attrs["comment"] = f"{cls._PG_COMMENTS[method]} {cls._PG_RDI_NOTE}"
+        attrs["comment"] = f"{cls._PG_COMMENTS[key]} {cls._PG_RDI_NOTE}"
         ds["pg"].attrs = attrs
         return ds
 
@@ -2749,7 +3022,7 @@ class ProcessADCP:
         "29% of everything the correlation test reports there."
     )
     _NBAD_COMMENTS: ClassVar[dict] = {
-        "process_pings": (
+        ("process_pings", "transducer"): (
             "Whether this criterion rejected the ping at this bin, 0 or 1, "
             "computed per ping by `process_pings`. The four sum to 1 where "
             "pg is 0 and to 0 where pg is 100. A bin declared bad through "
@@ -2757,7 +3030,7 @@ class ProcessADCP:
             "level leaves the published depth axis and `nbad_maskbins` "
             "reads 0 on this path."
         ),
-        "average_ensembles": (
+        ("average_ensembles", "depth"): (
             "Number of pings in each averaging interval that this criterion "
             "rejected at this grid depth, computed by `average_ensembles` "
             "after every ping was interpolated onto the universal depth "
@@ -2769,7 +3042,7 @@ class ProcessADCP:
             "means the depth bin lies outside the instrument's profile and "
             "nothing was measured there."
         ),
-        "burst_average_ensembles": (
+        ("burst_average_ensembles", "depth"): (
             "Number of pings in each burst that this criterion rejected at "
             "this bin, computed by `burst_average_ensembles` on the "
             "instrument bins and then interpolated onto the depth grid, the "
@@ -2782,20 +3055,87 @@ class ProcessADCP:
             "nothing was measured there. An interpolated bin keeps its own "
             "counts, so the interpolation stays visible."
         ),
+        ("average_ensembles", "transducer"): (
+            "Number of pings in each averaging interval that this criterion "
+            "rejected at this bin, computed by `average_ensembles` on the "
+            "instrument's own bins. Nothing was interpolated between the "
+            "flags and the counts, so the four partition the rejected pings "
+            "exactly and cannot sum above the number rejected, which they "
+            "can on the depth grid where a cell is fed by two bins. NaN "
+            "means the averaging interval carried fewer than two pings and "
+            "nothing was averaged."
+        ),
+        ("burst_average_ensembles", "transducer"): (
+            "Number of pings in each burst that this criterion rejected at "
+            "this bin, computed by `burst_average_ensembles` on the "
+            "instrument's own bins and published there. The four sum "
+            "exactly to the number of rejected pings, which they do not "
+            "after the interpolation and independent flooring the depth "
+            "grid needs. NaN means the burst carried fewer than two pings "
+            "and nothing was averaged. An interpolated bin keeps its own "
+            "counts, so the interpolation stays visible."
+        ),
     }
 
     @classmethod
-    def _add_nbad_comments(cls, ds, method):
+    def _add_nbad_comments(cls, ds, method, frame):
         """Say what one rejection count means on this path."""
-        if method not in cls._NBAD_COMMENTS:
+        key = (method, frame)
+        if key not in cls._NBAD_COMMENTS:
             return ds
         for name in QC_CRITERIA:
             var = f"nbad_{name}"
             if var not in ds.variables:
                 continue
             attrs = dict(ds[var].attrs)
-            attrs["comment"] = f"{cls._NBAD_COMMENTS[method]} {cls._NBAD_SHARED}"
+            attrs["comment"] = f"{cls._NBAD_COMMENTS[key]} {cls._NBAD_SHARED}"
             ds[var].attrs = attrs
+        return ds
+
+    # `ngood` is the one count that carries a static comment in
+    # `io.cf_conventions`, and that comment says NaN means the depth bin
+    # lies outside the instrument's profile. On the bin axis there is no
+    # off-profile cell, so the sentence has to be replaced rather than
+    # appended to (issue #129). Only the transducer frame is registered
+    # here; in the depth frame the static text stands.
+    _NGOOD_COMMENTS: ClassVar[dict] = {
+        ("average_ensembles", "transducer"): (
+            "Number of pings per instrument bin that passed editing and "
+            "entered the time average, counted by `average_ensembles` on "
+            "the bins themselves. The basis for pg and for the velocity "
+            "standard errors. An integer count that is never NaN: this path "
+            "starts `ngood` at 0 and masks only `pg` and the four `nbad_*` "
+            "counts on `amp`. Zero therefore covers two cases, a bin where "
+            "no ping survived editing and an averaging interval that "
+            "carried fewer than two pings and was skipped without "
+            "averaging. `pg` and `amp` separate them, being NaN only in the "
+            "second. Masking `ngood` the same way would change its "
+            "published dtype from int32 to float64, which is issue #82 and "
+            "not this frame. Unlike the depth-gridded product of this path, "
+            "every cell here lies within the instrument's profile."
+        ),
+        ("burst_average_ensembles", "transducer"): (
+            "Number of pings per instrument bin that passed editing and "
+            "entered the burst average, counted by "
+            "`burst_average_ensembles` on the bins themselves and published "
+            "there rather than interpolated onto a depth grid. The basis "
+            "for pg and for the velocity standard errors. Zero means no "
+            "ping survived editing. NaN means the burst carried fewer than "
+            "two pings and nothing was averaged; unlike the depth-gridded "
+            "product of this path, every cell here lies within the "
+            "instrument's profile."
+        ),
+    }
+
+    @classmethod
+    def _add_ngood_comment(cls, ds, method, frame):
+        """Replace the off-profile sentence where there is no off-profile."""
+        key = (method, frame)
+        if "ngood" not in ds.variables or key not in cls._NGOOD_COMMENTS:
+            return ds
+        attrs = dict(ds.ngood.attrs)
+        attrs["comment"] = cls._NGOOD_COMMENTS[key]
+        ds["ngood"].attrs = attrs
         return ds
 
     @staticmethod
@@ -2865,8 +3205,10 @@ class ProcessADCP:
     def _add_meta_data_to_ds(self):
         # Add some more info.
         method = getattr(self, "_processing_method", None)
+        frame = getattr(self, "_vertical_frame", "depth")
         self.ds.attrs["velosearaptor_version"] = __version__
         self.ds.attrs["processing_method"] = "unknown" if method is None else method
+        self.ds.attrs["vertical_frame"] = frame
         self.ds.attrs["orientation"] = self.orientation
         self.ds.attrs["magdec"] = self.magdec
         for att in ["max_e", "max_e_deviation", "min_correlation"]:
@@ -2914,11 +3256,19 @@ class ProcessADCP:
             # averaging; a burst gets its interval from the ping pattern. So
             # record the interval that actually governed, and `dt_hours`
             # itself only where it did something.
+            #
+            # Time averaging happens in both frames, so this one is not
+            # gated.
             self.ds.attrs["averaging_interval_hours"] = self.dt * 24
             if method == "average_ensembles":
                 self.ds.attrs["dt_hours"] = self.tgridparams.dt_hours
-            for att in ["dtop", "dbot", "d_interval"]:
-                self.ds.attrs[att] = self.dgridparams[att]
+            # The depth grid governs nothing in the transducer frame.
+            # Writing it would tell a reader the product sits on it
+            # (issue #129), the same fault the old unconditional `pg_limit`
+            # had (issue #102).
+            if frame == "depth":
+                for att in ["dtop", "dbot", "d_interval"]:
+                    self.ds.attrs[att] = self.dgridparams[att]
         if method == "process_pings":
             # netcdf attributes cannot hold a boolean either.
             self.ds.attrs["binmap"] = str(bool(getattr(self, "_binmap", False)))
