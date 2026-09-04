@@ -2365,20 +2365,25 @@ class ProcessADCP:
         uvwe = np.ma.zeros((nens, ndgrid, 4), dtype=np.float32)
         uvwe_std = np.ma.zeros((nens, ndgrid, 4), dtype=np.float32)
 
-        # `pg` and `ngood` are float and start at NaN so that a grid cell the
-        # instrument never sampled stays distinguishable from one where every
-        # ping was rejected, which reads 0. For `pg`, float64 keeps the
-        # published dtype, which `_ave2nc` already promotes when it masks `pg`
-        # on `amp`. `ngood` is masked by nothing, so its off-grid cells reached
-        # the file as "0 good pings"; giving it NaN changes its published dtype
-        # from int32 to float64 (issue #82).
+        # `pg` and `ngood` are float and start at NaN so that a cell where
+        # nothing was measured stays distinguishable from one where every ping
+        # was rejected, which reads 0. Both frames leave such cells behind. On
+        # the depth grid it is a grid cell the instrument never sampled. On the
+        # instrument's bins there is no off-grid cell, and what stays NaN is a
+        # burst that carried fewer than two pings and was skipped below without
+        # writing (issue #129). For `pg`, float64 keeps the published dtype,
+        # which `_ave2nc` already promotes when it masks `pg` on `amp`. `ngood`
+        # is masked by nothing, so those cells reached the file as "0 good
+        # pings"; giving it NaN changes its published dtype from int32 to
+        # float64 (issue #82).
         pg = np.full((nens, ndgrid), np.nan, dtype=np.float64)
         ngood = np.full((nens, ndgrid), np.nan, dtype=np.float64)
 
         # Same NaN initialization and the same reason as `pg` and `ngood`
-        # above: an interval with fewer than two pings is skipped below
-        # without writing, and a grid depth off the profile must not read
-        # "0 pings rejected" (issue #82).
+        # above: a cell where nothing was measured must not read "0 pings
+        # rejected" (issue #82). A burst with fewer than two pings is skipped
+        # below without writing, in either frame, and on the depth grid a grid
+        # depth off the profile is unwritten too.
         nbad = {
             name: np.full((nens, ndgrid), np.nan, dtype=np.float64)
             for name in QC_CRITERIA
@@ -2976,10 +2981,12 @@ class ProcessADCP:
             "instrument's own bins and published there. On the depth grid "
             "this same count is interpolated and floored, and reads as a "
             "fraction at a grid depth; here it is the ping count itself, so "
-            "`pg` below the `pg_limit` attribute and a masked velocity are "
-            "the same condition, which they are not on the grid. A bin "
-            "filled in by `interpolate_bin` keeps its own value of 0, so an "
-            "interpolated bin stays visible in the product. `ngood` carries "
+            "everywhere except a bin filled in by `interpolate_bin`, `pg` "
+            "below the `pg_limit` attribute and a masked velocity are the "
+            "same condition, which they are not on the grid. The filled bin "
+            "is the one exception because it keeps its own value of 0 while "
+            "carrying a finite velocity, which is what makes an "
+            "interpolated bin stay visible in the product. `ngood` carries "
             "the sample count this is derived from."
         ),
     }
@@ -3096,10 +3103,16 @@ class ProcessADCP:
             "Number of pings per instrument bin that passed editing and "
             "entered the time average, counted by `average_ensembles` on "
             "the bins themselves. The basis for pg and for the velocity "
-            "standard errors. Zero means no ping survived editing. NaN "
-            "means the averaging interval carried fewer than two pings and "
-            "nothing was averaged; unlike the depth-gridded product of this "
-            "path, every cell here lies within the instrument's profile."
+            "standard errors. An integer count that is never NaN: this path "
+            "starts `ngood` at 0 and masks only `pg` and the four `nbad_*` "
+            "counts on `amp`. Zero therefore covers two cases, a bin where "
+            "no ping survived editing and an averaging interval that "
+            "carried fewer than two pings and was skipped without "
+            "averaging. `pg` and `amp` separate them, being NaN only in the "
+            "second. Masking `ngood` the same way would change its "
+            "published dtype from int32 to float64, which is issue #82 and "
+            "not this frame. Unlike the depth-gridded product of this path, "
+            "every cell here lies within the instrument's profile."
         ),
         ("burst_average_ensembles", "transducer"): (
             "Number of pings per instrument bin that passed editing and "

@@ -138,21 +138,73 @@ def test_rejected_cells_stay_out_of_the_transducer_mean(rootdir):
     )
 
 
-def test_percent_good_is_a_ping_count_on_the_bin_axis(rootdir):
-    """`pg` counts pings per bin, with nothing interpolated in between."""
+def test_rejected_cells_stay_out_of_the_depth_frame_mean(rootdir):
+    """The depth-frame control for the test above.
+
+    The exclusion holds in both frames, and a test that only ever runs in
+    one of them cannot tell a frame bug from one the two paths share, so the
+    design asks for this run as well (issue #129). Here the fill happens in
+    `_regrid_enu_amp`, which interpolates `ens.enu` and fills the result to
+    NaN, carrying validity alongside as `valid_grid`. The assertion is the
+    same in substance as the transducer one: the published mean is the mean
+    over the cells validity keeps, so removing the fill would let the
+    rotated -32768 sentinel into `u` and move it.
+    """
     proc = _proc(rootdir, UPLOOKER)
-    proc.average_ensembles(vertical_frame="transducer")
+    ens = proc.read_ensemble(0)
+    proc._qc(ens)
+    proc._to_enu(ens)
+    proc._regrid_enu_amp(ens)
+    # Guard the premise: the grid carries cells the criteria rejected.
+    assert not np.all(ens.valid_grid)
+
+    proc.average_ensembles()
     ds = proc.ds
 
-    ngood = ds.ngood.values
-    npings = np.broadcast_to(ds.npings.values[np.newaxis, :], ngood.shape)
-    # An interval with no pings is skipped and divides by zero; `pg` is NaN
-    # there and the identity has nothing to say about it.
-    good = np.isfinite(ds.pg.values) & (npings > 0)
-    assert good.any()
-    assert np.all(ngood[good] <= npings[good])
-    expected = 100 * ngood[good] // npings[good]
-    np.testing.assert_array_equal(ds.pg.values[good], expected)
+    kept = np.where(ens.valid_grid, ens.enu_grid[:, :, 0], np.nan)
+    with np.errstate(all="ignore"):
+        expected = np.nanmean(kept, axis=0)
+    # `has_velocity` drops grid levels, and an uplooker's `dgrid` runs
+    # downward, so the published axis is looked up rather than searchsorted.
+    order = {d: i for i, d in enumerate(proc.dgrid)}
+    idx = np.array([order[d] for d in ds.depth.values])
+    np.testing.assert_allclose(
+        ds.u.values[:, 0], expected[idx].astype(np.float32), rtol=1e-6
+    )
+
+
+def test_percent_good_is_a_ping_count_on_average_ensembles(rootdir):
+    """`pg == 100 * ngood // npings` on this path, in both vertical frames.
+
+    On `average_ensembles` the identity is a shared invariant and does not
+    discriminate the frames. `pg` is computed from `ngood` inside the
+    averaging loop, from the gridded validity in the depth frame and from
+    the QC flag itself in the transducer frame, and neither count is
+    interpolated afterwards. The depth-frame control is here so that a
+    failure reads as a broken count rather than as a broken frame. The burst
+    path is where this identity does separate the two, because there `pg`
+    and `ngood` are interpolated onto the grid and floored independently,
+    which `test_burst_percent_good_identity_is_frame_dependent` pins.
+    """
+
+    def _assert_identity(ds):
+        ngood = ds.ngood.values
+        npings = np.broadcast_to(ds.npings.values[np.newaxis, :], ngood.shape)
+        # An interval with no pings is skipped and divides by zero; `pg` is
+        # NaN there and the identity has nothing to say about it.
+        good = np.isfinite(ds.pg.values) & (npings > 0)
+        assert good.any()
+        assert np.all(ngood[good] <= npings[good])
+        expected = 100 * ngood[good] // npings[good]
+        np.testing.assert_array_equal(ds.pg.values[good], expected)
+
+    proc = _proc(rootdir, UPLOOKER)
+    proc.average_ensembles(vertical_frame="transducer")
+    _assert_identity(proc.ds)
+
+    control = _proc(rootdir, UPLOOKER)
+    control.average_ensembles()
+    _assert_identity(control.ds)
 
 
 # --- burst_average_ensembles on the bin axis ----------------------------
