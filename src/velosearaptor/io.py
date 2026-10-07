@@ -493,6 +493,68 @@ def cf_conventions():
                 "with depth even though the depth offset is."
             ),
         },
+        # Attitude and correlation of the averaging paths
+        # (motive-mooring-proc#51).
+        "heading": {
+            "long_name": "heading",
+            "standard_name": "platform_orientation",
+            "units": "degree",
+            "coverage_content_type": "physicalMeasurement",
+            "ancillary_variables": "npings heading_std",
+            "comment": (
+                "Vector mean of the per-ping compass heading over the "
+                "averaging interval, in [0, 360), without magnetic "
+                "declination; the declination applied to the velocities is "
+                "the magdec attribute."
+            ),
+        },
+        "heading_std": {
+            "long_name": "heading circular standard deviation",
+            "units": "degree",
+            "coverage_content_type": "qualityInformation",
+            "comment": (
+                "sqrt(-2 ln R) with R the length of the mean heading unit "
+                "vector over the pings of the interval."
+            ),
+        },
+        "pitch": {
+            "long_name": "pitch",
+            "standard_name": "platform_pitch",
+            "units": "degree",
+            "coverage_content_type": "physicalMeasurement",
+            "ancillary_variables": "npings pitch_std",
+            "comment": "Mean of the per-ping pitch over the averaging interval.",
+        },
+        "pitch_std": {
+            "long_name": "pitch standard deviation",
+            "units": "degree",
+            "coverage_content_type": "qualityInformation",
+        },
+        "roll": {
+            "long_name": "roll",
+            "standard_name": "platform_roll",
+            "units": "degree",
+            "coverage_content_type": "physicalMeasurement",
+            "ancillary_variables": "npings roll_std",
+            "comment": "Mean of the per-ping roll over the averaging interval.",
+        },
+        "roll_std": {
+            "long_name": "roll standard deviation",
+            "units": "degree",
+            "coverage_content_type": "qualityInformation",
+        },
+        "cor": {
+            "long_name": "beam-mean correlation",
+            "units": "counts",
+            "coverage_content_type": "qualityInformation",
+            "ancillary_variables": "npings",
+            "comment": (
+                "Correlation magnitude averaged over the beams that enter "
+                "the velocity solution (the beam excluded via ibad is left "
+                "out), then over the pings of the interval, regridded onto "
+                "the depth axis the same way as amp."
+            ),
+        },
         "temperature": {
             "long_name": "temperature",
             "standard_name": "sea_water_temperature",

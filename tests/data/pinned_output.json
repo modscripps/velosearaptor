@@ -170,6 +170,47 @@
       3
      ]
     },
+    "cor": {
+     "attrs": {
+      "ancillary_variables": {
+       "type": "str",
+       "value": "npings"
+      },
+      "comment": {
+       "type": "str",
+       "value": "Correlation magnitude averaged over the beams that enter the velocity solution (the beam excluded via ibad is left out), then over the pings of the interval, regridded onto the depth axis the same way as amp."
+      },
+      "coverage_content_type": {
+       "type": "str",
+       "value": "qualityInformation"
+      },
+      "long_name": {
+       "type": "str",
+       "value": "beam-mean correlation"
+      },
+      "units": {
+       "type": "str",
+       "value": "counts"
+      }
+     },
+     "checksum": "20d5e5cd309e401837055c3613642d98f0a1ba14b29d20b709fa1277188713c5",
+     "dims": [
+      "depth",
+      "time"
+     ],
+     "dtype": "<f4",
+     "kind": "data_var",
+     "max": 126.4948959350586,
+     "mean": 109.57762836274647,
+     "min": 80.89241027832031,
+     "min_abs_nonzero": 80.89241027832031,
+     "n_invalid": 0,
+     "n_zero": 0,
+     "shape": [
+      35,
+      3
+     ]
+    },
     "depth": {
      "attrs": {
       "coverage_content_type": {
@@ -247,6 +288,84 @@
      "n_zero": 0,
      "shape": [
       35,
+      3
+     ]
+    },
+    "heading": {
+     "attrs": {
+      "ancillary_variables": {
+       "type": "str",
+       "value": "npings heading_std"
+      },
+      "comment": {
+       "type": "str",
+       "value": "Vector mean of the per-ping compass heading over the averaging interval, in [0, 360), without magnetic declination; the declination applied to the velocities is the magdec attribute."
+      },
+      "coverage_content_type": {
+       "type": "str",
+       "value": "physicalMeasurement"
+      },
+      "long_name": {
+       "type": "str",
+       "value": "heading"
+      },
+      "standard_name": {
+       "type": "str",
+       "value": "platform_orientation"
+      },
+      "units": {
+       "type": "str",
+       "value": "degree"
+      }
+     },
+     "checksum": "34115b5333026186041f5237deb8d9b6b4ade99bdf020b7b489898aa3b086179",
+     "dims": [
+      "time"
+     ],
+     "dtype": "<f4",
+     "kind": "data_var",
+     "max": 161.25418090820312,
+     "mean": 96.28549067179362,
+     "min": 41.0478401184082,
+     "min_abs_nonzero": 41.0478401184082,
+     "n_invalid": 0,
+     "n_zero": 0,
+     "shape": [
+      3
+     ]
+    },
+    "heading_std": {
+     "attrs": {
+      "comment": {
+       "type": "str",
+       "value": "sqrt(-2 ln R) with R the length of the mean heading unit vector over the pings of the interval."
+      },
+      "coverage_content_type": {
+       "type": "str",
+       "value": "qualityInformation"
+      },
+      "long_name": {
+       "type": "str",
+       "value": "heading circular standard deviation"
+      },
+      "units": {
+       "type": "str",
+       "value": "degree"
+      }
+     },
+     "checksum": "e24167aa794fb4756aa5cacdc2ff14d572e5dfc61532331553c370cb5a84c0c9",
+     "dims": [
+      "time"
+     ],
+     "dtype": "<f4",
+     "kind": "data_var",
+     "max": 72.95222473144531,
+     "mean": 51.836982091267906,
+     "min": 12.123052597045898,
+     "min_abs_nonzero": 12.123052597045898,
+     "n_invalid": 0,
+     "n_zero": 0,
+     "shape": [
       3
      ]
     },
@@ -546,6 +665,80 @@
       3
      ]
     },
+    "pitch": {
+     "attrs": {
+      "ancillary_variables": {
+       "type": "str",
+       "value": "npings pitch_std"
+      },
+      "comment": {
+       "type": "str",
+       "value": "Mean of the per-ping pitch over the averaging interval."
+      },
+      "coverage_content_type": {
+       "type": "str",
+       "value": "physicalMeasurement"
+      },
+      "long_name": {
+       "type": "str",
+       "value": "pitch"
+      },
+      "standard_name": {
+       "type": "str",
+       "value": "platform_pitch"
+      },
+      "units": {
+       "type": "str",
+       "value": "degree"
+      }
+     },
+     "checksum": "e859f89a5cfd74364f6b18ec27bcf98ee64e12afa1a12771e55158f65a785807",
+     "dims": [
+      "time"
+     ],
+     "dtype": "<f4",
+     "kind": "data_var",
+     "max": -12.373285293579102,
+     "mean": -14.400692621866861,
+     "min": -16.034334182739258,
+     "min_abs_nonzero": 12.373285293579102,
+     "n_invalid": 0,
+     "n_zero": 0,
+     "shape": [
+      3
+     ]
+    },
+    "pitch_std": {
+     "attrs": {
+      "coverage_content_type": {
+       "type": "str",
+       "value": "qualityInformation"
+      },
+      "long_name": {
+       "type": "str",
+       "value": "pitch standard deviation"
+      },
+      "units": {
+       "type": "str",
+       "value": "degree"
+      }
+     },
+     "checksum": "340dd124c0cb2d2ed99d6522cfc141ab534105b41eca416ce76a6bd777fe544a",
+     "dims": [
+      "time"
+     ],
+     "dtype": "<f4",
+     "kind": "data_var",
+     "max": 2.089465856552124,
+     "mean": 0.8060911595821381,
+     "min": 0.10940927267074585,
+     "min_abs_nonzero": 0.10940927267074585,
+     "n_invalid": 0,
+     "n_zero": 0,
+     "shape": [
+      3
+     ]
+    },
     "pressure": {
      "attrs": {
       "ancillary_variables": {
@@ -579,6 +772,80 @@
      "mean": 155.37248738606772,
      "min": 155.3417510986328,
      "min_abs_nonzero": 155.3417510986328,
+     "n_invalid": 0,
+     "n_zero": 0,
+     "shape": [
+      3
+     ]
+    },
+    "roll": {
+     "attrs": {
+      "ancillary_variables": {
+       "type": "str",
+       "value": "npings roll_std"
+      },
+      "comment": {
+       "type": "str",
+       "value": "Mean of the per-ping roll over the averaging interval."
+      },
+      "coverage_content_type": {
+       "type": "str",
+       "value": "physicalMeasurement"
+      },
+      "long_name": {
+       "type": "str",
+       "value": "roll"
+      },
+      "standard_name": {
+       "type": "str",
+       "value": "platform_roll"
+      },
+      "units": {
+       "type": "str",
+       "value": "degree"
+      }
+     },
+     "checksum": "2c3d88db386452eac98fb6301c3a480607746cd8d99483f00e082ca984962679",
+     "dims": [
+      "time"
+     ],
+     "dtype": "<f4",
+     "kind": "data_var",
+     "max": 0.24574999511241913,
+     "mean": 0.07669907187422116,
+     "min": -0.03200000151991844,
+     "min_abs_nonzero": 0.01634722203016281,
+     "n_invalid": 0,
+     "n_zero": 0,
+     "shape": [
+      3
+     ]
+    },
+    "roll_std": {
+     "attrs": {
+      "coverage_content_type": {
+       "type": "str",
+       "value": "qualityInformation"
+      },
+      "long_name": {
+       "type": "str",
+       "value": "roll standard deviation"
+      },
+      "units": {
+       "type": "str",
+       "value": "degree"
+      }
+     },
+     "checksum": "4aa4b868caa0228aa5abf1e56d4cbc5be66fa9fd6a2fa5778cd70f932655087d",
+     "dims": [
+      "time"
+     ],
+     "dtype": "<f4",
+     "kind": "data_var",
+     "max": 0.718296468257904,
+     "mean": 0.3347029897073905,
+     "min": 0.058248985558748245,
+     "min_abs_nonzero": 0.058248985558748245,
      "n_invalid": 0,
      "n_zero": 0,
      "shape": [
