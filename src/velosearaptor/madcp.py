@@ -466,9 +466,18 @@ class ProcessADCP:
     Provide clock drift parameters via `driftparams`. Accepted entries are
     - `end_adcp` : Time of ADCP at data download
     - `end_pc` : UTC time at data download
+    - `steps` : list of clock jumps during the record, each a dict
+      `{"adcp": [Y, M, D, h, m, s], "seconds": float}`. `seconds` is the
+      amount the raw clock jumped at raw time `adcp` (negative when the
+      clock fell back). Defaults to no steps.
 
     The difference between `end_adcp` and `end_pc` is used to linearly correct
-    for instrument clock drift.
+    for instrument clock drift. Each step is undone first: `-seconds` is
+    added to every raw time stamp at or after `adcp` (a step inside a ping
+    gap applies from the first ping after it). The single drift rate is then
+    computed from the step-corrected raw end time, so `end_adcp` keeps its
+    meaning as the raw clock reading at download, and one rate serves both
+    sides of a step.
 
     **Time gridding parameters**
     Provide time gridding parameters via `tgridparams`. Accepted entries are
@@ -1057,10 +1066,22 @@ class ProcessADCP:
         self.yearbase = self.m.yearbase
         t0 = self.tsdat.dday[0]
         self.t0 = t0
+        # Clock jumps during the record, as (raw dday, seconds) pairs in time
+        # order. Undone before the linear rate is applied; see the class notes.
+        self.clock_steps = sorted(
+            (float(to_day(self.m.yearbase, *step["adcp"])), float(step["seconds"]))
+            for step in driftparams.get("steps", None) or []
+        )
         t1_adcp = driftparams.get("end_adcp", None)
         if t1_adcp is not None:
             t1_pc = to_day(self.m.yearbase, *driftparams["end_pc"])
             t1_adcp = to_day(self.m.yearbase, *driftparams["end_adcp"])
+            # The raw reading at download already contains every step that
+            # happened before it; take them out so the rate measures drift
+            # alone.
+            t1_adcp -= sum(
+                s for t, s in self.clock_steps if t <= t1_adcp
+            ) / 86400.0
             self.time_drift_rate = (t1_pc - t0) / (t1_adcp - t0)
         else:
             logger.warning(
@@ -1085,7 +1106,12 @@ class ProcessADCP:
 
         """
 
-        return self.t0 + self.time_drift_rate * (dday_orig - self.t0)
+        # `getattr`: tests/test_monotonic.py drives this on a
+        # `ProcessADCP.__new__` shell that never ran `parse_driftparams`.
+        d = np.array(dday_orig, dtype=float, copy=True)
+        for t, s in getattr(self, "clock_steps", []):
+            d[d >= t] -= s / 86400.0
+        return self.t0 + self.time_drift_rate * (d - self.t0)
 
     def _uncorrect_dday(self, dday_corrected):
         """Invert :meth:`_correct_dday`.
@@ -1105,7 +1131,13 @@ class ProcessADCP:
 
         """
 
-        return self.t0 + (dday_corrected - self.t0) / self.time_drift_rate
+        d = self.t0 + (np.asarray(dday_corrected, dtype=float) - self.t0) / self.time_drift_rate
+        # Steps are undone in time order in `_correct_dday`, so they are
+        # re-applied in reverse: a ping sits past a step when its
+        # step-corrected time is at or beyond the step time.
+        for t, s in reversed(getattr(self, "clock_steps", [])):
+            d = np.where(d >= t, d + s / 86400.0, d)
+        return d
 
     def _ensure_monotonic_dday(self):
         """Detect and fix non-monotonic time vectors.
@@ -3202,6 +3234,11 @@ class ProcessADCP:
         """Year day as a calendar time string for the output attributes."""
         return str(io.yday0_to_datetime64(self.yearbase, float(yday)))
 
+    def _yday_to_isoformat_seconds(self, yday):
+        """Year day as a calendar time string rounded to the whole second."""
+        t = io.yday0_to_datetime64(self.yearbase, float(yday))
+        return str((np.datetime64(t, "ns") + np.timedelta64(500, "ms")).astype("datetime64[s]"))
+
     def _add_meta_data_to_ds(self):
         # Add some more info.
         method = getattr(self, "_processing_method", None)
@@ -3237,9 +3274,15 @@ class ProcessADCP:
 
         # Clock correction. `driftparams` is not written to the log file at
         # all, so this was previously unrecoverable.
-        applied = self.driftparams.get("end_adcp") is not None
+        applied = self.driftparams.get("end_adcp") is not None or bool(self.clock_steps)
         self.ds.attrs["clock_correction"] = "applied" if applied else "none"
         self.ds.attrs["time_drift_rate"] = self.time_drift_rate
+        # Clock jumps undone before the rate (`driftparams["steps"]`), as
+        # "<raw time> <seconds> s" per step, in time order.
+        self.ds.attrs["clock_steps"] = "; ".join(
+            f"{self._yday_to_isoformat_seconds(t)} {s} s"
+            for t, s in self.clock_steps
+        ) or "none"
 
         self.ds.attrs["ibad"] = "none" if self.ibad is None else self.ibad
 
