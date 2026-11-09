@@ -1079,9 +1079,7 @@ class ProcessADCP:
             # The raw reading at download already contains every step that
             # happened before it; take them out so the rate measures drift
             # alone.
-            t1_adcp -= sum(
-                s for t, s in self.clock_steps if t <= t1_adcp
-            ) / 86400.0
+            t1_adcp -= sum(s for t, s in self.clock_steps if t <= t1_adcp) / 86400.0
             self.time_drift_rate = (t1_pc - t0) / (t1_adcp - t0)
         else:
             logger.warning(
@@ -1131,7 +1129,10 @@ class ProcessADCP:
 
         """
 
-        d = self.t0 + (np.asarray(dday_corrected, dtype=float) - self.t0) / self.time_drift_rate
+        d = (
+            self.t0
+            + (np.asarray(dday_corrected, dtype=float) - self.t0) / self.time_drift_rate
+        )
         # Steps are undone in time order in `_correct_dday`, so they are
         # re-applied in reverse: a ping sits past a step when its
         # step-corrected time is at or beyond the step time.
@@ -3237,7 +3238,9 @@ class ProcessADCP:
     def _yday_to_isoformat_seconds(self, yday):
         """Year day as a calendar time string rounded to the whole second."""
         t = io.yday0_to_datetime64(self.yearbase, float(yday))
-        return str((np.datetime64(t, "ns") + np.timedelta64(500, "ms")).astype("datetime64[s]"))
+        return str(
+            (np.datetime64(t, "ns") + np.timedelta64(500, "ms")).astype("datetime64[s]")
+        )
 
     def _add_meta_data_to_ds(self):
         # Add some more info.
@@ -3279,10 +3282,13 @@ class ProcessADCP:
         self.ds.attrs["time_drift_rate"] = self.time_drift_rate
         # Clock jumps undone before the rate (`driftparams["steps"]`), as
         # "<raw time> <seconds> s" per step, in time order.
-        self.ds.attrs["clock_steps"] = "; ".join(
-            f"{self._yday_to_isoformat_seconds(t)} {s} s"
-            for t, s in self.clock_steps
-        ) or "none"
+        self.ds.attrs["clock_steps"] = (
+            "; ".join(
+                f"{self._yday_to_isoformat_seconds(t)} {s} s"
+                for t, s in self.clock_steps
+            )
+            or "none"
+        )
 
         self.ds.attrs["ibad"] = "none" if self.ibad is None else self.ibad
 
