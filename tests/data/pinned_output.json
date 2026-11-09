@@ -22,6 +22,10 @@
      "type": "str",
      "value": "none"
     },
+    "clock_steps": {
+     "type": "str",
+     "value": "none"
+    },
     "d_interval": {
      "type": "float64",
      "value": 4.0
@@ -945,6 +949,10 @@
      "value": 0.020833333326208958
     },
     "clock_correction": {
+     "type": "str",
+     "value": "none"
+    },
+    "clock_steps": {
      "type": "str",
      "value": "none"
     },
@@ -1876,6 +1884,10 @@
      "type": "str",
      "value": "none"
     },
+    "clock_steps": {
+     "type": "str",
+     "value": "none"
+    },
     "depth_offset": {
      "type": "float",
      "value": 0.0
@@ -2548,6 +2560,10 @@
      "value": "True"
     },
     "clock_correction": {
+     "type": "str",
+     "value": "none"
+    },
+    "clock_steps": {
      "type": "str",
      "value": "none"
     },
