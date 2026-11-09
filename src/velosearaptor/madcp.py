@@ -226,6 +226,39 @@ def _no_data_flag(vel):
     return np.ma.getmaskarray(vel)
 
 
+def _attitude_stats(ens):
+    """Vector-mean heading with circular standard deviation, mean and
+    standard deviation of pitch and roll, over the pings of one ensemble.
+
+    The heading mean is `arctan2(mean sin, mean cos)` in degrees mapped to
+    [0, 360), so pings at 359 and 1 degree average to about 0 and never to
+    180. The circular standard deviation is `sqrt(-2 ln R)` with `R` the
+    length of the mean unit vector, in degrees. Pitch and roll are plain
+    means and standard deviations. All six are NaN when no ping carries the
+    quantity (motive-mooring-proc#51).
+    """
+    h = np.radians(np.ma.filled(np.ma.asarray(ens.heading, dtype=float), np.nan))
+    p = np.ma.filled(np.ma.asarray(ens.pitch, dtype=float), np.nan)
+    r = np.ma.filled(np.ma.asarray(ens.roll, dtype=float), np.nan)
+    with np.errstate(all="ignore"):
+        hs, hc = np.nanmean(np.sin(h)), np.nanmean(np.cos(h))
+        hmean = np.degrees(np.arctan2(hs, hc)) % 360.0
+        # The outputs are float32; a mean just under 360 rounds up to 360.0
+        # there, which would leave the [0, 360) range.
+        if np.isfinite(hmean) and np.float32(hmean) >= np.float32(360.0):
+            hmean = 0.0
+        rbar = min(float(np.hypot(hs, hc)), 1.0)
+        hstd = np.degrees(np.sqrt(-2.0 * np.log(rbar))) if rbar > 0 else np.nan
+        return (
+            hmean,
+            hstd,
+            np.nanmean(p),
+            np.nanstd(p),
+            np.nanmean(r),
+            np.nanstd(r),
+        )
+
+
 def _cell_flag(flag_beam, ibad=None):
     """Reduce a per-beam flag to a per-cell verdict.
 
@@ -1708,6 +1741,19 @@ class ProcessADCP:
             )
         ens.amp_grid = amp_grid
 
+    def _beam_mean_cor(self, ens):
+        """Correlation of one ensemble averaged over the beams in the solution.
+
+        Returns a float array (npings, nbins) with NaN where the raw value is
+        masked. The beam excluded via `ibad` does not enter the velocity
+        solution (`_cell_flag`) and is left out here as well
+        (motive-mooring-proc#51).
+        """
+        cor = np.ma.asarray(ens.cor, dtype=float)
+        if self.ibad is not None:
+            cor = np.delete(cor, self.ibad, axis=-1)
+        return np.ma.filled(cor.mean(axis=-1), np.nan)
+
     def _regrid_enu_amp(self, ens, method="linear"):
         """Depth-grid ENU velocities and amplitudes in a single pass.
 
@@ -1743,6 +1789,11 @@ class ProcessADCP:
 
         depth = self._burst_average_depth(ens)
 
+        # Beam-mean correlation, one more column in the same interpolation.
+        # `None` on a stub ensemble that carries no `cor`.
+        cor_mean = self._beam_mean_cor(ens) if "cor" in ens else None
+        cor_grid = np.full((npings, ndgrid), np.nan)
+
         for i in range(npings):
             amp_col = ens.amp[i].mean(axis=-1, keepdims=True)
             valid_col = np.ma.masked_array(
@@ -1755,9 +1806,10 @@ class ProcessADCP:
                 [ens[f"reason_{name}"][i].astype(float) for name in QC_CRITERIA],
                 axis=-1,
             )
-            combined = np.ma.concatenate(
-                [ens.enu[i], amp_col, valid_col, reason_cols], axis=-1
-            )
+            cols = [ens.enu[i], amp_col, valid_col, reason_cols]
+            if cor_mean is not None:
+                cols.append(cor_mean[i][:, np.newaxis])
+            combined = np.ma.concatenate(cols, axis=-1)
             result = interp1(depth[i], combined, self.dgrid, axis=0, method=method)
             result_filled = np.ma.filled(result, np.nan)
             enu_grid[i] = result_filled[:, :ncols_enu]
@@ -1765,9 +1817,12 @@ class ProcessADCP:
             valid_grid[i] = np.isfinite(result_filled[:, ncols_enu + 1])
             for j, name in enumerate(QC_CRITERIA):
                 reason_grid[name][i] = result_filled[:, ncols_enu + 2 + j] > 0
+            if cor_mean is not None:
+                cor_grid[i] = result_filled[:, ncols_enu + 2 + len(QC_CRITERIA)]
 
         ens.enu_grid = enu_grid
         ens.amp_grid = amp_grid
+        ens.cor_grid = cor_grid
         ens.valid_grid = valid_grid
         ens.reason_grid = reason_grid
 
@@ -2183,6 +2238,19 @@ class ProcessADCP:
         # masking in `_ave2nc` is what turns an unsampled cell into NaN here.
         nbad = {name: np.zeros((nens, ndgrid), dtype=np.int32) for name in QC_CRITERIA}
         amp = np.full((nens, ndgrid), np.nan, dtype=np.float32)
+        # Beam-mean correlation over the beams in the velocity solution,
+        # regridded like `amp` (motive-mooring-proc#51).
+        cor = np.full((nens, ndgrid), np.nan, dtype=np.float32)
+
+        # Attitude per interval: vector-mean heading with its circular
+        # standard deviation, arithmetic mean and standard deviation of pitch
+        # and roll (motive-mooring-proc#51).
+        heading = np.full((nens,), np.nan, dtype=np.float32)
+        heading_std = np.full((nens,), np.nan, dtype=np.float32)
+        pitch = np.full((nens,), np.nan, dtype=np.float32)
+        pitch_std = np.full((nens,), np.nan, dtype=np.float32)
+        roll = np.full((nens,), np.nan, dtype=np.float32)
+        roll_std = np.full((nens,), np.nan, dtype=np.float32)
 
         temperature = np.full((nens,), np.nan, dtype=np.float32)
         pressure = np.full((nens,), np.nan, dtype=np.float32)
@@ -2212,12 +2280,14 @@ class ProcessADCP:
                     # fills for the same reason on the depth frame.
                     enu = np.ma.filled(ens.enu, np.nan)
                     amp_bins = np.ma.filled(ens.amp.mean(axis=-1), np.nan)
+                    cor_bins = self._beam_mean_cor(ens)
                     valid = ens.valid
                     reason = {n: ens[f"reason_{n}"] for n in QC_CRITERIA}
                 else:
                     self._regrid_enu_amp(ens)
                     enu = ens.enu_grid
                     amp_bins = ens.amp_grid
+                    cor_bins = ens.cor_grid
                     valid = ens.valid_grid
                     reason = ens.reason_grid
 
@@ -2232,6 +2302,15 @@ class ProcessADCP:
                 uvwe[i] = np.nanmean(enu, axis=0)
                 uvwe_std[i] = np.nanstd(enu, axis=0)
                 amp[i] = np.nanmean(amp_bins, axis=0)
+                cor[i] = np.nanmean(cor_bins, axis=0)
+                (
+                    heading[i],
+                    heading_std[i],
+                    pitch[i],
+                    pitch_std[i],
+                    roll[i],
+                    roll_std[i],
+                ) = _attitude_stats(ens)
 
             # Counted from the validity that rode alongside the velocities,
             # not from what came back finite (issue #30). On the depth grid
@@ -2274,6 +2353,13 @@ class ProcessADCP:
             nbad_maskbins=nbad["maskbins"],
             nbad_max_e=nbad["max_e"],
             amp=amp,
+            cor=cor,
+            heading=heading,
+            heading_std=heading_std,
+            pitch=pitch,
+            pitch_std=pitch_std,
+            roll=roll,
+            roll_std=roll_std,
             temperature=temperature,
             pressure=pressure,
             pressure_std=pressure_std,
