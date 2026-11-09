@@ -26,23 +26,28 @@ YEARBASE = 2021
 END_ADCP = [2021, 7, 12, 0, 0, 0]
 END_PC = [2021, 7, 12, 0, 1, 40]
 STEP_S = -100.0
-STEP_MID = [2021, 7, 9, 12, 0, 0]      # raw dday 189.5, inside the record
-STEP_BEFORE = [2021, 7, 1, 0, 0, 0]    # before the first ping
-STEP_AFTER = [2021, 7, 11, 23, 0, 0]   # after the last ping, before download
+STEP_MID = [2021, 7, 9, 12, 0, 0]  # raw dday 189.5, inside the record
+STEP_BEFORE = [2021, 7, 1, 0, 0, 0]  # before the first ping
+STEP_AFTER = [2021, 7, 11, 23, 0, 0]  # after the last ping, before download
 
 DAY = 86400.0
 
 
 def _proc(rootdir, driftparams):
     return ProcessADCP(
-        rootdir / "data" / DOWNLOOKER, META_DATA, magdec=0.0,
+        rootdir / "data" / DOWNLOOKER,
+        META_DATA,
+        magdec=0.0,
         driftparams=driftparams,
     )
 
 
 def _drift(steps):
-    return {"end_adcp": END_ADCP, "end_pc": END_PC,
-            "steps": [{"adcp": s, "seconds": STEP_S} for s in steps]}
+    return {
+        "end_adcp": END_ADCP,
+        "end_pc": END_PC,
+        "steps": [{"adcp": s, "seconds": STEP_S} for s in steps],
+    }
 
 
 def test_step_in_the_middle_shifts_only_later_pings(rootdir):
