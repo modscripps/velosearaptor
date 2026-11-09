@@ -25,7 +25,14 @@ def read_raw_rdi(file, auxillary_only=False):
     Returns
     -------
     rdi : xarray.Dataset
-        Raw ADCP data in xarray Dataset format.
+        Raw ADCP data in xarray Dataset format. The attribute `sn` holds the
+        instrument serial number from the fixed leader of the first ensemble,
+        as an int, under the same name and type as the processed output.
+
+    Notes
+    -----
+    Access roll as ``rdi["roll"]``. ``rdi.roll`` is the xarray method
+    `xarray.Dataset.roll`, so ``rdi.roll.plot()`` fails.
     """
     # Multiread cannot deal with Path objects. Convert them to ascii.
     if type(file) == list:
@@ -103,6 +110,7 @@ def read_raw_rdi(file, auxillary_only=False):
     out = out.drop(["dummy"])
 
     # set a few attributes
+    out.attrs["sn"] = int.from_bytes(radcp.FL.Inst_SN, "little")
     out.attrs["sonar"] = radcp.sonar.sonar
     out.attrs["coordsystem"] = radcp.trans.coordsystem
     out.attrs["pingtype"] = radcp.pingtype

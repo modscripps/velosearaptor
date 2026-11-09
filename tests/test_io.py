@@ -25,6 +25,18 @@ def test_raw_z_attrs(rootdir):
     assert ds.z.max() < float(ds.pressure.median())
 
 
+def test_raw_serial_number(rootdir):
+    """The raw output carries the instrument serial number from the header.
+
+    It must match the serial number in the file name of the bundled file, as
+    an int under the name the processed output uses, on both read paths.
+    """
+    for aux in [False, True]:
+        ds = vr.io.read_raw_rdi(rootdir / "data/24606000.000", auxillary_only=aux)
+        assert ds.attrs["sn"] == 24606
+        assert type(ds.attrs["sn"]) is int
+
+
 class TestTimeConversion:
     def test_single_value(self):
         test_dt64 = np.datetime64("2023-06-01 12:30:22")
