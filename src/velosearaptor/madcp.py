@@ -1005,12 +1005,20 @@ class ProcessADCP:
         # Find time at depth to determine default time grid parameters.
         # Differentiate between time series only in the water and time series
         # including the overshoot on mooring deployment.
+        # The default window is only needed for the ends the caller does not
+        # set, so skip it when both are given. `>=` lets a pressure record
+        # that is constant at depth (an external pressure from mooring
+        # geometry) start at its first ping at depth; with `>` no ping of such
+        # a record is deeper than the median.
+        given = {} if tgridparams is None else tgridparams
         p = self.tsdat.pressure
-        if ~np.any(p < 10):
+        if "t0" in given and "t1" in given:
+            t0, t1 = None, None
+        elif ~np.any(p < 10):
             t0 = self.dday[0]
             t1 = self.dday[-1]
         else:
-            at_depth = np.nonzero(p > self.p_median)[0][0]
+            at_depth = np.nonzero(p >= self.p_median)[0][0]
             t0 = self.dday[at_depth]
             # in_water = np.nonzero(p > self.p_median / 2)[0][-1]
             # t1 = self.dday[in_water]
